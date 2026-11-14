@@ -1,3 +1,16 @@
+# 最新状态：第四阶段自包含任务流调试页（2026-11-15 01:04 Asia/Singapore UTC+8）
+
+本节补上「独立 HTML 仅填 URL/API key 尚未完成」的过时边界，但**不是** Linux 真浏览器端到端验收，也不是生产级前端。
+
+- 新增自包含页面 `protenix_service/test_ui/flow_debug.html`，由 test_ui 以 `GET /flow_debug.html` 提供。启用 `test_ui_cfg` 后打开 `http://127.0.0.1:<test_ui-port>/flow_debug.html`，填写服务 URL 与 `ptxk_` API key。
+- 页面按真实任务流调用 `protenix`（或显式选择的 `pxdesign`）→ `task.get` 轮询 → `task.artifacts` / `task.artifact`。进度条只显示后端 `progress`，CIF/PDB 原子只从取回的产物解析；没有原子就空着，不用随机点或动画百分比冒充计算。
+- 若页面位于 test_ui 同源，则经已有 `/api/proxy` 探测 JSON-RPC / MCP / WebSocket / gRPC（不改 API 端口 CORS，也不放宽门禁）。gRPC 无法在浏览器里直连。
+- 已测：`go test ./test_ui ./api/api_jsonRPC` 与 `go build` 退出码 0。`/api/config` 方法表包含 `protenix` / `pxdesign` / `task.get` / `task.artifacts` / `task.artifact`。产物读写仍以既有隔离 HTTP fixture 为准，本轮未再跑 GPU，未改 `config_local.yaml`，未启动长期服务。
+- 浏览器层：本机无 `ego-browser`；本自动化会话与 spark-901f 的 Cursor `mcp.json` 均未连接 Playwright MCP（仅有 xjb-code）。按 web-browser-debug，两层都不可用时不自行启动其他浏览器，也未新装 MCP。因此没有 Linux 真浏览器点击验收。
+- 未改 show_yeah、`build_srcs`、三仓或 Task 受理契约。PXDesign HTTP 真任务与 v2 runtime 仍未在本页重验；`version=v2` 不能当成 v2 跑通。
+
+---
+
 # 最新状态：受控产物取件（2026-11-15 00:04 Asia/Singapore UTC+8）
 
 本节补充「尚无浏览器取件 API」的过时边界。`task.get` 的本机路径仍不可直接 fetch；属主可通过 `task.artifacts` / `task.artifact` 列出并读取隔离作业目录内允许的产物。

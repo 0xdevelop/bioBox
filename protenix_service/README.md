@@ -74,6 +74,17 @@ JSON-RPC 示例（Public `test`）：
 
 向 `http://127.0.0.1:<jsonrpc-port>/` 发 POST。方法清单见 `docs/api_methods.md`（由 `./gen_api_docs.sh` 生成，不要手改）。
 
+## 真实任务流调试页
+
+启用 `test_ui_cfg` 后，用浏览器打开：
+
+```text
+http://127.0.0.1:<test_ui-port>/flow_debug.html
+```
+
+填写服务 URL 和 `ptxk_` API key，按真实 `protenix` → `task.get` → `task.artifacts` → `task.artifact` 流程调试。进度只显示后端上报值，结构只从取回的产物解析。页面若在 test_ui 同源，可通过已有 `/api/proxy` 探测 JSON-RPC / MCP / WebSocket / gRPC。通用 test_ui 控制台仍从运行期方法表列出全部方法，包括产物取件。不要把本页当成已完成的 Linux 浏览器验收或生产前端。
+
+
 HTTP/JSON-RPC `protenix`/`pxdesign` 经鉴权 → SQLite 持久受理 → Policy → 同一 Execute → 独立 CLI 进程组。`task.cancel` 对 queued 返回 `cancelled:true`；对 running 返回 `cancelling:true`，待进程组退出后 `task.get` 才显示 done/cancelled。正常停机也取消在途任务。`policy_cfg.max_workers: 1` 适合单 GPU；不要按 CPU 核数盲目启动大量推理。Protenix 成功还需 CIF/ERR 核验。已完成任务用 `task.artifacts` / `task.artifact` 按属主读取产物（相对路径，base64），不要把结果里的本机路径当成下载 URL。数据库重开恢复、systemd KillMode=control-group 下短脚本主进程 SIGKILL/清组/重启恢复均有实测；裸 SIGKILL、GPU 中断恢复和多实例 HA 未验收。
 
 当前版本边界：`version` 字段尚未完成 v1/v2 独立 runtime 的结构化选择，实际调用仍是单一配置 binary + model_name；本轮只验 v1，不能把传入 v2 标签当作 v2 跑通。show_yeah 数据契约与取件缺口见 [对接说明](docs/show_yeah_data_contract.md)。

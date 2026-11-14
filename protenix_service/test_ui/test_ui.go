@@ -49,6 +49,9 @@ const (
 //go:embed web/dist
 var embeddedWeb embed.FS
 
+//go:embed flow_debug.html
+var flowDebugPage []byte
+
 var loadTestWebOnce sync.Once
 
 type apiMethod struct {
@@ -135,6 +138,7 @@ func LoadTestWeb() {
 		mux := http.NewServeMux()
 		mux.HandleFunc("GET /api/config", handleConfig)
 		mux.HandleFunc("POST /api/proxy", handleProxy)
+		mux.HandleFunc("GET /flow_debug.html", handleFlowDebugPage)
 		mux.HandleFunc("GET /docs_api", func(writer http.ResponseWriter, request *http.Request) {
 			handleAPIDocPage(writer, request, webFS)
 		})
@@ -265,6 +269,16 @@ func handleAPIDocPage(writer http.ResponseWriter, request *http.Request, webFS f
 	writer.Header().Set("Content-Type", "text/html; charset=utf-8")
 	writer.Header().Set("Cache-Control", "no-store")
 	_, _ = writer.Write([]byte(rendered))
+}
+
+func handleFlowDebugPage(writer http.ResponseWriter, request *http.Request) {
+	if len(flowDebugPage) == 0 {
+		api_common.HomeHandler(writer, request)
+		return
+	}
+	writer.Header().Set("Content-Type", "text/html; charset=utf-8")
+	writer.Header().Set("Cache-Control", "no-store")
+	_, _ = writer.Write(flowDebugPage)
 }
 
 func handleConfig(writer http.ResponseWriter, _ *http.Request) {

@@ -1,0 +1,581 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Protenix 真实任务流调试</title>
+  <style>
+    :root {
+      --bg: #070b12;
+      --bg-elev: #101826;
+      --line: rgba(120, 200, 255, .18);
+      --text: #e7f2ff;
+      --muted: #8aa0b8;
+      --accent: #5eead4;
+      --accent-2: #7dd3fc;
+      --warn: #fbbf24;
+      --err: #fb7185;
+      --ok: #34d399;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; min-height: 100%; background: var(--bg); color: var(--text); font: 14px/1.5 "Segoe UI", "PingFang SC", "Noto Sans SC", sans-serif; }
+    body { background-image: radial-gradient(1200px 500px at 10% -10%, rgba(94,234,212,.12), transparent 50%), radial-gradient(900px 400px at 90% 0%, rgba(125,211,252,.10), transparent 45%); }
+    header { padding: 20px 24px 8px; border-bottom: 1px solid var(--line); }
+    header h1 { margin: 0 0 6px; font-size: 22px; letter-spacing: .02em; }
+    header p, .note { color: var(--muted); margin: 0; }
+    .note strong, .warn { color: var(--warn); }
+    main { display: grid; grid-template-columns: 360px 1fr; gap: 18px; padding: 18px 24px 40px; }
+    @media (max-width: 960px) { main { grid-template-columns: 1fr; } }
+    section { background: rgba(16,24,38,.86); border: 1px solid var(--line); border-radius: 14px; padding: 16px; }
+    h2 { margin: 0 0 12px; font-size: 15px; color: var(--accent-2); }
+    label { display: block; margin: 8px 0 4px; color: var(--muted); font-size: 12px; }
+    input, select, textarea, button { width: 100%; border-radius: 8px; border: 1px solid var(--line); background: #0b1220; color: var(--text); padding: 8px 10px; font: inherit; }
+    textarea { min-height: 72px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+    .row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .actions { display: flex; gap: 8px; margin-top: 12px; }
+    button { cursor: pointer; background: #123; }
+    button.primary { background: linear-gradient(180deg, #134e4a, #115e59); border-color: rgba(94,234,212,.35); color: #ecfeff; font-weight: 600; }
+    button:disabled { opacity: .5; cursor: not-allowed; }
+    .chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
+    .chip { border: 1px solid var(--line); border-radius: 999px; padding: 2px 8px; font-size: 12px; color: var(--muted); }
+    .chip.ok { color: var(--ok); border-color: rgba(52,211,153,.4); }
+    .chip.err { color: var(--err); border-color: rgba(251,113,133,.4); }
+    .chip.wait { color: var(--warn); }
+    .timeline { list-style: none; margin: 0; padding: 0; }
+    .timeline li { position: relative; padding: 6px 0 6px 16px; border-left: 1px solid var(--line); color: var(--muted); font-size: 12px; }
+    .timeline li::before { content: ""; position: absolute; left: -4px; top: 12px; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); }
+    .progress-wrap { height: 10px; background: #0b1220; border-radius: 999px; overflow: hidden; border: 1px solid var(--line); margin: 8px 0; }
+    .progress-bar { height: 100%; width: 0; background: linear-gradient(90deg, #115e59, #5eead4); transition: width .3s; }
+    #stage { width: 100%; height: 280px; display: block; background: #05080f; border-radius: 12px; border: 1px solid var(--line); }
+    pre.log { max-height: 220px; overflow: auto; background: #05080f; border-radius: 8px; padding: 10px; font-size: 11px; color: #c9d7e8; }
+    table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    th, td { text-align: left; padding: 6px 4px; border-bottom: 1px solid var(--line); }
+    a { color: var(--accent-2); }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Protenix 真实任务流调试</h1>
+    <p>只填服务地址和 API key（<code>ptxk_</code>）。页面只展示服务返回的状态与产物，不用动画伪造进度或 CIF。show_yeah 仅作视觉参考，本页不改造该仓。</p>
+    <p class="note" id="host-note">正在检测是否位于 test_ui 同源页面…</p>
+  </header>
+  <main>
+    <div>
+      <section>
+        <h2>连接</h2>
+        <label for="rpc-url">JSON-RPC URL</label>
+        <input id="rpc-url" placeholder="http://127.0.0.1:13001/" autocomplete="off">
+        <label for="mcp-url">MCP URL</label>
+        <input id="mcp-url" placeholder="http://127.0.0.1:13002/" autocomplete="off">
+        <label for="ws-url">WebSocket URL</label>
+        <input id="ws-url" placeholder="ws://127.0.0.1:13004/" autocomplete="off">
+        <label for="grpc-url">gRPC URL</label>
+        <input id="grpc-url" placeholder="grpc://127.0.0.1:13005" autocomplete="off">
+        <label for="api-key">API key</label>
+        <input id="api-key" type="password" placeholder="ptxk_…" autocomplete="off">
+        <p class="note">缺 Resend 时可用隔离测试签发的 <code>ptxk_</code>，不要绕过鉴权，也不要把 key 发到非本机地址。</p>
+        <div class="actions">
+          <button class="primary" id="btn-probe" type="button">探测协议</button>
+        </div>
+        <div class="chips" id="proto-chips"></div>
+      </section>
+      <section style="margin-top:18px">
+        <h2>提交真实任务</h2>
+        <label for="method">方法</label>
+        <select id="method">
+          <option value="protenix" selected>protenix（已有 HTTP 真任务证据）</option>
+          <option value="pxdesign">pxdesign（本机 HTTP 真任务尚未重验）</option>
+        </select>
+        <div class="row">
+          <div>
+            <label for="version">version（参数，不进 URL）</label>
+            <input id="version" value="v1">
+          </div>
+          <div>
+            <label for="model">model_name / preset</label>
+            <input id="model" value="protenix_base_default_v1.0.0">
+          </div>
+        </div>
+        <label for="input-path">服务器上的输入路径（不是本机文件选择器）</label>
+        <input id="input-path" placeholder="/path/on/server/input.json">
+        <div class="row">
+          <div><label for="out-dir">out_dir / dump_dir</label><input id="out-dir" value="out"></div>
+          <div><label for="seeds">seeds</label><input id="seeds" value="101"></div>
+        </div>
+        <div class="row">
+          <div><label for="cycle">cycle / N_sample</label><input id="cycle" value="1"></div>
+          <div><label for="step">step / N_step</label><input id="step" value="2"></div>
+        </div>
+        <label for="extra-json">附加 arguments（JSON 对象）</label>
+        <textarea id="extra-json" placeholder='{"use_msa": false, "sample": 1}'>{"use_msa": false, "sample": 1, "use_default_params": false}</textarea>
+        <p class="note warn" id="version-warn" hidden>现有 version 尚未完成独立 v1/v2 runtime 切换；勾选 v2 不能当成 v2 已跑通。</p>
+        <div class="actions">
+          <button class="primary" id="btn-submit" type="button">提交并跟踪</button>
+          <button id="btn-cancel" type="button" disabled>请求取消</button>
+        </div>
+        <label for="task-id">已有 task_id（只查询/取件，不重跑）</label>
+        <div class="actions">
+          <input id="task-id" placeholder="uuid">
+          <button id="btn-attach" type="button">跟踪该任务</button>
+        </div>
+      </section>
+    </div>
+    <div>
+      <section>
+        <h2>真实状态</h2>
+        <p class="note">进度条只反映 <code>task.get</code> 返回的 <code>progress</code>。原生推理通常会从 0 跳到 100，没有逐步扩散百分比。</p>
+        <div class="chips" id="status-chips"></div>
+        <div class="progress-wrap"><div class="progress-bar" id="progress-bar"></div></div>
+        <div id="progress-label" class="note">尚未受理</div>
+        <ul class="timeline" id="timeline"></ul>
+      </section>
+      <section style="margin-top:18px">
+        <h2>产物与结构（来自 task.artifact）</h2>
+        <table>
+          <thead><tr><th>相对路径</th><th>类型</th><th>大小</th><th></th></tr></thead>
+          <tbody id="artifact-rows"><tr><td colspan="4" class="note">提交或跟踪完成任务后列出，不含 input/</td></tr></tbody>
+        </table>
+        <canvas id="stage" width="900" height="560"></canvas>
+        <p class="note" id="cif-note">CIF 原子来自取回的真实文件；若文件没有原子记录，这里会如实显示，不会用随机点冒充。</p>
+        <pre class="log" id="log"></pre>
+      </section>
+    </div>
+  </main>
+  <script>
+  (function () {
+    const $ = (id) => document.getElementById(id);
+    const state = {
+      hasProxy: false,
+      config: null,
+      taskId: "",
+      pollTimer: 0,
+      lastStatusKey: "",
+      atoms: [],
+      rot: 0,
+    };
+
+    function maskSecret(text) {
+      return String(text ?? "").replace(/ptxk_[A-Za-z0-9._-]+/g, "ptxk_***");
+    }
+    function log(message, payload) {
+      const time = new Date().toLocaleTimeString("zh-CN", { hour12: false, timeZone: "Asia/Singapore" });
+      const extra = payload === undefined ? "" : " " + maskSecret(typeof payload === "string" ? payload : JSON.stringify(payload, null, 2));
+      $("log").textContent += `[${time} Asia/Singapore] ${maskSecret(message)}${extra}\n`;
+      $("log").scrollTop = $("log").scrollHeight;
+    }
+    function generateId() {
+      return "flow-" + Date.now().toString(36) + "-" + Math.floor(performance.now());
+    }
+    function credential() {
+      return $("api-key").value.trim();
+    }
+    function toolBody(name, args, id) {
+      return JSON.stringify({
+        jsonrpc: "2.0",
+        id: id || generateId(),
+        method: "tools/call",
+        params: { name, arguments: args || {} },
+      });
+    }
+    function parseToolPayload(raw) {
+      let envelope;
+      try { envelope = JSON.parse(raw); } catch (err) {
+        throw new Error("响应不是 JSON");
+      }
+      if (envelope.error && envelope.error !== null) {
+        throw new Error(envelope.error.message || "协议错误");
+      }
+      const result = envelope.result || envelope;
+      if (result && result.isError) {
+        const text = result.content && result.content[0] && result.content[0].text;
+        let parsed = text;
+        try { parsed = JSON.parse(text); } catch (_) {}
+        const err = new Error((parsed && parsed.error_msg) || text || "业务错误");
+        err.payload = parsed;
+        throw err;
+      }
+      const text = result && result.content && result.content[0] && result.content[0].text;
+      if (typeof text === "string") {
+        try { return JSON.parse(text); } catch (_) { return { text }; }
+      }
+      if (result && result.result) return result.result;
+      return result || envelope;
+    }
+    async function viaProxy(transport, url, method, headers, body) {
+      const response = await fetch("/api/proxy", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ transport, url, method, headers, body }),
+      });
+      const proxy = await response.json();
+      if (!response.ok || proxy.protocolError) {
+        throw new Error((proxy && proxy.body) || response.statusText || "代理调用失败");
+      }
+      return { status: proxy.status, body: proxy.body, statusText: proxy.statusText };
+    }
+    async function callJSONRPC(name, args, useAuth) {
+      const headers = { "Content-Type": "application/json" };
+      if (useAuth) {
+        const key = credential();
+        if (!key) throw new Error("需要 API key");
+        headers.Authorization = "Bearer " + key;
+      }
+      const body = toolBody(name, args);
+      const url = $("rpc-url").value.trim();
+      if (!url) throw new Error("请填写 JSON-RPC URL");
+      if (state.hasProxy) {
+        const proxied = await viaProxy("jsonrpc", url, "POST", headers, body);
+        if (proxied.status !== 200) throw new Error("HTTP " + proxied.status);
+        return parseToolPayload(proxied.body);
+      }
+      const response = await fetch(url, { method: "POST", headers, body });
+      const text = await response.text();
+      if (!response.ok) throw new Error("HTTP " + response.status + " " + text.slice(0, 200));
+      return parseToolPayload(text);
+    }
+    async function callMCP(name, args, useAuth) {
+      const headers = {
+        "Content-Type": "application/json",
+        "Mcp-Protocol-Version": "2026-07-28",
+        "Mcp-Method": "tools/call",
+        "Mcp-Name": name,
+      };
+      if (useAuth) headers.Authorization = "Bearer " + credential();
+      const body = toolBody(name, args);
+      const url = $("mcp-url").value.trim();
+      if (state.hasProxy) {
+        const proxied = await viaProxy("mcp", url, "POST", headers, body);
+        if (proxied.status !== 200) throw new Error("HTTP " + proxied.status);
+        return parseToolPayload(proxied.body);
+      }
+      const response = await fetch(url, { method: "POST", headers, body });
+      return parseToolPayload(await response.text());
+    }
+    async function callWebSocket(name, args, useAuth) {
+      const url = $("ws-url").value.trim();
+      const headers = {};
+      if (useAuth) headers.Authorization = "Bearer " + credential();
+      const body = toolBody(name, args);
+      if (state.hasProxy) {
+        const proxied = await viaProxy("websocket", url, "GET", headers, body);
+        return parseToolPayload(proxied.body);
+      }
+      return await new Promise((resolve, reject) => {
+        const socket = new WebSocket(url);
+        const timer = setTimeout(() => { socket.close(); reject(new Error("WebSocket 超时")); }, 15000);
+        socket.addEventListener("open", () => socket.send(body));
+        socket.addEventListener("message", (event) => {
+          clearTimeout(timer);
+          try { resolve(parseToolPayload(event.data)); } catch (err) { reject(err); }
+          socket.close();
+        });
+        socket.addEventListener("error", () => { clearTimeout(timer); reject(new Error("WebSocket 失败（直连通常需要可接受的 Origin，建议经 test_ui 打开）")); });
+      });
+    }
+    async function callGRPC(name, args, useAuth) {
+      if (!state.hasProxy) throw new Error("浏览器不能直连 gRPC，请经 test_ui 打开本页");
+      const headers = {};
+      if (useAuth) headers.authorization = "Bearer " + credential();
+      const body = JSON.stringify({
+        requestId: generateId(),
+        method: "tools/call",
+        params: { name, arguments: args || {} },
+      });
+      const proxied = await viaProxy("grpc", $("grpc-url").value.trim(), "POST", headers, body);
+      const encoded = JSON.parse(proxied.body);
+      const result = encoded.result || encoded;
+      if (result && result.content && result.content[0] && result.content[0].text) {
+        return parseToolPayload(JSON.stringify({ result }));
+      }
+      return result;
+    }
+
+    function setChip(container, id, label, kind) {
+      let chip = document.getElementById(id);
+      if (!chip) {
+        chip = document.createElement("span");
+        chip.id = id;
+        chip.className = "chip";
+        container.appendChild(chip);
+      }
+      chip.className = "chip " + (kind || "");
+      chip.textContent = label;
+    }
+    function addTimeline(text) {
+      const item = document.createElement("li");
+      const time = new Date().toLocaleTimeString("zh-CN", { hour12: false, timeZone: "Asia/Singapore" });
+      item.textContent = time + "  " + text;
+      $("timeline").appendChild(item);
+    }
+    function renderStatus(task) {
+      const run = task.run_status || "";
+      const process = task.process_status || "进行中";
+      const progress = Number(task.progress ?? 0);
+      setChip($("status-chips"), "chip-run", "run_status=" + run, run === "done" ? (process === "success" ? "ok" : "err") : "wait");
+      setChip($("status-chips"), "chip-proc", "process_status=" + process, process === "success" ? "ok" : (process === "" ? "wait" : "err"));
+      if (task.cancel_requested) setChip($("status-chips"), "chip-cancel", "cancel_requested", "wait");
+      $("progress-bar").style.width = Math.max(0, Math.min(100, progress)) + "%";
+      $("progress-label").textContent = "后端上报 progress=" + progress + (task.progress_message ? (" · " + task.progress_message) : "") + "（非估算）";
+      const key = [run, process, progress, task.progress_message || ""].join("|");
+      if (key !== state.lastStatusKey) {
+        state.lastStatusKey = key;
+        addTimeline("task.get  " + key);
+      }
+    }
+
+    function parseCIF(text) {
+      const atoms = [];
+      const lines = String(text).split(/\r?\n/);
+      let mmcif = false;
+      let headers = [];
+      for (const line of lines) {
+        if (line.startsWith("ATOM") || line.startsWith("HETATM")) {
+          const x = parseFloat(line.slice(30, 38));
+          const y = parseFloat(line.slice(38, 46));
+          const z = parseFloat(line.slice(46, 54));
+          const element = (line.slice(76, 78).trim() || line.slice(12, 16).trim()[0] || "C");
+          if (Number.isFinite(x) && Number.isFinite(y) && Number.isFinite(z)) atoms.push({ x, y, z, element });
+        }
+        if (line.startsWith("_atom_site.")) {
+          mmcif = true;
+          headers.push(line.trim());
+        } else if (mmcif && headers.length && line && !line.startsWith("_") && !line.startsWith("#") && !line.startsWith("loop_")) {
+          if (line.startsWith("data_") || line.startsWith("save_")) { mmcif = false; headers = []; continue; }
+          const cols = line.trim().split(/\s+/);
+          if (cols.length < headers.length) continue;
+          const idx = Object.fromEntries(headers.map((name, i) => [name, i]));
+          const x = parseFloat(cols[idx["_atom_site.Cartn_x"]]);
+          const y = parseFloat(cols[idx["_atom_site.Cartn_y"]]);
+          const z = parseFloat(cols[idx["_atom_site.Cartn_z"]]);
+          const element = cols[idx["_atom_site.type_symbol"]] || "C";
+          if (Number.isFinite(x) && Number.isFinite(y) && Number.isFinite(z)) atoms.push({ x, y, z, element });
+        }
+      }
+      return atoms;
+    }
+    const elementColor = { C: "#d7e3f4", N: "#7dd3fc", O: "#fb7185", S: "#fbbf24", P: "#f0abfc", H: "#94a3b8" };
+    function drawAtoms() {
+      const canvas = $("stage");
+      const ctx = canvas.getContext("2d");
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.fillStyle = "#05080f";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      if (!state.atoms.length) {
+        ctx.fillStyle = "#8aa0b8";
+        ctx.font = "16px sans-serif";
+        ctx.fillText("没有可绘制的真实原子。等待 task.artifact 返回含 ATOM/_atom_site 的 CIF/PDB。", 24, 40);
+        return;
+      }
+      state.rot += 0.008;
+      const cos = Math.cos(state.rot), sin = Math.sin(state.rot);
+      const cx = canvas.width / 2, cy = canvas.height / 2;
+      let maxR = 1;
+      const projected = state.atoms.map((atom) => {
+        const x = atom.x * cos - atom.z * sin;
+        const z = atom.x * sin + atom.z * cos;
+        const y = atom.y;
+        maxR = Math.max(maxR, Math.hypot(x, y, z));
+        return { x, y, z, element: atom.element };
+      });
+      const scale = Math.min(canvas.width, canvas.height) * 0.38 / maxR;
+      projected.sort((a, b) => a.z - b.z).forEach((atom) => {
+        const depth = (atom.z / maxR + 1) / 2;
+        const r = 2.2 + depth * 3.2;
+        ctx.beginPath();
+        ctx.fillStyle = elementColor[atom.element] || "#5eead4";
+        ctx.globalAlpha = 0.35 + depth * 0.65;
+        ctx.arc(cx + atom.x * scale, cy + atom.y * scale, r, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.globalAlpha = 1;
+      });
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = "#8aa0b8";
+      ctx.font = "13px sans-serif";
+      ctx.fillText("真实原子 " + state.atoms.length + " 个（由产物坐标绘制）", 18, canvas.height - 16);
+    }
+    function tick() { drawAtoms(); requestAnimationFrame(tick); }
+
+    async function loadArtifacts(taskId) {
+      const listed = await callJSONRPC("task.artifacts", { task_id: taskId }, true);
+      const items = listed.artifacts || [];
+      const body = $("artifact-rows");
+      body.innerHTML = "";
+      if (!items.length) {
+        body.innerHTML = '<tr><td colspan="4" class="note">没有可列出的产物（任务未完成、无作业目录，或只有 input/）</td></tr>';
+        return;
+      }
+      items.forEach((item) => {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `<td>${item.path}</td><td>${item.kind || ""}</td><td>${item.size || ""}</td>`;
+        const td = document.createElement("td");
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.textContent = "读取";
+        btn.addEventListener("click", () => fetchArtifact(taskId, item.path, item.kind));
+        td.appendChild(btn);
+        tr.appendChild(td);
+        body.appendChild(tr);
+      });
+      const prefer = items.find((item) => item.kind === "cif" || (item.path || "").endsWith(".cif")) || items[0];
+      if (prefer) await fetchArtifact(taskId, prefer.path, prefer.kind);
+    }
+    async function fetchArtifact(taskId, path, kind) {
+      const got = await callJSONRPC("task.artifact", { task_id: taskId, path }, true);
+      if (got.encoding !== "base64" || !got.content) throw new Error("产物未按 base64 返回");
+      const bytes = atob(got.content);
+      log("读取产物 " + path, { kind: got.kind || kind, size: got.size, content_type: got.content_type });
+      const looksStructure = (got.kind === "cif" || got.kind === "pdb" || /\.(cif|pdb)$/i.test(path));
+      if (looksStructure) {
+        state.atoms = parseCIF(bytes);
+        $("cif-note").textContent = state.atoms.length
+          ? ("已从 " + path + " 解析 " + state.atoms.length + " 个原子。这是服务返回的文件，不是随机结构。")
+          : (path + " 没有 ATOM/_atom_site 坐标，已如实显示为空，未用随机点填充。");
+      } else {
+        $("cif-note").textContent = path + " 不是结构文件。预览：\n" + bytes.slice(0, 400);
+      }
+    }
+
+    function collectArguments() {
+      const method = $("method").value;
+      let extra = {};
+      const raw = $("extra-json").value.trim();
+      if (raw) extra = JSON.parse(raw);
+      const input = $("input-path").value.trim();
+      if (!input) throw new Error("请填写服务器上的输入路径");
+      const version = $("version").value.trim();
+      $("version-warn").hidden = version === "v1" || version === "";
+      if (method === "protenix") {
+        return Object.assign({
+          version: version || "v1",
+          input,
+          out_dir: $("out-dir").value.trim() || "out",
+          model_name: $("model").value.trim(),
+          seeds: $("seeds").value.trim(),
+          cycle: Number($("cycle").value || 1),
+          step: Number($("step").value || 2),
+        }, extra);
+      }
+      return Object.assign({
+        input,
+        dump_dir: $("out-dir").value.trim() || "out",
+        preset: $("model").value.trim() || "preview",
+        N_sample: Number($("cycle").value || 1),
+        N_step: Number($("step").value || 2),
+      }, extra);
+    }
+    async function followTask(taskId) {
+      state.taskId = taskId;
+      $("task-id").value = taskId;
+      $("btn-cancel").disabled = false;
+      addTimeline("开始跟踪 " + taskId);
+      if (state.pollTimer) clearInterval(state.pollTimer);
+      const poll = async () => {
+        try {
+          const result = await callJSONRPC("task.get", { task_id: taskId }, true);
+          const task = result.task || result;
+          renderStatus(task);
+          if (task.run_status === "done") {
+            clearInterval(state.pollTimer);
+            state.pollTimer = 0;
+            $("btn-cancel").disabled = true;
+            log("任务终态", { process_status: task.process_status, result: task.result });
+            if (task.process_status === "success") await loadArtifacts(taskId);
+            else $("artifact-rows").innerHTML = '<tr><td colspan="4" class="note">终态不是 success，未自动取件</td></tr>';
+          }
+        } catch (err) {
+          log("轮询失败", err.message);
+        }
+      };
+      await poll();
+      if (state.pollTimer === 0 && $("btn-cancel").disabled === false) {
+        state.pollTimer = setInterval(poll, 1500);
+      }
+    }
+
+    $("btn-probe").addEventListener("click", async () => {
+      $("proto-chips").innerHTML = "";
+      const trials = [
+        ["jsonrpc-public", () => callJSONRPC("test", {}, false)],
+        ["mcp-public", () => callMCP("test", {}, false)],
+        ["websocket-public", () => callWebSocket("test", {}, false)],
+        ["grpc-public", () => callGRPC("test", {}, false)],
+      ];
+      if (credential()) {
+        trials.push(["jsonrpc-task.list", () => callJSONRPC("task.list", {}, true)]);
+      }
+      for (const [label, fn] of trials) {
+        try {
+          const value = await fn();
+          setChip($("proto-chips"), "chip-" + label, label + " 成功", "ok");
+          log(label + " 成功", value);
+        } catch (err) {
+          setChip($("proto-chips"), "chip-" + label, label + " 失败", "err");
+          log(label + " 失败", err.message);
+        }
+      }
+    });
+    $("btn-submit").addEventListener("click", async () => {
+      try {
+        const args = collectArguments();
+        const method = $("method").value;
+        log("提交 " + method, args);
+        const accepted = await callJSONRPC(method, args, true);
+        if (!accepted.task_id) throw new Error("受理结果没有 task_id");
+        addTimeline("已受理 " + accepted.task_id + " run_status=" + (accepted.run_status || "queued") + "（这不是结构完成）");
+        await followTask(accepted.task_id);
+      } catch (err) {
+        log("提交失败", err.message);
+      }
+    });
+    $("btn-attach").addEventListener("click", async () => {
+      const id = $("task-id").value.trim();
+      if (!id) return;
+      try { await followTask(id); } catch (err) { log("跟踪失败", err.message); }
+    });
+    $("btn-cancel").addEventListener("click", async () => {
+      if (!state.taskId) return;
+      try {
+        const result = await callJSONRPC("task.cancel", { task_id: state.taskId }, true);
+        log("取消返回", result);
+        addTimeline("task.cancel cancelled=" + result.cancelled + " cancelling=" + result.cancelling);
+      } catch (err) { log("取消失败", err.message); }
+    });
+    $("version").addEventListener("input", () => {
+      const version = $("version").value.trim();
+      $("version-warn").hidden = version === "v1" || version === "";
+    });
+    $("method").addEventListener("change", () => {
+      if ($("method").value === "pxdesign" && $("model").value.indexOf("protenix") === 0) $("model").value = "preview";
+      if ($("method").value === "protenix" && $("model").value === "preview") $("model").value = "protenix_base_default_v1.0.0";
+    });
+
+    async function boot() {
+      try {
+        const response = await fetch("/api/config", { headers: { Accept: "application/json" } });
+        if (response.ok) {
+          const config = await response.json();
+          if (config && (config.jsonRpcEndpoint || (config.methods && config.methods.length))) {
+            state.hasProxy = true;
+            state.config = config;
+            if (config.jsonRpcEndpoint) $("rpc-url").value = config.jsonRpcEndpoint.replace(/\/?$/, "/");
+            if (config.mcpEndpoint) $("mcp-url").value = config.mcpEndpoint.replace(/\/?$/, "/");
+            if (config.webSocketEndpoint) $("ws-url").value = config.webSocketEndpoint;
+            if (config.grpcEndpoint) $("grpc-url").value = config.grpcEndpoint;
+            const names = (config.methods || []).map((item) => item.name);
+            const needed = ["protenix", "task.get", "task.artifacts", "task.artifact"];
+            const missing = needed.filter((name) => !names.includes(name));
+            $("host-note").innerHTML = missing.length
+              ? ("已位于 test_ui，将经 <code>/api/proxy</code> 调用本机回环协议。方法表缺少：" + missing.join(", "))
+              : "已位于 test_ui 同源页。协议探测走 <code>/api/proxy</code>；方法表已包含 protenix / task.get / task.artifacts / task.artifact。也可改用上方的通用控制台逐项调用。";
+            return;
+          }
+        }
+      } catch (_) {}
+      $("host-note").innerHTML = "未检测到 test_ui 代理。请把本页放到服务的 <code>/flow_debug.html</code> 打开，或接受浏览器可能拦截跨源 JSON-RPC。gRPC 只能经 test_ui 代理。";
+    }
+    boot();
+    tick();
+  })();
+  </script>
+</body>
+</html>
