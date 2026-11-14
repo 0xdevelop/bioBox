@@ -31,6 +31,8 @@
 
 其中 `result-manifest.json` 枚举真实 CIF 与置信度 JSON 的绝对路径，不含凭证。前端可导入该 CIF 做优先打样，并明确标注“真实引擎烟测结果”。临时证据可删除，不是生产数据存储契约。
 
-**尚无浏览器取件 API**：result 的路径是服务器本地文件路径，不是 URL，不能直接 fetch。现在不得把这些路径当公共下载链接，也不要暴露任意路径读文件。下一片需基于 task 属主与输出清单提供受控产物读取，再让远端 HTML 自动加载。独立 HTML 仅填 URL/key 的最终验收尚未完成。
+已完成任务可用同一入口调用 `task.artifacts`（arguments `{task_id}`）拿到相对路径清单，再用 `task.artifact`（`{task_id,path}`）取 base64 内容。只含作业目录内允许的输出/日志，不含 `input/`，也不返回服务器绝对路径。`task.get` 的 `result.job_dir` / `out_dir` / `log_path` 仍是本机路径，不能直接 fetch，也不要当公共下载链接。
+
+独立 HTML 仅填 URL/API key 的第四阶段验收尚未完成；前端应按上述方法加载真实产物，不能用随机进度或伪造 CIF 冒充计算。show_yeah 仍只作视觉效果参考，不在本仓改造。
 
 **版本边界**：本轮只验证 v1/base_default_v1.0.0。现有 version 字段并未完成 v1/v2 独立 runtime 选择，v2 缺授权权重，不可用参数标签冒充 v2 成功。PXDesign 真任务没有在本轮走 HTTP 重新验证。

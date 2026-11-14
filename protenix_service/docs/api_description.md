@@ -120,7 +120,7 @@ type SupportedMethod struct {
 
 `InputSchema` 只用于 MCP `tools/list` 描述 `arguments`，不是 Ability 的业务执行参数。
 
-`Async` 是后端注册方法时设置的执行语义，不属于前端参数，也不进入 `InputSchema`。默认值 `false` 同步调用 `Execute`；长任务设为 `true` 后由统一受理将输入写入主关系库（本实例 SQLite）持久化排队区并立即返回 `task_id`，Policy 再按空闲执行名额认领任务，并按方法名查回同一个 `Execute`。调用方通过 `task.get` / `task.list` 查询状态与结果，queued/running 任务均可通过 `task.cancel` 请求取消；running 返回 cancelling，清理完成后查询终态。
+`Async` 是后端注册方法时设置的执行语义，不属于前端参数，也不进入 `InputSchema`。默认值 `false` 同步调用 `Execute`；长任务设为 `true` 后由统一受理将输入写入主关系库（本实例 SQLite）持久化排队区并立即返回 `task_id`，Policy 再按空闲执行名额认领任务，并按方法名查回同一个 `Execute`。调用方通过 `task.get` / `task.list` 查询状态与结果，queued/running 任务均可通过 `task.cancel` 请求取消；running 返回 cancelling，清理完成后查询终态。已完成任务的结构文件等产物经 `task.artifacts` / `task.artifact` 按属主受控读取（相对路径 + base64），不要把 `result` 里的本机绝对路径当成浏览器下载地址。
 
 `APIExecuter` 是唯一执行入口，但不维护业务 `switch`。它统一从外层 `method`、`params` 提取业务方法名和 `arguments`，完成可选编解码后，从有序方法目录取得注册项并调用该项的 `Execute`。方法描述和执行函数不得再维护两份映射。
 

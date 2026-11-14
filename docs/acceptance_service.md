@@ -1,3 +1,11 @@
+# 最新状态：受控产物取件（2026-11-15 00:04 Asia/Singapore UTC+8）
+
+本节补充「尚无浏览器取件 API」的过时边界。`task.get` 的本机路径仍不可直接 fetch；属主可通过 `task.artifacts` / `task.artifact` 列出并读取隔离作业目录内允许的产物。
+
+- 新方法走统一 `tools/call`，功能名固定，不放进 URL。非 Public，需 `Authorization: Bearer ptxk_…`（或同等已准入凭证）。
+- 作业根目录必须等于配置的 `cli_cfg.work_root` + `task_id`；只返回相对路径；排除 `input/`；允许 `.cif/.pdb/.json/.log/.txt`；不跟随符号链接；单文件 32MiB。
+- 已测：隔离 HTTP fixture（短脚本写 CIF/JSON，不跑 GPU）属主列出并成功读取 CIF；无凭证、伪造 `ptxk_`、其他用户、路径穿越、输入目录与非允许扩展均拒绝。`go test ./ability/ability_task ./api/api_jsonRPC`、定向 `-race` 与 `go build` 通过。未把官方 20 残基 CIF 再跑一遍取件，也未完成自包含 HTML / test_ui 浏览器验收。
+
 # 最新状态：SQLite 服务接线（2026-11-14 UTC+8）
 
 本节覆盖后文历史切片「必须启用 MySQL / 缺 Resend 不能推进算法服务 / 不接 running 取消」的过时结论。旧日志仅为历史，不是现行约束。

@@ -111,6 +111,29 @@ func LoadAPIMethods() {
 		),
 		Execute: TaskCancel,
 	})
+	api_supported_methods.AddMethod(&api_supported_methods.SupportedMethod{
+		Name:        MethodTaskArtifacts,
+		Description: "列出我的已完成任务在隔离作业目录内的产物（相对路径，不含原始输入）",
+		InputSchema: api_auth_common.InputSchema(
+			map[string]interface{}{
+				"task_id": api_auth_common.StringSchema("", 36, 36),
+			},
+			"task_id",
+		),
+		Execute: TaskArtifacts,
+	})
+	api_supported_methods.AddMethod(&api_supported_methods.SupportedMethod{
+		Name:        MethodTaskArtifact,
+		Description: "读取我的已完成任务的单个产物内容（base64，仅限作业目录内允许的文件）",
+		InputSchema: api_auth_common.InputSchema(
+			map[string]interface{}{
+				"task_id": api_auth_common.StringSchema("", 36, 36),
+				"path":    api_auth_common.StringSchema("", 1, artifactMaxPathLength),
+			},
+			"task_id", "path",
+		),
+		Execute: TaskArtifact,
+	})
 }
 
 // AcceptAsyncTask 是 Async 方法的统一受理：写入持久化排队区并返回 task_id。

@@ -8,6 +8,8 @@
     - [3.1. task.get](#31-taskget)
     - [3.2. task.list](#32-tasklist)
     - [3.3. task.cancel](#33-taskcancel)
+    - [3.4. task.artifacts](#34-taskartifacts)
+    - [3.5. task.artifact](#35-taskartifact)
 - [4. 数据与并发纪律](#4-数据与并发纪律)
 - [5. 验收边界](#5-验收边界)
 - [6. 实现进度](#6-实现进度)
@@ -111,6 +113,28 @@ stateDiagram-v2
 
 - queued 原子置 done/cancelled；running 持久化 cancel_requested 并返回 cancelling，Execute/进程组退出后落 done/cancelled；终态拒绝。
 
+## 3.4. task.artifacts
+
+列出我的已完成任务在隔离作业目录内的可下载产物。
+
+```json
+{ "task_id": "b3f11655-08df-458f-aa8d-aaa02a20bd51" }
+```
+
+- 所有权与 `task.get` 相同；未完成、无结果或作业目录不可用时返回空列表。
+- 只返回相对 `job_dir` 的路径（`.cif` / `.pdb` / `.json` / `.log` / `.txt`），不返回服务器绝对路径，不列出 `input/` 下的原始输入，不跟随符号链接。
+
+## 3.5. task.artifact
+
+读取我的已完成任务的单个产物内容。
+
+```json
+{ "task_id": "b3f11655-08df-458f-aa8d-aaa02a20bd51", "path": "output/pred.cif" }
+```
+
+- `path` 必须是 `task.artifacts` 列出的相对路径；越权、越界、符号链接、超限或非允许类型一律拒绝。
+- 成功返回 `encoding=base64` 的 `content`，以及 `kind` / `size` / `content_type`。单文件上限 32MiB。
+
 # 4. 数据与并发纪律
 
 - **认领**：SQLite 单条条件 `UPDATE … WHERE id=(SELECT … queued … LIMIT 1) AND run_status=queued RETURNING *`，返回行才执行；其他行锁引擎保留事务 SKIP LOCKED（本轮未验）。8 Worker/24 任务实测每条 Execute 一次。
@@ -137,7 +161,8 @@ stateDiagram-v2
 - 多 Worker 并发认领零踩踏（SQLite UPDATE RETURNING），同一任务不被执行两次。
 - 进程杀死后重启，`running` 孤儿任务被重置回 `queued` 并重跑完成。
 - queued/running 属主可取消，running 等进程组清理完成才落终态；终态拒绝。
-- 跨用户 `task.get` / `task.cancel` 被所有权校验拒绝；无属主任务不可查询或取消。
+- 跨用户 `task.get` / `task.cancel` / `task.artifacts` / `task.artifact` 被所有权校验拒绝；无属主任务不可查询、取消或取件。
+- 产物读取必须限制在该任务 `WorkRoot/task_id` 作业目录内；相对路径不得逃逸，不得把服务器本地路径当成下载 URL。
 
 首个真实异步业务方法接入后完成上述端到端验收（仓内禁造演示方法）。
 
@@ -153,6 +178,7 @@ stateDiagram-v2
 - [ ] 🟡 DONE — Policy 按 CPU 倍率填充执行名额（SQLite 原子认领、绝对上限、临时 Worker、panic 归 system_error）。
 - [ ] 🟡 DONE — 未尽之事自愈：`RequeueOrphanedTasks` 经 `policy` 维护大循环每轮侦测（in-flight 防误拉）。
 - [ ] 🟡 DONE — `task.get` / `task.list` / `task.cancel` 带所有权校验接入统一调用链。
+- [x] ✅ ACCEPTED — `task.artifacts` / `task.artifact`：属主列出并读取隔离作业目录产物；跨用户、无凭证、伪造 `ptxk_`、输入目录、扩展名黑名单与路径穿越均拒绝。证据为隔离 HTTP fixture 短脚本，不是官方 GPU 推理取件。
 - [x] ✅ ACCEPTED — Protenix v1 经真实 HTTP Bearer → SQLite → Policy → Execute → 原生小任务，产出 1 CIF；低采样烟测不是科学质量验收。
 - [ ] ⬜ TODO — done 任务的归档/清理策略（保留窗口拍板后作为 `policy` 定期轮询租户实施）。
 - [ ] ⬜ TODO — 任务载荷持久化加密契约（待真实敏感任务出现）。

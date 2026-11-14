@@ -1,4 +1,4 @@
-> 本文件由 `gen_api_docs.sh` 从方法注册表生成（v0.0.1，共 21 个方法），禁止手改；新增方法后重新执行生成。
+> 本文件由 `gen_api_docs.sh` 从方法注册表生成（v0.0.1，共 23 个方法），禁止手改；新增方法后重新执行生成。
 
 # 1. 统一调用方式
 
@@ -734,6 +734,91 @@ MCP 凭证使用 HTTP 头，`tools/list` 只暴露业务入参，不含 `jwt_tok
   },
   "required": [
     "task_id"
+  ],
+  "type": "object"
+}
+```
+
+## 6.4. task.artifacts
+
+列出我的已完成任务在隔离作业目录内的产物（相对路径，不含原始输入）
+
+`arguments` 传参举例（仅含必填字段）：
+
+```json
+{
+  "task_id": "<task_id>"
+}
+```
+
+可选字段：`jwt_token`。
+
+`arguments` JSON Schema（约束说明，非请求体；`required` 数组 = 必填字段清单）：
+
+```json
+{
+  "additionalProperties": false,
+  "properties": {
+    "jwt_token": {
+      "description": "一次只带一种凭证：自签 JWT，或 ptxk_ 前缀 API key（校验不同）。已带 Authorization: Bearer 时省略；显式传入优先于头。",
+      "maxLength": 8192,
+      "minLength": 1,
+      "type": "string"
+    },
+    "task_id": {
+      "maxLength": 36,
+      "minLength": 36,
+      "type": "string"
+    }
+  },
+  "required": [
+    "task_id"
+  ],
+  "type": "object"
+}
+```
+
+## 6.5. task.artifact
+
+读取我的已完成任务的单个产物内容（base64，仅限作业目录内允许的文件）
+
+`arguments` 传参举例（仅含必填字段）：
+
+```json
+{
+  "path": "<path>",
+  "task_id": "<task_id>"
+}
+```
+
+可选字段：`jwt_token`。
+
+`arguments` JSON Schema（约束说明，非请求体；`required` 数组 = 必填字段清单）：
+
+```json
+{
+  "additionalProperties": false,
+  "properties": {
+    "jwt_token": {
+      "description": "一次只带一种凭证：自签 JWT，或 ptxk_ 前缀 API key（校验不同）。已带 Authorization: Bearer 时省略；显式传入优先于头。",
+      "maxLength": 8192,
+      "minLength": 1,
+      "type": "string"
+    },
+    "path": {
+      "maxLength": 1024,
+      "minLength": 1,
+      "type": "string"
+    },
+    "task_id": {
+      "maxLength": 36,
+      "minLength": 36,
+      "type": "string"
+    }
+  },
+  "required": [
+    "task_id",
+    "path"
   ],
   "type": "object"
 }
