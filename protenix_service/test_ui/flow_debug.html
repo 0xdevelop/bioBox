@@ -53,6 +53,9 @@
     pre.log { max-height: 220px; overflow: auto; background: #05080f; border-radius: 8px; padding: 10px; font-size: 11px; color: #c9d7e8; }
     table { width: 100%; border-collapse: collapse; font-size: 12px; }
     th, td { text-align: left; padding: 6px 4px; border-bottom: 1px solid var(--line); }
+    #flow-rail { width: 100%; height: 160px; display: block; background: #05080f; border-radius: 12px; border: 1px solid var(--line); margin-top: 10px; }
+    .flow-rail-wrap { position: relative; margin-top: 10px; }
+    .flow-rail-caption { position: absolute; left: 12px; top: 8px; right: 12px; color: var(--muted); font-size: 11px; pointer-events: none; text-shadow: 0 1px 8px #000; }
     a { color: var(--accent-2); }
   </style>
 </head>
@@ -138,6 +141,10 @@
         <div class="progress-wrap"><div class="progress-bar" id="progress-bar"></div></div>
         <div id="progress-label" class="note">尚未受理</div>
         <ul class="timeline" id="timeline"></ul>
+        <div class="flow-rail-wrap">
+          <canvas id="flow-rail" width="1100" height="220" aria-label="真实任务流程轨道"></canvas>
+          <div class="flow-rail-caption" id="flow-rail-caption">流程轨道只点亮真实事件：探测、受理、task.get 状态、取件和结构上舞台。光纤上的光点表示这些事件的传递，不是推理计算进度。</div>
+        </div>
       </section>
       <section style="margin-top:18px">
         <h2>产物与结构（来自 task.artifact）</h2>
@@ -149,7 +156,7 @@
           <canvas id="stage" width="900" height="720" aria-label="真实产物结构舞台"></canvas>
           <div class="stage-caption" id="stage-caption">尚未加载结构产物</div>
         </div>
-        <p class="note" id="cif-note">CIF 原子来自取回的真实文件；若文件没有原子记录，这里会如实显示，不会用随机点冒充。结构入场只是把已解析的真实坐标呈现到画面上，不是计算进度。</p>
+        <p class="note" id="cif-note">CIF 原子来自取回的真实文件；若文件没有原子记录，这里会如实显示，不会用随机点冒充。结构入场只是把已解析的真实坐标呈现到画面上，不是计算进度。悬停查看残基与原子名称，坐标仍来自产物，不是估算。</p>
         <pre class="log" id="log"></pre>
       </section>
     </div>
@@ -174,6 +181,11 @@
       lastX: 0,
       lastY: 0,
       autoRot: true,
+      hoverAtom: null,
+      hitAtoms: [],
+      flowHubs: {},
+      flowPackets: [],
+      cifCount: null,
     };
 
     function maskSecret(text) {
@@ -383,9 +395,14 @@
       $("progress-bar").style.width = Math.max(0, Math.min(100, progress)) + "%";
       $("progress-label").textContent = "后端上报 progress=" + progress + (task.progress_message ? (" · " + task.progress_message) : "") + "（非估算）";
       const key = [run, process, progress, task.progress_message || ""].join("|");
+      if (task.result && task.result.cif_count != null) state.cifCount = task.result.cif_count;
       if (key !== state.lastStatusKey) {
         state.lastStatusKey = key;
         addTimeline("task.get  " + key);
+        const from = state.flowHubs.submit ? "submit" : (state.flowHubs.queued ? "queued" : (state.flowHubs.running ? "running" : ""));
+        if (run === "queued") markFlow("queued", "wait", "task.get queued", from === "submit" ? "submit" : "");
+        else if (run === "running") markFlow("running", "wait", "task.get running", state.flowHubs.queued ? "queued" : (from === "submit" ? "submit" : ""));
+        else if (run === "done") markFlow("done", process === "success" ? "ok" : "err", "task.get done/" + process, state.flowHubs.running ? "running" : (state.flowHubs.queued ? "queued" : (from === "submit" ? "submit" : "")));
       }
     }
 
@@ -422,8 +439,9 @@
               const element = cols[colOf(idx, "_atom_site.type_symbol")] || "C";
               const name = cols[colOf(idx, "_atom_site.label_atom_id")] || "";
               const seq = Number(cols[colOf(idx, "_atom_site.label_seq_id")]);
+              const chain = cols[colOf(idx, "_atom_site.label_asym_id")] || "";
               if (Number.isFinite(x) && Number.isFinite(y) && Number.isFinite(z)) {
-                atoms.push({ x, y, z, element, name, seq: Number.isFinite(seq) ? seq : 0 });
+                atoms.push({ x, y, z, element, name, seq: Number.isFinite(seq) ? seq : 0, chain });
               }
             }
             continue;
@@ -436,8 +454,9 @@
           const element = (line.slice(76, 78).trim() || line.slice(12, 16).trim()[0] || "C");
           const name = line.slice(12, 16).trim();
           const seq = Number(line.slice(22, 26));
+          const chain = line.slice(21, 22).trim();
           if (Number.isFinite(x) && Number.isFinite(y) && Number.isFinite(z)) {
-            atoms.push({ x, y, z, element, name, seq: Number.isFinite(seq) ? seq : 0 });
+            atoms.push({ x, y, z, element, name, seq: Number.isFinite(seq) ? seq : 0, chain });
           }
         }
       }
@@ -445,6 +464,141 @@
     }
     // PARSE_CIF_END
     const elementColor = { C: "#d7e3f4", N: "#7dd3fc", O: "#fb7185", S: "#fbbf24", P: "#f0abfc", H: "#94a3b8" };
+
+    const FLOW_STEPS = [
+      { id: "probe", title: "探测" },
+      { id: "submit", title: "提交" },
+      { id: "queued", title: "queued" },
+      { id: "running", title: "running" },
+      { id: "done", title: "done" },
+      { id: "artifacts", title: "取件" },
+      { id: "structure", title: "结构" },
+    ];
+    function lightHub(id, kind, label) {
+      const prev = state.flowHubs[id] || {};
+      state.flowHubs[id] = {
+        kind: kind || prev.kind || "ok",
+        label: label || prev.label || "",
+        at: performance.now(),
+        firstAt: prev.firstAt || performance.now(),
+      };
+    }
+    function markFlow(toId, kind, tag, fromId) {
+      const already = state.flowHubs[toId];
+      if (already && already.kind === kind && already.label === (tag || already.label) && !fromId) return;
+      if (fromId && state.flowHubs[fromId] && fromId !== toId) {
+        lightHub(toId, kind, tag);
+        state.flowPackets.push({ from: fromId, to: toId, tag: tag || "", start: performance.now(), dur: 900 });
+      } else {
+        lightHub(toId, kind, tag);
+      }
+    }
+    function flowPoint(index, w, h) {
+      const n = FLOW_STEPS.length;
+      return { x: w * (0.08 + 0.84 * index / (n - 1)), y: h * 0.58 };
+    }
+    function scramble(text, t) {
+      if (t >= 1) return text;
+      const glyphs = "ABCDEFGHJKLMNPQRSTUVWXYZ0123456789";
+      let out = "";
+      const shown = Math.floor(text.length * Math.max(0, t));
+      for (let i = 0; i < text.length; i++) {
+        if (i < shown) out += text[i];
+        else out += glyphs[Math.floor(unitHash(i + 1, Math.floor(t * 20) + 3) * glyphs.length) % glyphs.length];
+      }
+      return out;
+    }
+    function drawFlowRail() {
+      const canvas = $("flow-rail");
+      if (!canvas) return;
+      const ctx = canvas.getContext("2d");
+      const w = canvas.width, h = canvas.height, now = performance.now();
+      ctx.clearRect(0, 0, w, h);
+      ctx.fillStyle = "#05080f";
+      ctx.fillRect(0, 0, w, h);
+      ctx.fillStyle = "rgba(255,255,255,0.018)";
+      for (let y = 0; y < h; y += 4) ctx.fillRect(0, y, w, 1);
+      const pts = FLOW_STEPS.map((_, i) => flowPoint(i, w, h));
+      for (let i = 1; i < pts.length; i++) {
+        const a = pts[i - 1], b = pts[i];
+        const mx = (a.x + b.x) / 2, my = Math.min(a.y, b.y) - 28;
+        ctx.beginPath();
+        ctx.moveTo(a.x, a.y);
+        ctx.quadraticCurveTo(mx, my, b.x, b.y);
+        const lit = state.flowHubs[FLOW_STEPS[i - 1].id] && state.flowHubs[FLOW_STEPS[i].id];
+        ctx.strokeStyle = lit ? "rgba(94,234,212,0.38)" : "rgba(125,211,252,0.18)";
+        ctx.lineWidth = 2;
+        ctx.stroke();
+      }
+      state.flowPackets = state.flowPackets.filter((pkt) => now - pkt.start < pkt.dur + 80);
+      state.flowPackets.forEach((pkt) => {
+        const i0 = FLOW_STEPS.findIndex((step) => step.id === pkt.from);
+        const i1 = FLOW_STEPS.findIndex((step) => step.id === pkt.to);
+        if (i0 < 0 || i1 < 0) return;
+        const a = pts[i0], b = pts[i1];
+        const mx = (a.x + b.x) / 2, my = Math.min(a.y, b.y) - 28;
+        const u = Math.max(0, Math.min(1, (now - pkt.start) / pkt.dur));
+        const inv = 1 - u;
+        const x = inv * inv * a.x + 2 * inv * u * mx + u * u * b.x;
+        const y = inv * inv * a.y + 2 * inv * u * my + u * u * b.y;
+        ctx.beginPath();
+        ctx.fillStyle = "#5eead4";
+        ctx.shadowColor = "#5eead4";
+        ctx.shadowBlur = 12;
+        ctx.arc(x, y, 4.5, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.shadowBlur = 0;
+        if (pkt.tag) {
+          ctx.fillStyle = "#c9d7e8";
+          ctx.font = "11px sans-serif";
+          ctx.fillText(pkt.tag, x + 8, y - 8);
+        }
+      });
+      FLOW_STEPS.forEach((step, i) => {
+        const p = pts[i];
+        const lit = state.flowHubs[step.id];
+        const kind = lit ? lit.kind : "";
+        const color = kind === "err" ? "#fb7185" : (kind === "wait" ? "#fbbf24" : (lit ? "#34d399" : "rgba(125,211,252,0.35)"));
+        const age = lit ? Math.min(1, (now - lit.at) / 400) : 1;
+        ctx.save();
+        ctx.translate(p.x, p.y);
+        ctx.rotate(now * 0.00055 * (lit ? 1 : 0.2));
+        ctx.strokeStyle = color;
+        ctx.lineWidth = lit ? 1.8 : 1;
+        ctx.beginPath();
+        ctx.arc(0, 0, 16, 0, Math.PI * 2);
+        ctx.stroke();
+        for (let k = 0; k < 8; k++) {
+          const ang = (k * Math.PI) / 4;
+          ctx.beginPath();
+          ctx.moveTo(Math.cos(ang) * 12, Math.sin(ang) * 12);
+          ctx.lineTo(Math.cos(ang) * 18, Math.sin(ang) * 18);
+          ctx.stroke();
+        }
+        ctx.restore();
+        ctx.beginPath();
+        ctx.fillStyle = color;
+        ctx.globalAlpha = lit ? 0.9 : 0.35;
+        ctx.arc(p.x, p.y, 4, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.globalAlpha = 1;
+        ctx.fillStyle = lit ? "#e7f2ff" : "#8aa0b8";
+        ctx.font = "12px sans-serif";
+        ctx.textAlign = "center";
+        ctx.fillText(scramble(step.title, age), p.x, p.y + 34);
+        ctx.textAlign = "left";
+      });
+      const bits = [];
+      if (state.taskId) bits.push("task_id=" + state.taskId);
+      bits.push("protocol=" + selectedTransport());
+      if (state.runStatus) bits.push("run_status=" + state.runStatus);
+      if (state.processStatus) bits.push("process_status=" + state.processStatus);
+      if (state.cifCount != null) bits.push("cif_count=" + state.cifCount);
+      if (state.atoms.length) bits.push("atoms=" + state.atoms.length);
+      ctx.fillStyle = "#8aa0b8";
+      ctx.font = "12px sans-serif";
+      ctx.fillText(bits.join(" · ") || "尚未发生可点亮的真实事件", 16, 36);
+    }
     function unitHash(index, salt) {
       const value = Math.sin((index + 1) * 12.9898 + salt * 78.233) * 43758.5453;
       return value - Math.floor(value);
@@ -454,7 +608,7 @@
       const z1 = atom.x * sinY + atom.z * cosY;
       const y2 = atom.y * cosX - z1 * sinX;
       const z2 = atom.y * sinX + z1 * cosX;
-      return { x: x1, y: y2, z: z2, element: atom.element, name: atom.name || "", seq: atom.seq || 0 };
+      return { x: x1, y: y2, z: z2, element: atom.element, name: atom.name || "", seq: atom.seq || 0, chain: atom.chain || "", ox: atom.ox ?? atom.x, oy: atom.oy ?? atom.y, oz: atom.oz ?? atom.z };
     }
     function drawBackdrop(ctx, canvas, now) {
       const w = canvas.width, h = canvas.height;
@@ -491,6 +645,8 @@
         ctx.fillStyle = "#8aa0b8";
         ctx.font = "16px sans-serif";
         ctx.fillText(waiting, 24, canvas.height - 28);
+        state.hitAtoms = [];
+        state.hoverAtom = null;
         return;
       }
       if (state.autoRot && !state.dragging) state.rotY += 0.006;
@@ -506,16 +662,18 @@
         const x = atom.x + Math.cos(ang) * spread;
         const y = atom.y + (unitHash(index, 3) - 0.5) * spread;
         const z = atom.z + Math.sin(ang) * spread;
-        const projected = projectAtom({ x, y, z, element: atom.element, name: atom.name, seq: atom.seq }, cosY, sinY, cosX, sinX);
+        const projected = projectAtom({ x, y, z, element: atom.element, name: atom.name, seq: atom.seq, chain: atom.chain, ox: atom.x, oy: atom.y, oz: atom.z }, cosY, sinY, cosX, sinX);
         maxR = Math.max(maxR, Math.hypot(projected.x, projected.y, projected.z));
         return projected;
       });
       const scale = Math.min(canvas.width, canvas.height) * 0.38 * state.zoom / maxR;
-      const cas = centered.filter((atom) => atom.name === "CA").sort((a, b) => a.seq - b.seq);
+      const cas = centered.filter((atom) => atom.name === "CA").sort((a, b) => (a.chain || "").localeCompare(b.chain || "") || a.seq - b.seq);
       ctx.lineWidth = 1.4;
       for (let i = 1; i < cas.length; i++) {
-        if (cas[i].seq && cas[i - 1].seq && cas[i].seq === cas[i - 1].seq + 1) {
-          ctx.strokeStyle = "rgba(94,234,212," + (0.18 + 0.25 * ease) + ")";
+        if (cas[i].seq && cas[i - 1].seq && cas[i].seq === cas[i - 1].seq + 1 && (cas[i].chain || "") === (cas[i - 1].chain || "")) {
+          const tone = unitHash((cas[i].chain || "A").charCodeAt(0), 4);
+          const g = Math.round(180 + tone * 60);
+          ctx.strokeStyle = "rgba(94," + g + ",212," + (0.18 + 0.25 * ease) + ")";
           ctx.beginPath();
           ctx.moveTo(cx + cas[i - 1].x * scale, cy + cas[i - 1].y * scale);
           ctx.lineTo(cx + cas[i].x * scale, cy + cas[i].y * scale);
@@ -535,10 +693,27 @@
         ctx.shadowBlur = 0;
         ctx.globalAlpha = 1;
       });
-      const caption = "真实原子 " + state.atoms.length + " 个（由产物坐标绘制"
+      state.hitAtoms = centered.slice().sort((a, b) => a.z - b.z).map((atom) => {
+        const depth = (atom.z / maxR + 1) / 2;
+        return { sx: cx + atom.x * scale, sy: cy + atom.y * scale, r: 2.2 + depth * 3.6, atom };
+      });
+      const hover = state.hoverAtom;
+      let caption = "真实原子 " + state.atoms.length + " 个（由产物坐标绘制"
         + (cas.length ? "；CA 连线只按残基序号，不是化学键验证" : "")
         + (arrive < 1 ? "；入场是把已解析坐标放到画面上，不是计算进度" : "")
-        + "）。拖拽旋转，滚轮缩放。";
+        + "）。拖拽旋转，滚轮缩放。悬停查看残基。";
+      if (hover) {
+        caption = "残基 " + (hover.seq || "?") + (hover.chain ? ("/" + hover.chain) : "") + "  " + (hover.name || hover.element)
+          + "  " + hover.element + "  (" + hover.ox.toFixed(2) + ", " + hover.oy.toFixed(2) + ", " + hover.oz.toFixed(2) + ")，坐标来自产物。";
+        const mark = state.hitAtoms.find((hit) => hit.atom === hover) || state.hitAtoms.find((hit) => hit.atom.name === hover.name && hit.atom.seq === hover.seq && hit.atom.chain === hover.chain);
+        if (mark) {
+          ctx.beginPath();
+          ctx.strokeStyle = "#fbbf24";
+          ctx.lineWidth = 1.5;
+          ctx.arc(mark.sx, mark.sy, mark.r + 4, 0, Math.PI * 2);
+          ctx.stroke();
+        }
+      }
       setCaption(caption);
       ctx.fillStyle = "#8aa0b8";
       ctx.font = "13px sans-serif";
@@ -554,13 +729,25 @@
         canvas.setPointerCapture(event.pointerId);
       });
       canvas.addEventListener("pointermove", (event) => {
-        if (!state.dragging) return;
-        const dx = event.clientX - state.lastX;
-        const dy = event.clientY - state.lastY;
-        state.lastX = event.clientX;
-        state.lastY = event.clientY;
-        state.rotY += dx * 0.01;
-        state.rotX = Math.max(-1.2, Math.min(1.2, state.rotX + dy * 0.01));
+        if (state.dragging) {
+          const dx = event.clientX - state.lastX;
+          const dy = event.clientY - state.lastY;
+          state.lastX = event.clientX;
+          state.lastY = event.clientY;
+          state.rotY += dx * 0.01;
+          state.rotX = Math.max(-1.2, Math.min(1.2, state.rotX + dy * 0.01));
+          return;
+        }
+        const rect = canvas.getBoundingClientRect();
+        const x = (event.clientX - rect.left) * (canvas.width / rect.width);
+        const y = (event.clientY - rect.top) * (canvas.height / rect.height);
+        let best = null, bestDist = 16;
+        for (let i = state.hitAtoms.length - 1; i >= 0; i--) {
+          const hit = state.hitAtoms[i];
+          const dist = Math.hypot(hit.sx - x, hit.sy - y);
+          if (dist <= hit.r + 6 && dist < bestDist) { best = hit.atom; bestDist = dist; }
+        }
+        state.hoverAtom = best;
       });
       const stopDrag = () => { state.dragging = false; };
       canvas.addEventListener("pointerup", stopDrag);
@@ -571,7 +758,7 @@
         state.zoom = Math.max(0.35, Math.min(4, next));
       }, { passive: false });
     }
-    function tick() { drawAtoms(); requestAnimationFrame(tick); }
+    function tick() { drawFlowRail(); drawAtoms(); requestAnimationFrame(tick); }
 
     async function loadArtifacts(taskId) {
       const listed = await callSelected("task.artifacts", { task_id: taskId }, true);
@@ -580,6 +767,7 @@
       body.innerHTML = "";
       if (!items.length) {
         body.innerHTML = '<tr><td colspan="4" class="note">没有可列出的产物（任务未完成、无作业目录，或只有 input/）</td></tr>';
+        markFlow("artifacts", "wait", "task.artifacts 空清单", state.flowHubs.done ? "done" : "");
         return;
       }
       items.forEach((item) => {
@@ -594,6 +782,7 @@
         tr.appendChild(td);
         body.appendChild(tr);
       });
+      markFlow("artifacts", "ok", "task.artifacts", state.flowHubs.done ? "done" : "");
       const prefer = items.find((item) => item.kind === "cif" || (item.path || "").endsWith(".cif")) || items[0];
       if (prefer) await fetchArtifact(taskId, prefer.path, prefer.kind);
     }
@@ -607,8 +796,9 @@
         state.atoms = parseCIF(bytes);
         state.arriveAt = performance.now();
         state.autoRot = true;
+        markFlow("structure", state.atoms.length ? "ok" : "wait", state.atoms.length ? "task.artifact" : "无原子", state.flowHubs.artifacts ? "artifacts" : "");
         $("cif-note").textContent = state.atoms.length
-          ? ("已从 " + path + " 解析 " + state.atoms.length + " 个原子。这是服务返回的文件，不是随机结构。入场动画只移动这些真实坐标。")
+          ? ("已从 " + path + " 解析 " + state.atoms.length + " 个原子。这是服务返回的文件，不是随机结构。入场动画只移动这些真实坐标。悬停查看残基。")
           : (path + " 没有 ATOM/_atom_site 坐标，已如实显示为空，未用随机点填充。");
       } else {
         $("cif-note").textContent = path + " 不是结构文件。预览：\n" + bytes.slice(0, 400);
@@ -688,16 +878,20 @@
           ["grpc-task.list", () => callGRPC("task.list", {}, true)]
         );
       }
+      let ok = 0, fail = 0;
       for (const [label, fn] of trials) {
         try {
           const value = await fn();
           setChip($("proto-chips"), "chip-" + label, label + " 成功", "ok");
           log(label + " 成功", value);
+          ok += 1;
         } catch (err) {
           setChip($("proto-chips"), "chip-" + label, label + " 失败", "err");
           log(label + " 失败", err.message);
+          fail += 1;
         }
       }
+      markFlow("probe", ok ? "ok" : "err", ok ? ("探测成功 " + ok) : ("探测失败 " + fail));
     });
     $("btn-submit").addEventListener("click", async () => {
       try {
@@ -707,8 +901,10 @@
         const accepted = await callSelected(method, args, true);
         if (!accepted.task_id) throw new Error("受理结果没有 task_id");
         addTimeline("已受理 " + accepted.task_id + " run_status=" + (accepted.run_status || "queued") + "（这不是结构完成）");
+        markFlow("submit", "ok", "已受理", state.flowHubs.probe ? "probe" : "");
         await followTask(accepted.task_id);
       } catch (err) {
+        markFlow("submit", "err", "提交失败", state.flowHubs.probe ? "probe" : "");
         log("提交失败", err.message);
       }
     });

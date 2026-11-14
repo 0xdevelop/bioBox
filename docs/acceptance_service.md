@@ -1,3 +1,14 @@
+# 最新状态：调试页真实流程轨道（2026-11-15 06:55 Asia/Singapore UTC+8）
+
+本节按用户要求探索炫酷但真实的流程展示：只借鉴 show_yeah 的光纤、光点与枢纽准星，不改造该仓，也不用随机进度或伪造 CIF 冒充计算。这不是 Linux Chrome 再点击、官方 GPU 设计、长期服务或生产级前端。
+
+- `flow_debug.html` 在真实状态区增加流程轨道。枢纽固定为探测、提交、queued、running、done、取件、结构；只有对应的真实事件发生才点亮（协议探测、受理、`task.get` 状态变化、`task.artifacts` / `task.artifact`）。光纤上的光点只表示这些事件的传递，进度条仍只反映后端 `progress`。
+- 结构舞台在既有真实坐标、元素着色、CA 描线和入场之外，增加按链着色的 CA 连线（仍只按残基序号，不是化学键验证），以及悬停查看残基/原子名称与产物坐标。
+- `parseCIF` 额外读取 mmCIF `label_asym_id` 与经典 PDB 链列，不改变既有 168 原子 / 20 个 CA / 坐标回归。页面仍禁止 `Math.random()` 与伪造进度。
+- 已测：`go test ./test_ui ./api/api_jsonRPC` 与 `go build` 退出码见本轮记录。未装 MySQL/Redis，未跑 GPU，未启长期服务，未改本机 `config_local.yaml`，未改 `build_srcs`、三仓、show_yeah 或 Task 契约。模板远端仍为 `ebef2c6`，不是主动锁旧版。仍无 ego-browser / Playwright MCP，故未对本次视觉改动再做 Linux Chrome 点击。v2 runtime 仍缺授权权重。
+
+---
+
 # 最新状态：PXDesign 短脚本 HTTP 真任务（2026-11-15 05:55 Asia/Singapore UTC+8）
 
 本节补上调试页选项此前标明的「pxdesign 本机 HTTP 真任务尚未重验」。这是隔离夹具上的短脚本任务流证据，**不是**官方 GPU 设计、长期服务、Linux Chrome 再点击，也不是 Playwright MCP / ego-browser，更不是生产级或科学质量声明。
