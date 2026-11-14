@@ -1,3 +1,13 @@
+# 最新状态：调试页真实历史任务列表（2026-11-15 07:54 Asia/Singapore UTC+8）
+
+本节补上调试页此前只把 `task.list` 用在协议探测、需手工粘贴 `task_id` 才能回顾历史的缺口。这不是 Linux Chrome 再点击、官方 GPU 设计、长期服务或生产级前端。
+
+- `flow_debug.html` 增加「历史任务」列表。探测成功时用所选协议那一次真实 `task.list` 结果渲染；也可手动刷新，或在受理、终态、取消后按所选协议再拉一次。表格展示服务返回的创建时间、方法、`run_status`、`process_status`、后端 `progress` 和 `task_id`，点击一行复用已有「跟踪该任务」路径取回真实产物。该 key 下没有任务就空着，不编造历史或进度。
+- 未改 Task 契约、取件规则或流程轨道语义。页面仍禁止 `Math.random()` 与伪造进度。`168` 原子 / `20` 个 CA 回归未改。
+- 已测：`go test ./test_ui ./api/api_jsonRPC` 与 `go build` 退出码 0。未装 MySQL/Redis，未跑 GPU，未启长期服务，未改本机 `config_local.yaml`（sha256 仍为 `684b906075c72cd76806cafd645bb7da9c6ac6b235550b5e77eaf15f0e31bf6c`），未改 `build_srcs`、三仓、show_yeah。模板远端仍为 `ebef2c6`，已 `fetch`/`ls-remote` 确认不是主动锁旧版。仍无 ego-browser / Playwright MCP，故未对本次改动再做 Linux Chrome 点击。v2 runtime 仍缺授权权重。
+
+---
+
 # 最新状态：调试页真实流程轨道（2026-11-15 06:55 Asia/Singapore UTC+8）
 
 本节按用户要求探索炫酷但真实的流程展示：只借鉴 show_yeah 的光纤、光点与枢纽准星，不改造该仓，也不用随机进度或伪造 CIF 冒充计算。这不是 Linux Chrome 再点击、官方 GPU 设计、长期服务或生产级前端。

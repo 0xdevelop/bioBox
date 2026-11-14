@@ -73,6 +73,14 @@ func TestFlowDebugPageAndCatalogIncludesArtifactMethods(t *testing.T) {
 		"function drawFlowRail",
 		"function markFlow",
 		"悬停查看残基",
+		"历史任务",
+		"来自所选协议的",
+		`id="history-rows"`,
+		"function renderHistory",
+		"async function loadHistory",
+		`await callSelected("task.list"`,
+		"该 API key 下还没有任务",
+		"探测或刷新后列出；没有任务就空着",
 	} {
 		if !strings.Contains(body, needle) {
 			t.Fatalf("flow_debug.html missing %q", needle)

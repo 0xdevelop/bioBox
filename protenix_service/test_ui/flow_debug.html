@@ -56,6 +56,11 @@
     #flow-rail { width: 100%; height: 160px; display: block; background: #05080f; border-radius: 12px; border: 1px solid var(--line); margin-top: 10px; }
     .flow-rail-wrap { position: relative; margin-top: 10px; }
     .flow-rail-caption { position: absolute; left: 12px; top: 8px; right: 12px; color: var(--muted); font-size: 11px; pointer-events: none; text-shadow: 0 1px 8px #000; }
+    .history-table-wrap { max-height: 280px; overflow: auto; margin-top: 8px; }
+    tr.history-row { cursor: pointer; }
+    tr.history-row:hover { background: rgba(94,234,212,.08); }
+    tr.history-row.current { outline: 1px solid rgba(94,234,212,.35); background: rgba(94,234,212,.06); }
+    #history-rows td:last-child, #history-rows th:last-child { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
     a { color: var(--accent-2); }
   </style>
 </head>
@@ -130,6 +135,28 @@
         <div class="actions">
           <input id="task-id" placeholder="uuid">
           <button id="btn-attach" type="button">跟踪该任务</button>
+        </div>
+      </section>
+      <section style="margin-top:18px">
+        <h2>历史任务</h2>
+        <p class="note" id="history-note">来自所选协议的 <code>task.list</code>，只显示该 API key 属主的真实记录，不编造历史或进度。点击一行即可跟踪该任务并取回真实产物。</p>
+        <div class="actions">
+          <button id="btn-history" type="button">刷新历史</button>
+        </div>
+        <div class="history-table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>创建时间</th>
+                <th>方法</th>
+                <th>run_status</th>
+                <th>process_status</th>
+                <th>progress</th>
+                <th>task_id</th>
+              </tr>
+            </thead>
+            <tbody id="history-rows"><tr><td colspan="6" class="note">探测或刷新后列出；没有任务就空着</td></tr></tbody>
+          </table>
         </div>
       </section>
     </div>
@@ -833,10 +860,72 @@
         N_step: Number($("step").value || 2),
       }, extra);
     }
+    function shortTaskId(id) {
+      if (!id) return "";
+      return id.length > 12 ? id.slice(0, 8) + "…" : id;
+    }
+    function highlightHistory(taskId) {
+      document.querySelectorAll("#history-rows tr.history-row").forEach((row) => {
+        row.classList.toggle("current", row.getAttribute("data-task-id") === taskId);
+      });
+    }
+    function renderHistory(tasks, note) {
+      const rows = $("history-rows");
+      const items = Array.isArray(tasks) ? tasks : [];
+      $("history-note").textContent = (note || "来自所选协议的 task.list") + " · " + items.length + " 条（服务原样，不编造）";
+      rows.innerHTML = "";
+      if (!items.length) {
+        rows.innerHTML = '<tr><td colspan="6" class="note">该 API key 下还没有任务，或本次 list 为空</td></tr>';
+        return;
+      }
+      for (const task of items) {
+        const tr = document.createElement("tr");
+        tr.className = "history-row" + (task.task_id === state.taskId ? " current" : "");
+        if (task.task_id) tr.setAttribute("data-task-id", task.task_id);
+        tr.title = task.task_id || "";
+        const cells = [
+          task.created_at || "",
+          task.method || "",
+          task.run_status || "",
+          task.process_status || "",
+          (task.progress == null || task.progress === "") ? "" : String(task.progress),
+          shortTaskId(task.task_id || "")
+        ];
+        for (const value of cells) {
+          const td = document.createElement("td");
+          td.textContent = value;
+          tr.appendChild(td);
+        }
+        tr.addEventListener("click", () => {
+          if (!task.task_id) return;
+          $("task-id").value = task.task_id;
+          followTask(task.task_id).catch((err) => log("跟踪失败", err.message));
+        });
+        rows.appendChild(tr);
+      }
+    }
+    async function loadHistory(note) {
+      if (!credential()) {
+        renderHistory([], "未填写 API key，不能读取属主历史");
+        return null;
+      }
+      try {
+        const result = await callSelected("task.list", {}, true);
+        const tasks = result && Array.isArray(result.tasks) ? result.tasks : [];
+        renderHistory(tasks, note || ("来自 " + selectedTransport() + " 的 task.list"));
+        log("历史任务 " + selectedTransport(), { count: tasks.length });
+        return tasks;
+      } catch (err) {
+        renderHistory([], "task.list 失败：" + err.message);
+        log("历史任务读取失败", err.message);
+        return null;
+      }
+    }
     async function followTask(taskId) {
       state.taskId = taskId;
       $("task-id").value = taskId;
       $("btn-cancel").disabled = false;
+      highlightHistory(taskId);
       addTimeline("开始跟踪 " + taskId + " via " + selectedTransport());
       if (state.pollTimer) clearInterval(state.pollTimer);
       const poll = async () => {
@@ -851,6 +940,7 @@
             log("任务终态", { process_status: task.process_status, result: task.result });
             if (task.process_status === "success") await loadArtifacts(taskId);
             else $("artifact-rows").innerHTML = '<tr><td colspan="4" class="note">终态不是 success，未自动取件</td></tr>';
+            await loadHistory("终态后刷新");
           }
         } catch (err) {
           log("轮询失败", err.message);
@@ -879,12 +969,14 @@
         );
       }
       let ok = 0, fail = 0;
+      let listed = null;
       for (const [label, fn] of trials) {
         try {
           const value = await fn();
           setChip($("proto-chips"), "chip-" + label, label + " 成功", "ok");
           log(label + " 成功", value);
           ok += 1;
+          if (label === selectedTransport() + "-task.list") listed = value;
         } catch (err) {
           setChip($("proto-chips"), "chip-" + label, label + " 失败", "err");
           log(label + " 失败", err.message);
@@ -892,6 +984,12 @@
         }
       }
       markFlow("probe", ok ? "ok" : "err", ok ? ("探测成功 " + ok) : ("探测失败 " + fail));
+      if (listed) {
+        const tasks = listed.tasks || [];
+        renderHistory(tasks, "探测经 " + selectedTransport() + " 的 task.list");
+      } else if (credential()) {
+        renderHistory([], "所选协议的 task.list 探测未成功，未写入历史");
+      }
     });
     $("btn-submit").addEventListener("click", async () => {
       try {
@@ -902,11 +1000,15 @@
         if (!accepted.task_id) throw new Error("受理结果没有 task_id");
         addTimeline("已受理 " + accepted.task_id + " run_status=" + (accepted.run_status || "queued") + "（这不是结构完成）");
         markFlow("submit", "ok", "已受理", state.flowHubs.probe ? "probe" : "");
+        await loadHistory("受理后刷新");
         await followTask(accepted.task_id);
       } catch (err) {
         markFlow("submit", "err", "提交失败", state.flowHubs.probe ? "probe" : "");
         log("提交失败", err.message);
       }
+    });
+    $("btn-history").addEventListener("click", async () => {
+      await loadHistory("手动刷新");
     });
     $("btn-attach").addEventListener("click", async () => {
       const id = $("task-id").value.trim();
@@ -919,6 +1021,7 @@
         const result = await callSelected("task.cancel", { task_id: state.taskId }, true);
         log("取消返回", result);
         addTimeline("task.cancel cancelled=" + result.cancelled + " cancelling=" + result.cancelling);
+        await loadHistory("取消后刷新");
       } catch (err) { log("取消失败", err.message); }
     });
     $("version").addEventListener("input", () => {
