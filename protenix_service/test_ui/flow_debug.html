@@ -76,7 +76,14 @@
         <input id="grpc-url" placeholder="grpc://127.0.0.1:13005" autocomplete="off">
         <label for="api-key">API key</label>
         <input id="api-key" type="password" placeholder="ptxk_…" autocomplete="off">
-        <p class="note">缺 Resend 时可用隔离测试签发的 <code>ptxk_</code>，不要绕过鉴权，也不要把 key 发到非本机地址。</p>
+        <label for="transport">任务流协议（提交、跟踪、取件、取消都走这项；功能名固定，不放进 URL）</label>
+        <select id="transport">
+          <option value="jsonrpc" selected>JSON-RPC</option>
+          <option value="mcp">MCP</option>
+          <option value="websocket">WebSocket</option>
+          <option value="grpc">gRPC（须经 test_ui /api/proxy）</option>
+        </select>
+        <p class="note">缺 Resend 时可用隔离测试签发的 <code>ptxk_</code>，不要绕过鉴权，也不要把 key 发到非本机地址。探测在已填 key 时会对四种协议各调一次 <code>task.list</code>，不提交新任务。</p>
         <div class="actions">
           <button class="primary" id="btn-probe" type="button">探测协议</button>
         </div>
@@ -255,7 +262,11 @@
         "Mcp-Method": "tools/call",
         "Mcp-Name": name,
       };
-      if (useAuth) headers.Authorization = "Bearer " + credential();
+      if (useAuth) {
+        const key = credential();
+        if (!key) throw new Error("需要 API key");
+        headers.Authorization = "Bearer " + key;
+      }
       const body = toolBody(name, args);
       const url = $("mcp-url").value.trim();
       if (state.hasProxy) {
@@ -269,7 +280,11 @@
     async function callWebSocket(name, args, useAuth) {
       const url = $("ws-url").value.trim();
       const headers = {};
-      if (useAuth) headers.Authorization = "Bearer " + credential();
+      if (useAuth) {
+        const key = credential();
+        if (!key) throw new Error("需要 API key");
+        headers.Authorization = "Bearer " + key;
+      }
       const body = toolBody(name, args);
       if (state.hasProxy) {
         const proxied = await viaProxy("websocket", url, "GET", headers, body);
@@ -290,7 +305,11 @@
     async function callGRPC(name, args, useAuth) {
       if (!state.hasProxy) throw new Error("浏览器不能直连 gRPC，请经 test_ui 打开本页");
       const headers = {};
-      if (useAuth) headers.authorization = "Bearer " + credential();
+      if (useAuth) {
+        const key = credential();
+        if (!key) throw new Error("需要 API key");
+        headers.authorization = "Bearer " + key;
+      }
       const body = JSON.stringify({
         requestId: generateId(),
         method: "tools/call",
@@ -303,6 +322,25 @@
         return parseToolPayload(JSON.stringify({ result }));
       }
       return result;
+    }
+    function selectedTransport() {
+      return ($("transport").value || "jsonrpc").toLowerCase();
+    }
+    async function callSelected(name, args, useAuth) {
+      const transport = selectedTransport();
+      if (useAuth && !credential()) throw new Error("需要 API key");
+      switch (transport) {
+        case "mcp":
+          return callMCP(name, args, useAuth);
+        case "websocket":
+          return callWebSocket(name, args, useAuth);
+        case "grpc":
+          return callGRPC(name, args, useAuth);
+        case "jsonrpc":
+          return callJSONRPC(name, args, useAuth);
+        default:
+          throw new Error("不支持的任务流协议: " + transport);
+      }
     }
 
     function setChip(container, id, label, kind) {
@@ -525,7 +563,7 @@
     function tick() { drawAtoms(); requestAnimationFrame(tick); }
 
     async function loadArtifacts(taskId) {
-      const listed = await callJSONRPC("task.artifacts", { task_id: taskId }, true);
+      const listed = await callSelected("task.artifacts", { task_id: taskId }, true);
       const items = listed.artifacts || [];
       const body = $("artifact-rows");
       body.innerHTML = "";
@@ -549,7 +587,7 @@
       if (prefer) await fetchArtifact(taskId, prefer.path, prefer.kind);
     }
     async function fetchArtifact(taskId, path, kind) {
-      const got = await callJSONRPC("task.artifact", { task_id: taskId, path }, true);
+      const got = await callSelected("task.artifact", { task_id: taskId, path }, true);
       if (got.encoding !== "base64" || !got.content) throw new Error("产物未按 base64 返回");
       const bytes = atob(got.content);
       log("读取产物 " + path, { kind: got.kind || kind, size: got.size, content_type: got.content_type });
@@ -598,11 +636,11 @@
       state.taskId = taskId;
       $("task-id").value = taskId;
       $("btn-cancel").disabled = false;
-      addTimeline("开始跟踪 " + taskId);
+      addTimeline("开始跟踪 " + taskId + " via " + selectedTransport());
       if (state.pollTimer) clearInterval(state.pollTimer);
       const poll = async () => {
         try {
-          const result = await callJSONRPC("task.get", { task_id: taskId }, true);
+          const result = await callSelected("task.get", { task_id: taskId }, true);
           const task = result.task || result;
           renderStatus(task);
           if (task.run_status === "done") {
@@ -632,7 +670,12 @@
         ["grpc-public", () => callGRPC("test", {}, false)],
       ];
       if (credential()) {
-        trials.push(["jsonrpc-task.list", () => callJSONRPC("task.list", {}, true)]);
+        trials.push(
+          ["jsonrpc-task.list", () => callJSONRPC("task.list", {}, true)],
+          ["mcp-task.list", () => callMCP("task.list", {}, true)],
+          ["websocket-task.list", () => callWebSocket("task.list", {}, true)],
+          ["grpc-task.list", () => callGRPC("task.list", {}, true)]
+        );
       }
       for (const [label, fn] of trials) {
         try {
@@ -649,8 +692,8 @@
       try {
         const args = collectArguments();
         const method = $("method").value;
-        log("提交 " + method, args);
-        const accepted = await callJSONRPC(method, args, true);
+        log("提交 " + method + " via " + selectedTransport(), args);
+        const accepted = await callSelected(method, args, true);
         if (!accepted.task_id) throw new Error("受理结果没有 task_id");
         addTimeline("已受理 " + accepted.task_id + " run_status=" + (accepted.run_status || "queued") + "（这不是结构完成）");
         await followTask(accepted.task_id);
@@ -666,7 +709,7 @@
     $("btn-cancel").addEventListener("click", async () => {
       if (!state.taskId) return;
       try {
-        const result = await callJSONRPC("task.cancel", { task_id: state.taskId }, true);
+        const result = await callSelected("task.cancel", { task_id: state.taskId }, true);
         log("取消返回", result);
         addTimeline("task.cancel cancelled=" + result.cancelled + " cancelling=" + result.cancelling);
       } catch (err) { log("取消失败", err.message); }
@@ -697,7 +740,7 @@
             const missing = needed.filter((name) => !names.includes(name));
             $("host-note").innerHTML = missing.length
               ? ("已位于 test_ui，将经 <code>/api/proxy</code> 调用本机回环协议。方法表缺少：" + missing.join(", "))
-              : "已位于 test_ui 同源页。协议探测走 <code>/api/proxy</code>；方法表已包含 protenix / task.get / task.artifacts / task.artifact。也可改用上方的通用控制台逐项调用。";
+              : "已位于 test_ui 同源页。协议探测与所选任务流协议走 <code>/api/proxy</code>；方法表已包含 protenix / task.get / task.artifacts / task.artifact。提交、跟踪、取件和取消使用上方选择的协议，不是只走 JSON-RPC。也可改用通用控制台逐项调用。";
             return;
           }
         }

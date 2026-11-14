@@ -1,3 +1,15 @@
+# 最新状态：调试页按所选协议走真实任务流（2026-11-15 02:56 Asia/Singapore UTC+8）
+
+本节补上第四阶段调试页此前只把提交、轮询、取件和取消写死在 JSON-RPC 上的缺口，仍**不是** Linux 真浏览器端到端验收，也不是生产级前端。
+
+- `flow_debug.html` 增加「任务流协议」选择：JSON-RPC / MCP / WebSocket / gRPC。`protenix`/`pxdesign`、`task.get`、`task.artifacts`、`task.artifact`、`task.cancel` 都经 `callSelected` 走所选协议；功能名固定，版本和模型仍作为参数，不进 URL。gRPC 仍须经已有 test_ui `/api/proxy`，浏览器不能直连。
+- 「探测协议」在已填 `ptxk_` 时，对四种协议各调一次 `task.list`（不提交新任务、不跑推理）。无 key 时仍只探测 Public `test`。
+- 已测：`go test ./test_ui ./api/api_jsonRPC` 与 `go build` 退出码 0。页面回归继续锁定官方 mmCIF 解析与禁止随机进度。本轮未再跑 GPU，未改 `config_local.yaml`，未启动长期服务，未改 show_yeah、`build_srcs`、三仓或 Task 受理契约。
+- 浏览器层仍缺失：本机无 `ego-browser`，Cursor `mcp.json` 仍只有 xjb-code，没有 Playwright MCP。按 web-browser-debug 未自行启动其他浏览器、未新装 MCP，因此仍没有 Linux 真浏览器点击验收，也没有在运行中的服务上点选四种协议做实调用。
+- PXDesign HTTP 真任务与 v2 runtime 仍未在本页重验；`version=v2` 不能当成 v2 跑通。
+
+---
+
 # 最新状态：真实 mmCIF 结构展示与解析修正（2026-11-15 01:56 Asia/Singapore UTC+8）
 
 本节补上第四阶段调试页对官方 Protenix CIF 的结构呈现，仍**不是** Linux 真浏览器端到端验收，也不是生产级前端或科学质量声明。

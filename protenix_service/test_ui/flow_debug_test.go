@@ -52,12 +52,32 @@ func TestFlowDebugPageAndCatalogIncludesArtifactMethods(t *testing.T) {
 		"结构入场只是把已解析的真实坐标呈现到画面上，不是计算进度",
 		"CA 连线只按残基序号，不是化学键验证",
 		"没有结构就不用随机点冒充计算",
+		"任务流协议",
+		"function selectedTransport",
+		"async function callSelected",
+		"mcp-task.list",
+		"websocket-task.list",
+		"grpc-task.list",
+		`await callSelected("task.get"`,
+		`await callSelected("task.artifacts"`,
+		`await callSelected("task.artifact"`,
+		`await callSelected("task.cancel"`,
+		"await callSelected(method, args, true)",
 	} {
 		if !strings.Contains(body, needle) {
 			t.Fatalf("flow_debug.html missing %q", needle)
 		}
 	}
-	for _, banned := range []string{"Math.random()", "fakeProgress", "模拟进度百分比"} {
+	for _, banned := range []string{
+		"Math.random()",
+		"fakeProgress",
+		"模拟进度百分比",
+		`await callJSONRPC("task.get"`,
+		`await callJSONRPC("task.artifacts"`,
+		`await callJSONRPC("task.artifact"`,
+		`await callJSONRPC("task.cancel"`,
+		"await callJSONRPC(method, args, true)",
+	} {
 		if strings.Contains(body, banned) {
 			t.Fatalf("flow_debug.html should not contain %q", banned)
 		}
