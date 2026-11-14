@@ -1,3 +1,18 @@
+# 最新状态：Linux Chrome 点击验收 /flow_debug.html（2026-11-15 04:57 Asia/Singapore UTC+8）
+
+本节补上第四阶段「自包含调试页尚无 Linux 真浏览器点击证据」的缺口。这是短生命周期隔离夹具上的 Linux Google Chrome 点击证据，**不是**长期服务、GPU 预测、PXDesign HTTP 真任务，也不是 Playwright MCP / ego-browser，更不是生产级前端。
+
+- 浏览器层：仍无 `ego-browser`；spark-901f `~/.cursor/mcp.json` 仍只有 xjb-code，没有 Playwright MCP，未改该配置、未新装 MCP。本轮使用已安装的 Google Chrome 157.0.8103.38，经临时目录中的 `playwright-core` 以 headless、独立上下文驱动（`executablePath=/usr/bin/google-chrome-stable`），不使用用户 Chrome 配置目录。
+- 夹具：同一源 test_ui 处理器（`/flow_debug.html`、`/api/config`、`/api/proxy`）加上回环 JSON-RPC / MCP / WebSocket / gRPC，隔离 SQLite，经 User API 登录并签发 `ptxk_`（凭证文件权限 0600，验毕删除，未写入结果文件）。短脚本 CLI 复制官方 20 残基烟测 CIF（sha256 `19ce6300c6e452f512d120117376d6b22c58f768d83ad1483451c6d6f859f3ac`），不跑 GPU。
+- 第二次点击（收紧等待条件后）在页面上确认：同源启动并自动填入四协议地址；探测八个芯片全部成功（四种协议 Public `test` + 已填 key 的 `task.list`）；对已成功任务 `9dadad90-b3be-402b-846a-64007f415eed` 分别经 JSON-RPC / MCP / WebSocket / gRPC 跟踪并取件，每次列出 `output/pred.cif`（17899 字节）并绘制 168 个真实原子与 CA 描线，进度为后端上报 100；再经 MCP 提交新任务 `d7ddf46a-e407-4e63-a80f-223b4f6146cc`，跟进到 `run_status=done` / `process_status=success` / `progress=100`，产物目录对应该新 task_id，舞台再次解析 168 个原子。
+- 第一次点击的提交等待过宽，截图时新任务仍是 queued，舞台原子来自上一任务，该次提交证据作废，保留在 `result-first-pass-too-loose-wait.json`。
+- 捕获到的 `127.0.0.1` 响应均为 HTTP 200（页面、`/api/config`、`/api/proxy`）。凭证在代理 JSON 体内传递，不在外层 Authorization 头。控制台有一条未匹配到上述响应的 404 资源加载失败，以及密码框未包在 form 中的提示；无 page error。
+- 原始记录：`tmp/handoff-followup/phase4-browser-click-20261115/`（SUMMARY.txt、result.json、shots/；不含密钥）。验毕临时端口已关，未 enable 服务单元，未改本机 `config_local.yaml`（sha256 仍为 `684b906075c72cd76806cafd645bb7da9c6ac6b235550b5e77eaf15f0e31bf6c`）。
+- 测试辅助：live protocol fixture 补挂 `GET /api/config`，否则调试页不能走同源 `hasProxy` 启动路径；新增可选 `TestHoldLiveProtocolFixtureForBrowser`（需 `FLOW_DEBUG_HOLD=1`，默认 `go test` 会跳过）。`go test ./test_ui ./api/api_jsonRPC` 与 `go build` 退出码 0。
+- 未改 `flow_debug.html` 产品代码、show_yeah、`build_srcs`、三仓或 Task 契约。PXDesign HTTP 真任务与 v2 runtime 仍未在本页重验。
+
+---
+
 # 最新状态：调试页按所选协议走真实任务流（2026-11-15 02:56 Asia/Singapore UTC+8）
 
 本节补上第四阶段调试页此前只把提交、轮询、取件和取消写死在 JSON-RPC 上的缺口，仍**不是** Linux 真浏览器端到端验收，也不是生产级前端。

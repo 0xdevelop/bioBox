@@ -172,6 +172,7 @@ func newLiveProtocolFixture(t *testing.T, binary, root string) *liveProtocolFixt
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /api/proxy", handleProxy)
 	mux.HandleFunc("GET /flow_debug.html", handleFlowDebugPage)
+	mux.HandleFunc("GET /api/config", handleConfig)
 	proxy := httptest.NewServer(mux)
 	t.Cleanup(proxy.Close)
 
