@@ -33,6 +33,6 @@
 
 已完成任务可用同一入口调用 `task.artifacts`（arguments `{task_id}`）拿到相对路径清单，再用 `task.artifact`（`{task_id,path}`）取 base64 内容。只含作业目录内允许的输出/日志，不含 `input/`，也不返回服务器绝对路径。`task.get` 的 `result.job_dir` / `out_dir` / `log_path` 仍是本机路径，不能直接 fetch，也不要当公共下载链接。
 
-自包含调试页已放到 `test_ui/flow_debug.html`，经 test_ui 的 `/flow_debug.html` 打开，只填 URL 与 API key，并按上述方法加载真实产物。本页不是 Linux 真浏览器端到端验收，也不能用随机进度或伪造 CIF 冒充计算。show_yeah 仍只作视觉效果参考，不在本仓改造。
+自包含调试页已放到 `test_ui/flow_debug.html`，经 test_ui 的 `/flow_debug.html` 打开，只填 URL 与 API key，并按上述方法加载真实产物。页面按 mmCIF 列解析官方 Protenix CIF（即使数据行以 `ATOM` 开头），经典 PDB 仍可用；舞台只绘制这些真实坐标，入场排布不是计算进度。本页不是 Linux 真浏览器端到端验收，也不能用随机进度或伪造 CIF 冒充计算。show_yeah 仍只作视觉效果参考，不在本仓改造。
 
 **版本边界**：本轮只验证 v1/base_default_v1.0.0。现有 version 字段并未完成 v1/v2 独立 runtime 选择，v2 缺授权权重，不可用参数标签冒充 v2 成功。PXDesign 真任务没有在本轮走 HTTP 重新验证。

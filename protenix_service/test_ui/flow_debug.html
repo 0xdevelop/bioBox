@@ -46,7 +46,10 @@
     .timeline li::before { content: ""; position: absolute; left: -4px; top: 12px; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); }
     .progress-wrap { height: 10px; background: #0b1220; border-radius: 999px; overflow: hidden; border: 1px solid var(--line); margin: 8px 0; }
     .progress-bar { height: 100%; width: 0; background: linear-gradient(90deg, #115e59, #5eead4); transition: width .3s; }
-    #stage { width: 100%; height: 280px; display: block; background: #05080f; border-radius: 12px; border: 1px solid var(--line); }
+    .stage-wrap { position: relative; margin-top: 10px; }
+    #stage { width: 100%; height: 360px; display: block; background: #05080f; border-radius: 12px; border: 1px solid var(--line); cursor: grab; }
+    #stage:active { cursor: grabbing; }
+    .stage-caption { position: absolute; left: 12px; top: 10px; right: 12px; color: var(--muted); font-size: 12px; pointer-events: none; text-shadow: 0 1px 8px #000; }
     pre.log { max-height: 220px; overflow: auto; background: #05080f; border-radius: 8px; padding: 10px; font-size: 11px; color: #c9d7e8; }
     table { width: 100%; border-collapse: collapse; font-size: 12px; }
     th, td { text-align: left; padding: 6px 4px; border-bottom: 1px solid var(--line); }
@@ -135,8 +138,11 @@
           <thead><tr><th>相对路径</th><th>类型</th><th>大小</th><th></th></tr></thead>
           <tbody id="artifact-rows"><tr><td colspan="4" class="note">提交或跟踪完成任务后列出，不含 input/</td></tr></tbody>
         </table>
-        <canvas id="stage" width="900" height="560"></canvas>
-        <p class="note" id="cif-note">CIF 原子来自取回的真实文件；若文件没有原子记录，这里会如实显示，不会用随机点冒充。</p>
+        <div class="stage-wrap">
+          <canvas id="stage" width="900" height="720" aria-label="真实产物结构舞台"></canvas>
+          <div class="stage-caption" id="stage-caption">尚未加载结构产物</div>
+        </div>
+        <p class="note" id="cif-note">CIF 原子来自取回的真实文件；若文件没有原子记录，这里会如实显示，不会用随机点冒充。结构入场只是把已解析的真实坐标呈现到画面上，不是计算进度。</p>
         <pre class="log" id="log"></pre>
       </section>
     </div>
@@ -151,7 +157,16 @@
       pollTimer: 0,
       lastStatusKey: "",
       atoms: [],
-      rot: 0,
+      runStatus: "",
+      processStatus: "",
+      arriveAt: 0,
+      rotY: 0.35,
+      rotX: 0.28,
+      zoom: 1,
+      dragging: false,
+      lastX: 0,
+      lastY: 0,
+      autoRot: true,
     };
 
     function maskSecret(text) {
@@ -314,6 +329,8 @@
       setChip($("status-chips"), "chip-run", "run_status=" + run, run === "done" ? (process === "success" ? "ok" : "err") : "wait");
       setChip($("status-chips"), "chip-proc", "process_status=" + process, process === "success" ? "ok" : (process === "" ? "wait" : "err"));
       if (task.cancel_requested) setChip($("status-chips"), "chip-cancel", "cancel_requested", "wait");
+      state.runStatus = run;
+      state.processStatus = process;
       $("progress-bar").style.width = Math.max(0, Math.min(100, progress)) + "%";
       $("progress-label").textContent = "后端上报 progress=" + progress + (task.progress_message ? (" · " + task.progress_message) : "") + "（非估算）";
       const key = [run, process, progress, task.progress_message || ""].join("|");
@@ -323,75 +340,187 @@
       }
     }
 
+    // PARSE_CIF_BEGIN
     function parseCIF(text) {
       const atoms = [];
       const lines = String(text).split(/\r?\n/);
       let mmcif = false;
       let headers = [];
+      const resetLoop = () => { mmcif = false; headers = []; };
+      const colOf = (idx, name) => {
+        const i = idx[name];
+        return i == null ? "" : i;
+      };
       for (const line of lines) {
+        const trimmed = line.trim();
+        if (trimmed === "loop_") { resetLoop(); continue; }
+        if (trimmed.startsWith("_atom_site.")) {
+          mmcif = true;
+          headers.push(trimmed);
+          continue;
+        }
+        if (mmcif && headers.length) {
+          if (!trimmed || trimmed.startsWith("#") || trimmed.startsWith("data_") || trimmed.startsWith("save_") || trimmed.startsWith("loop_") || (trimmed.startsWith("_") && !trimmed.startsWith("_atom_site."))) {
+            resetLoop();
+            // fall through in case this line starts a new section
+          } else {
+            const cols = trimmed.split(/\s+/);
+            if (cols.length >= headers.length) {
+              const idx = Object.fromEntries(headers.map((name, i) => [name, i]));
+              const x = parseFloat(cols[colOf(idx, "_atom_site.Cartn_x")]);
+              const y = parseFloat(cols[colOf(idx, "_atom_site.Cartn_y")]);
+              const z = parseFloat(cols[colOf(idx, "_atom_site.Cartn_z")]);
+              const element = cols[colOf(idx, "_atom_site.type_symbol")] || "C";
+              const name = cols[colOf(idx, "_atom_site.label_atom_id")] || "";
+              const seq = Number(cols[colOf(idx, "_atom_site.label_seq_id")]);
+              if (Number.isFinite(x) && Number.isFinite(y) && Number.isFinite(z)) {
+                atoms.push({ x, y, z, element, name, seq: Number.isFinite(seq) ? seq : 0 });
+              }
+            }
+            continue;
+          }
+        }
         if (line.startsWith("ATOM") || line.startsWith("HETATM")) {
           const x = parseFloat(line.slice(30, 38));
           const y = parseFloat(line.slice(38, 46));
           const z = parseFloat(line.slice(46, 54));
           const element = (line.slice(76, 78).trim() || line.slice(12, 16).trim()[0] || "C");
-          if (Number.isFinite(x) && Number.isFinite(y) && Number.isFinite(z)) atoms.push({ x, y, z, element });
-        }
-        if (line.startsWith("_atom_site.")) {
-          mmcif = true;
-          headers.push(line.trim());
-        } else if (mmcif && headers.length && line && !line.startsWith("_") && !line.startsWith("#") && !line.startsWith("loop_")) {
-          if (line.startsWith("data_") || line.startsWith("save_")) { mmcif = false; headers = []; continue; }
-          const cols = line.trim().split(/\s+/);
-          if (cols.length < headers.length) continue;
-          const idx = Object.fromEntries(headers.map((name, i) => [name, i]));
-          const x = parseFloat(cols[idx["_atom_site.Cartn_x"]]);
-          const y = parseFloat(cols[idx["_atom_site.Cartn_y"]]);
-          const z = parseFloat(cols[idx["_atom_site.Cartn_z"]]);
-          const element = cols[idx["_atom_site.type_symbol"]] || "C";
-          if (Number.isFinite(x) && Number.isFinite(y) && Number.isFinite(z)) atoms.push({ x, y, z, element });
+          const name = line.slice(12, 16).trim();
+          const seq = Number(line.slice(22, 26));
+          if (Number.isFinite(x) && Number.isFinite(y) && Number.isFinite(z)) {
+            atoms.push({ x, y, z, element, name, seq: Number.isFinite(seq) ? seq : 0 });
+          }
         }
       }
       return atoms;
     }
+    // PARSE_CIF_END
     const elementColor = { C: "#d7e3f4", N: "#7dd3fc", O: "#fb7185", S: "#fbbf24", P: "#f0abfc", H: "#94a3b8" };
+    function unitHash(index, salt) {
+      const value = Math.sin((index + 1) * 12.9898 + salt * 78.233) * 43758.5453;
+      return value - Math.floor(value);
+    }
+    function projectAtom(atom, cosY, sinY, cosX, sinX) {
+      const x1 = atom.x * cosY - atom.z * sinY;
+      const z1 = atom.x * sinY + atom.z * cosY;
+      const y2 = atom.y * cosX - z1 * sinX;
+      const z2 = atom.y * sinX + z1 * cosX;
+      return { x: x1, y: y2, z: z2, element: atom.element, name: atom.name || "", seq: atom.seq || 0 };
+    }
+    function drawBackdrop(ctx, canvas, now) {
+      const w = canvas.width, h = canvas.height;
+      ctx.fillStyle = "#05080f";
+      ctx.fillRect(0, 0, w, h);
+      const cx = w / 2, cy = h / 2;
+      const pulse = 0.5 + 0.5 * Math.sin(now * 0.00115);
+      const running = state.runStatus === "running";
+      const glow = running ? "94,234,212" : "125,211,252";
+      for (let i = 0; i < 6; i++) {
+        ctx.beginPath();
+        ctx.strokeStyle = "rgba(" + glow + "," + (0.05 + 0.05 * pulse) + ")";
+        ctx.lineWidth = 1.2;
+        ctx.arc(cx, cy, 48 + i * 42 + pulse * 10, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+      ctx.fillStyle = "rgba(255,255,255,0.018)";
+      for (let y = 0; y < h; y += 4) ctx.fillRect(0, y, w, 1);
+    }
+    function setCaption(text) {
+      const el = $("stage-caption");
+      if (el && el.textContent !== text) el.textContent = text;
+    }
     function drawAtoms() {
       const canvas = $("stage");
       const ctx = canvas.getContext("2d");
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      ctx.fillStyle = "#05080f";
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      const now = performance.now();
+      drawBackdrop(ctx, canvas, now);
       if (!state.atoms.length) {
+        const waiting = state.runStatus === "running"
+          ? "run_status=running。舞台只显示等待态，没有结构就不用随机点冒充计算。"
+          : "没有可绘制的真实原子。等待 task.artifact 返回含 ATOM/_atom_site 的 CIF/PDB。";
+        setCaption(waiting);
         ctx.fillStyle = "#8aa0b8";
         ctx.font = "16px sans-serif";
-        ctx.fillText("没有可绘制的真实原子。等待 task.artifact 返回含 ATOM/_atom_site 的 CIF/PDB。", 24, 40);
+        ctx.fillText(waiting, 24, canvas.height - 28);
         return;
       }
-      state.rot += 0.008;
-      const cos = Math.cos(state.rot), sin = Math.sin(state.rot);
+      if (state.autoRot && !state.dragging) state.rotY += 0.006;
+      const cosY = Math.cos(state.rotY), sinY = Math.sin(state.rotY);
+      const cosX = Math.cos(state.rotX), sinX = Math.sin(state.rotX);
       const cx = canvas.width / 2, cy = canvas.height / 2;
+      const arrive = state.arriveAt ? Math.max(0, Math.min(1, (now - state.arriveAt) / 1400)) : 1;
+      const ease = 1 - Math.pow(1 - arrive, 3);
       let maxR = 1;
-      const projected = state.atoms.map((atom) => {
-        const x = atom.x * cos - atom.z * sin;
-        const z = atom.x * sin + atom.z * cos;
-        const y = atom.y;
-        maxR = Math.max(maxR, Math.hypot(x, y, z));
-        return { x, y, z, element: atom.element };
+      const centered = state.atoms.map((atom, index) => {
+        const spread = (1 - ease) * (40 + unitHash(index, 1) * 80);
+        const ang = unitHash(index, 2) * Math.PI * 2;
+        const x = atom.x + Math.cos(ang) * spread;
+        const y = atom.y + (unitHash(index, 3) - 0.5) * spread;
+        const z = atom.z + Math.sin(ang) * spread;
+        const projected = projectAtom({ x, y, z, element: atom.element, name: atom.name, seq: atom.seq }, cosY, sinY, cosX, sinX);
+        maxR = Math.max(maxR, Math.hypot(projected.x, projected.y, projected.z));
+        return projected;
       });
-      const scale = Math.min(canvas.width, canvas.height) * 0.38 / maxR;
-      projected.sort((a, b) => a.z - b.z).forEach((atom) => {
+      const scale = Math.min(canvas.width, canvas.height) * 0.38 * state.zoom / maxR;
+      const cas = centered.filter((atom) => atom.name === "CA").sort((a, b) => a.seq - b.seq);
+      ctx.lineWidth = 1.4;
+      for (let i = 1; i < cas.length; i++) {
+        if (cas[i].seq && cas[i - 1].seq && cas[i].seq === cas[i - 1].seq + 1) {
+          ctx.strokeStyle = "rgba(94,234,212," + (0.18 + 0.25 * ease) + ")";
+          ctx.beginPath();
+          ctx.moveTo(cx + cas[i - 1].x * scale, cy + cas[i - 1].y * scale);
+          ctx.lineTo(cx + cas[i].x * scale, cy + cas[i].y * scale);
+          ctx.stroke();
+        }
+      }
+      centered.slice().sort((a, b) => a.z - b.z).forEach((atom) => {
         const depth = (atom.z / maxR + 1) / 2;
-        const r = 2.2 + depth * 3.2;
+        const r = 2.2 + depth * 3.6;
         ctx.beginPath();
         ctx.fillStyle = elementColor[atom.element] || "#5eead4";
         ctx.globalAlpha = 0.35 + depth * 0.65;
+        ctx.shadowColor = ctx.fillStyle;
+        ctx.shadowBlur = 8 * depth;
         ctx.arc(cx + atom.x * scale, cy + atom.y * scale, r, 0, Math.PI * 2);
         ctx.fill();
+        ctx.shadowBlur = 0;
         ctx.globalAlpha = 1;
       });
-      ctx.globalAlpha = 1;
+      const caption = "真实原子 " + state.atoms.length + " 个（由产物坐标绘制"
+        + (cas.length ? "；CA 连线只按残基序号，不是化学键验证" : "")
+        + (arrive < 1 ? "；入场是把已解析坐标放到画面上，不是计算进度" : "")
+        + "）。拖拽旋转，滚轮缩放。";
+      setCaption(caption);
       ctx.fillStyle = "#8aa0b8";
       ctx.font = "13px sans-serif";
-      ctx.fillText("真实原子 " + state.atoms.length + " 个（由产物坐标绘制）", 18, canvas.height - 16);
+      ctx.fillText(caption, 18, canvas.height - 16);
+    }
+    function bindStage() {
+      const canvas = $("stage");
+      canvas.addEventListener("pointerdown", (event) => {
+        state.dragging = true;
+        state.autoRot = false;
+        state.lastX = event.clientX;
+        state.lastY = event.clientY;
+        canvas.setPointerCapture(event.pointerId);
+      });
+      canvas.addEventListener("pointermove", (event) => {
+        if (!state.dragging) return;
+        const dx = event.clientX - state.lastX;
+        const dy = event.clientY - state.lastY;
+        state.lastX = event.clientX;
+        state.lastY = event.clientY;
+        state.rotY += dx * 0.01;
+        state.rotX = Math.max(-1.2, Math.min(1.2, state.rotX + dy * 0.01));
+      });
+      const stopDrag = () => { state.dragging = false; };
+      canvas.addEventListener("pointerup", stopDrag);
+      canvas.addEventListener("pointercancel", stopDrag);
+      canvas.addEventListener("wheel", (event) => {
+        event.preventDefault();
+        const next = state.zoom * (event.deltaY < 0 ? 1.08 : 0.92);
+        state.zoom = Math.max(0.35, Math.min(4, next));
+      }, { passive: false });
     }
     function tick() { drawAtoms(); requestAnimationFrame(tick); }
 
@@ -427,8 +556,10 @@
       const looksStructure = (got.kind === "cif" || got.kind === "pdb" || /\.(cif|pdb)$/i.test(path));
       if (looksStructure) {
         state.atoms = parseCIF(bytes);
+        state.arriveAt = performance.now();
+        state.autoRot = true;
         $("cif-note").textContent = state.atoms.length
-          ? ("已从 " + path + " 解析 " + state.atoms.length + " 个原子。这是服务返回的文件，不是随机结构。")
+          ? ("已从 " + path + " 解析 " + state.atoms.length + " 个原子。这是服务返回的文件，不是随机结构。入场动画只移动这些真实坐标。")
           : (path + " 没有 ATOM/_atom_site 坐标，已如实显示为空，未用随机点填充。");
       } else {
         $("cif-note").textContent = path + " 不是结构文件。预览：\n" + bytes.slice(0, 400);
@@ -573,6 +704,7 @@
       } catch (_) {}
       $("host-note").innerHTML = "未检测到 test_ui 代理。请把本页放到服务的 <code>/flow_debug.html</code> 打开，或接受浏览器可能拦截跨源 JSON-RPC。gRPC 只能经 test_ui 代理。";
     }
+    bindStage();
     boot();
     tick();
   })();

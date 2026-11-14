@@ -5,6 +5,9 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os/exec"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -45,6 +48,10 @@ func TestFlowDebugPageAndCatalogIncludesArtifactMethods(t *testing.T) {
 		"后端上报",
 		"不用动画伪造进度",
 		"/api/proxy",
+		"PARSE_CIF_BEGIN",
+		"结构入场只是把已解析的真实坐标呈现到画面上，不是计算进度",
+		"CA 连线只按残基序号，不是化学键验证",
+		"没有结构就不用随机点冒充计算",
 	} {
 		if !strings.Contains(body, needle) {
 			t.Fatalf("flow_debug.html missing %q", needle)
@@ -80,5 +87,25 @@ func TestFlowDebugPageAndCatalogIncludesArtifactMethods(t *testing.T) {
 		if !present[name] {
 			t.Fatalf("test_ui catalog missing method %s", name)
 		}
+	}
+}
+
+func TestParseOfficialProtenixMMCIF(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Fatal("node is required to lock parseCIF against the official smoke CIF")
+	}
+	_, thisFile, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("cannot resolve test file path")
+	}
+	script := filepath.Join(filepath.Dir(thisFile), "testdata", "parse_official_cif.mjs")
+	cmd := exec.Command(node, script)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("parse official cif: %v\n%s", err, out)
+	}
+	if !strings.Contains(string(out), "parse_official_cif ok") {
+		t.Fatalf("unexpected parser output: %s", out)
 	}
 }

@@ -1,3 +1,15 @@
+# 最新状态：真实 mmCIF 结构展示与解析修正（2026-11-15 01:56 Asia/Singapore UTC+8）
+
+本节补上第四阶段调试页对官方 Protenix CIF 的结构呈现，仍**不是** Linux 真浏览器端到端验收，也不是生产级前端或科学质量声明。
+
+- `flow_debug.html` 的 `parseCIF` 在 `_atom_site` 循环内按 mmCIF 列解析。官方 Protenix 产物行虽然以 `ATOM` 开头，也走 mmCIF，不再误用 PDB 定宽列；经典 PDB `ATOM`/`HETATM` 仍可用。
+- 舞台借鉴 show_yeah 的暗场、光晕与入场排布，但只绘制 `task.artifact` 解析出的真实坐标。没有原子时只显示等待态，不用随机点或动画百分比冒充计算。入场是把已解析坐标放到画面上；CA 连线只按残基序号，不是化学键验证。
+- 回归：`testdata/sqlite_smoke_sample_0.cif` 是 2026-11-14 本机 v1 烟测产物副本（合成 20 残基，cycle=1/step=2，不代表科学质量）。`node testdata/parse_official_cif.mjs` 锁定 168 个原子、20 个 CA，以及第一条 N / 末条 OXT 坐标。`go test ./test_ui` 会运行该脚本。
+- 浏览器层仍缺失：本机无 `ego-browser`，Cursor `mcp.json` 仍只有 xjb-code，没有 Playwright MCP。按 web-browser-debug 未自行启动其他浏览器、未新装 MCP，因此仍没有 Linux 真浏览器点击验收。
+- 未改 show_yeah、`build_srcs`、三仓或 Task 受理契约，未装 MySQL/Redis，未跑 GPU，未改本机 `config_local.yaml`，未启长期服务。PXDesign HTTP 真任务与 v2 runtime 仍未在本页重验。
+
+---
+
 # 最新状态：第四阶段自包含任务流调试页（2026-11-15 01:04 Asia/Singapore UTC+8）
 
 本节补上「独立 HTML 仅填 URL/API key 尚未完成」的过时边界，但**不是** Linux 真浏览器端到端验收，也不是生产级前端。
