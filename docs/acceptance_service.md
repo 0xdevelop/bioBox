@@ -1,3 +1,15 @@
+# 最新状态：PXDesign 短脚本 HTTP 真任务（2026-11-15 05:55 Asia/Singapore UTC+8）
+
+本节补上调试页选项此前标明的「pxdesign 本机 HTTP 真任务尚未重验」。这是隔离夹具上的短脚本任务流证据，**不是**官方 GPU 设计、长期服务、Linux Chrome 再点击，也不是 Playwright MCP / ego-browser，更不是生产级或科学质量声明。
+
+- JSON-RPC HTTP：隔离 SQLite + 合法签发的 `ptxk_`，`pxdesign`（`input` / `dump_dir` / `preset=preview`）受理为 queued，Policy 认领后短脚本写出 `output/design.cif`，任务 `done/success`，`cif_count=1`、`has_err=false`、`exit_code=0`；属主经 `task.artifacts` / `task.artifact` 取到该相对路径。无凭证与伪造 `ptxk_` 被拒绝。非法 `preset` 的即时拒绝仍以既有 Execute 单测为准，本轮未改受理契约。
+- test_ui `/api/proxy`：同一短脚本任务经实时 JSON-RPC / MCP / WebSocket / gRPC 的 `task.list` / `task.get` / `task.artifacts` / `task.artifact`，CIF 内容均为 `pxdesign_fixture_cif`（base64，kind=cif）。无凭证与伪造 key 拒绝提交。
+- 调试页方法选项改为「pxdesign（短脚本 HTTP 已验，非正式 GPU 设计）」，避免继续写「尚未重验」或暗示官方设计已跑通。
+- 已测：`go test ./test_ui ./api/api_jsonRPC` 与 `go build` 退出码 0。未装 MySQL/Redis，未跑 GPU，未启长期服务，未改本机 `config_local.yaml`（sha256 仍为 `684b906075c72cd76806cafd645bb7da9c6ac6b235550b5e77eaf15f0e31bf6c`），未改 `build_srcs`、三仓、show_yeah 或 Task 契约。模板远端仍为 `ebef2c6`，不是主动锁旧版。
+- 本轮没有重复上一轮的 Linux Chrome 点击矩阵，也没有用官方 `pxdesign-run` 做设计推理。v2 runtime 仍缺授权权重。
+
+---
+
 # 最新状态：Linux Chrome 点击验收 /flow_debug.html（2026-11-15 04:57 Asia/Singapore UTC+8）
 
 本节补上第四阶段「自包含调试页尚无 Linux 真浏览器点击证据」的缺口。这是短生命周期隔离夹具上的 Linux Google Chrome 点击证据，**不是**长期服务、GPU 预测、PXDesign HTTP 真任务，也不是 Playwright MCP / ego-browser，更不是生产级前端。

@@ -66,6 +66,7 @@ func TestFlowDebugPageAndCatalogIncludesArtifactMethods(t *testing.T) {
 		`await callSelected("task.artifact"`,
 		`await callSelected("task.cancel"`,
 		"await callSelected(method, args, true)",
+		"pxdesign（短脚本 HTTP 已验，非正式 GPU 设计）",
 	} {
 		if !strings.Contains(body, needle) {
 			t.Fatalf("flow_debug.html missing %q", needle)

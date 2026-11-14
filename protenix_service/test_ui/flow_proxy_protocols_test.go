@@ -94,6 +94,63 @@ func TestFlowDebugProxyRunsTaskFlowOverLiveProtocols(t *testing.T) {
 	t.Log("test_ui /api/proxy accepted public test, task.list/get/artifacts/artifact over live JSON-RPC, MCP, WebSocket, and gRPC; missing and forged keys were rejected; short-script CIF matched")
 }
 
+func TestFlowDebugProxyRunsPxdesignTaskFlowOverLiveProtocols(t *testing.T) {
+	root := t.TempDir()
+	script := writePxdesignFixtureScript(t, root)
+	fixture := newLiveProtocolFixture(t, script, root)
+	config.GlobalConfig.CliCfg.PXDesign = &config.CLIBinaryConfig{Binary: script, ExtraEnv: map[string]string{}}
+
+	stopPolicy := policy.PolicyServicesStart()
+	t.Cleanup(stopPolicy)
+	input := writeProxyFixtureFile(t, root, "task.yaml", "name: pxdesign-http-fixture\n")
+	fixture.call(t, "jsonrpc", "pxdesign", map[string]interface{}{
+		"input": input, "dump_dir": "out", "preset": "preview",
+	}, false, true)
+	fixture.call(t, "jsonrpc", "pxdesign", map[string]interface{}{
+		"input": input, "dump_dir": "out", "preset": "preview",
+	}, true, true, withCredential("ptxk_invalid"))
+
+	accepted := fixture.call(t, "jsonrpc", "pxdesign", map[string]interface{}{
+		"input": input, "dump_dir": "out", "preset": "preview",
+	}, true, false)
+	taskID, _ := accepted["task_id"].(string)
+	if taskID == "" || accepted["run_status"] != "queued" {
+		t.Fatal("pxdesign short-script task was not durably accepted")
+	}
+	if task := fixture.waitDone(t, taskID, 10*time.Second); task["process_status"] != "success" {
+		t.Fatalf("pxdesign fixture task status=%v error=%v", task["process_status"], task["error_message"])
+	}
+
+	for _, transport := range []string{"jsonrpc", "mcp", "websocket", "grpc"} {
+		listed := fixture.call(t, transport, "task.list", map[string]interface{}{}, true, false)
+		if !taskListContains(listed, taskID) {
+			t.Fatalf("%s task.list missing pxdesign task", transport)
+		}
+		got := fixture.call(t, transport, "task.get", map[string]interface{}{"task_id": taskID}, true, false)
+		task, _ := got["task"].(map[string]interface{})
+		if task["task_id"] != taskID || task["process_status"] != "success" {
+			t.Fatalf("%s pxdesign task.get mismatch status=%v", transport, task["process_status"])
+		}
+		result, _ := task["result"].(map[string]interface{})
+		if result["cif_count"].(float64) != 1 || result["has_err"] != false {
+			t.Fatalf("%s pxdesign result mismatch: %v", transport, result)
+		}
+		artifacts := fixture.call(t, transport, "task.artifacts", map[string]interface{}{"task_id": taskID}, true, false)
+		cifPath := cifArtifactPath(artifacts)
+		if cifPath != "output/design.cif" {
+			t.Fatalf("%s task.artifacts path=%q keys=%v", transport, cifPath, keysOf(artifacts))
+		}
+		file := fixture.call(t, transport, "task.artifact", map[string]interface{}{
+			"task_id": taskID, "path": cifPath,
+		}, true, false)
+		decoded, err := base64.StdEncoding.DecodeString(fmt.Sprint(file["content"]))
+		if err != nil || string(decoded) != "pxdesign_fixture_cif\n" || file["encoding"] != "base64" || file["kind"] != "cif" {
+			t.Fatalf("%s pxdesign artifact mismatch kind=%v encoding=%v", transport, file["kind"], file["encoding"])
+		}
+	}
+	t.Log("test_ui /api/proxy accepted pxdesign short-script task and fetched design.cif over live JSON-RPC, MCP, WebSocket, and gRPC; missing and forged keys were rejected")
+}
+
 type liveProtocolFixture struct {
 	proxy                              *httptest.Server
 	key                                string
@@ -479,6 +536,31 @@ func keysOf(value map[string]interface{}) []string {
 		keys = append(keys, key)
 	}
 	return keys
+}
+
+func writePxdesignFixtureScript(t *testing.T, root string) string {
+	t.Helper()
+	script := writeProxyFixtureFile(t, root, "pxdesign-cli.sh", `#!/bin/sh
+input=""; out=""
+while [ "$#" -gt 0 ]; do
+ case "$1" in
+  pipeline) shift;;
+  --input) input="$2"; shift 2;;
+  --dump_dir) out="$2"; shift 2;;
+  --preset) shift 2;;
+  *) shift;;
+ esac
+done
+if [ -z "$out" ]; then
+ exit 3
+fi
+mkdir -p "$out"
+printf 'pxdesign_fixture_cif\n' > "$out/design.cif"
+`)
+	if err := os.Chmod(script, 0700); err != nil {
+		t.Fatal(err)
+	}
+	return script
 }
 
 func writeProxyFixtureScript(t *testing.T, root string) string {

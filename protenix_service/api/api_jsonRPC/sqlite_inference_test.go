@@ -297,3 +297,69 @@ func TestSQLiteHTTPOfficialInference(t *testing.T) {
 	}
 	t.Logf("official HTTP inference: task=%s elapsed=%s CIF=%v out=%s (smoke settings, not scientific-quality prediction)", id, time.Since(start).Round(time.Millisecond), result["cif_count"], result["out_dir"])
 }
+
+func TestSQLiteHTTPPxdesignShortScript(t *testing.T) {
+	root := t.TempDir()
+	script := writeQueueInput(t, root, "pxdesign-cli.sh", `#!/bin/sh
+input=""; out=""
+while [ "$#" -gt 0 ]; do
+ case "$1" in
+  pipeline) shift;;
+  --input) input="$2"; shift 2;;
+  --dump_dir) out="$2"; shift 2;;
+  --preset) shift 2;;
+  *) shift;;
+ esac
+done
+if [ -z "$out" ]; then
+ exit 3
+fi
+mkdir -p "$out"
+printf 'pxdesign_fixture_cif\n' > "$out/design.cif"
+`)
+	if err := os.Chmod(script, 0700); err != nil {
+		t.Fatal(err)
+	}
+	f := newQueueHTTPFixture(t, script, root)
+	config.GlobalConfig.CliCfg.PXDesign = &config.CLIBinaryConfig{Binary: script, ExtraEnv: map[string]string{}}
+	stop := policy.PolicyServicesStart()
+	t.Cleanup(stop)
+
+	input := writeQueueInput(t, root, "task.yaml", "name: pxdesign-http-fixture\n")
+	f.call(t, "pxdesign", map[string]interface{}{"input": input, "dump_dir": "out", "preset": "preview"}, "", true)
+	f.call(t, "pxdesign", map[string]interface{}{"input": input, "dump_dir": "out", "preset": "preview"}, "ptxk_invalid", true)
+
+	accepted := f.call(t, "pxdesign", map[string]interface{}{"input": input, "dump_dir": "out", "preset": "preview"}, f.key, false)
+	id, _ := accepted["task_id"].(string)
+	if id == "" || accepted["run_status"] != "queued" {
+		t.Fatal("pxdesign short-script task was not durably accepted")
+	}
+	task := f.waitDone(t, id, 10*time.Second)
+	if task["process_status"] != "success" {
+		t.Fatalf("pxdesign status=%v error=%v", task["process_status"], task["error_message"])
+	}
+	result, ok := task["result"].(map[string]interface{})
+	if !ok || result["cif_count"].(float64) != 1 || result["has_err"] != false || result["exit_code"].(float64) != 0 {
+		t.Fatalf("invalid pxdesign artifacts: %v", result)
+	}
+	artifacts := f.call(t, "task.artifacts", map[string]interface{}{"task_id": id}, f.key, false)
+	items, _ := artifacts["artifacts"].([]interface{})
+	var cifPath string
+	for _, raw := range items {
+		item, _ := raw.(map[string]interface{})
+		path, _ := item["path"].(string)
+		if strings.HasSuffix(strings.ToLower(path), ".cif") {
+			cifPath = path
+			break
+		}
+	}
+	if cifPath != "output/design.cif" {
+		t.Fatalf("unexpected cif path %q artifacts=%v", cifPath, artifacts)
+	}
+	file := f.call(t, "task.artifact", map[string]interface{}{"task_id": id, "path": cifPath}, f.key, false)
+	// content is base64 in HTTP artifact method
+	if file["kind"] != "cif" {
+		t.Fatalf("artifact kind=%v", file["kind"])
+	}
+	t.Log("HTTP Bearer ptxk_ -> SQLite -> policy -> pxdesign Execute: short-script CIF listed and fetchable; missing and forged keys were rejected")
+}
