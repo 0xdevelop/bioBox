@@ -31,7 +31,7 @@ func PolicyServicesStart() func() {
 
 		gtbox_log.LogInfof("policy maintenance loop started")
 		for ctx.Err() == nil {
-			if _, err := storage.MysqlDB(ctx); err == nil {
+			if _, err := storage.GormDB(ctx); err == nil {
 				dispatchQueuedTasks(ctx, &pending)
 
 				runOnceAsync(&requeueRunning, &pending, func() {

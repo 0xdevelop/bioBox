@@ -1,3 +1,28 @@
+# 最新状态：SQLite 服务接线（2026-11-14 UTC+8）
+
+本节覆盖后文历史切片「必须启用 MySQL / 缺 Resend 不能推进算法服务 / 不接 running 取消」的过时结论。旧日志仅为历史，不是现行约束。
+
+- 已 `git pull --ff-only` 四仓。远端 main 实际仍是模板 `ebef2c6`、xjb_code `c11c797`、xjb_coding `e249edf`、父仓起始 `82e8eb5`；不是故意锁旧版。模板存储支持 SQLite，但 Task 仍调用 MysqlDB；xjb_code Task 已使用 GormDB。本实例最小迁移主库，不改三仓。
+- 只修改服务及关联文档，不改 `build_srcs`，不安装 MySQL/Redis，不读取或提交本机秘密配置。
+- SQLite：持久受理、单条条件 UPDATE RETURNING 认领、Policy 接线；24 任务/8 Worker，每条 Execute 一次。
+- 恢复：SQLite close/reopen，已认领孤儿重排后执行成功；持久取消孤儿直接 cancelled。另以编译后的真实服务，在临时 systemd KillMode=control-group 下 SIGKILL 主进程：旧 wrapper/child 已清理，再启动新主进程后同 task_id 恢复为 done/success（短脚本，不是 GPU）。单 daemon，裸 SIGKILL/GPU 恢复和多实例 HA 未验。
+- 鉴权：隔离 SQLite fixture 经 User API → 正常 HTTP 登录 → session 签发 `ptxk_` → 标准 Bearer 受保护调用。没有关闭门禁、伪造身份或改注册逻辑；fixture 不是生产账户，无需接入邮件服务。
+- HTTP 所有权：另一 fixture 用户的 get/cancel 均拒绝且原任务继续；queued 取消落库；无凭证与伪造 ptxk_ 均拒绝。
+- HTTP 故障/取消：CLI 退出 7 不再误判成功；running cancel 返回 cancelling，父子进程退出后终态 cancelled，另一任务完成。普通测试使用明确短脚本，不冒充模型结果。
+- `policy_cfg.max_workers` 可设绝对上限；单 GPU 示例为 1。
+- 原生 HTTP 实测：非法 JSON（上游 exit 0）28.872 秒后 system_error；合成 20 残基 v1，cycle=1/step=2/sample=1，39.051 秒，exit=0、1 个 CIF、无 ERR，task=`a30d64bc-80b7-40c7-87fd-c14fcdee3938`。整个 opt-in 测试 68.253 秒。只证明链路，不代表科学质量。
+- 原生推理使用显式 opt-in `TestSQLiteHTTPOfficialInference`，普通测试默认不跑模型。
+
+show_yeah 数据契约与浏览器取件边界：`protenix_service/docs/show_yeah_data_contract.md`。
+
+systemd 恢复证据：`tmp/handoff-followup/phase3-service/sqlite-systemd-restart-20261114/result.json`，task `66f41d6b-e068-4dc2-942e-b066952519b9`，主 PID 2386665 → 2386709，旧组 2386702/2386704 清理，18301–18306 验毕关闭；临时 unit 已停止，未 enable。全包 go test、go build 与定向 -race 测试均通过。
+
+原始记录：`protenix_service/tmp/sqlite-*.log`。编译、HTTP fixture、原生模型、SIGKILL 恢复为不同证据，不混报。
+
+---
+
+## 以下为历史记录（旧阻塞以上文为准）
+
 # 第三阶段服务验收
 
 ## 队列/缓存/限流/重启恢复诊断（2026-11-14 04:03 Asia/Singapore）

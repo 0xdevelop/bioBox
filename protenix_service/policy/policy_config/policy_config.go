@@ -12,6 +12,8 @@ import (
 var CurrentCfgPolicy *PolicyConfig
 
 type PolicyConfig struct {
+	// MaxWorkers is an optional absolute cap (e.g. 1 for a single GPU).
+	MaxWorkers int `yaml:"max_workers" json:"max_workers" toml:"max_workers"`
 	// PolicyDuration 是定期轮询事项「执行完一次到下一次开始」的间隔，Go duration 字符串（如 "10s"、"1h"）。
 	PolicyDuration string `yaml:"policy_duration" json:"policy_duration" toml:"policy_duration"`
 	// WorkersScaller 是 Policy 异步任务最大并发倍率，实际上限 = CPU 数量 × 倍率。
@@ -39,5 +41,9 @@ func CurrentMaxWorkers() int {
 	if CurrentCfgPolicy != nil && CurrentCfgPolicy.WorkersScaller > 0 {
 		scaller = CurrentCfgPolicy.WorkersScaller
 	}
-	return runtime.NumCPU() * scaller
+	workers := runtime.NumCPU() * scaller
+	if CurrentCfgPolicy != nil && CurrentCfgPolicy.MaxWorkers > 0 && CurrentCfgPolicy.MaxWorkers < workers {
+		return CurrentCfgPolicy.MaxWorkers
+	}
+	return workers
 }

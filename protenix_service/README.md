@@ -2,7 +2,7 @@
 
 Protenix / PXDesign 常驻服务骨架。module：`github.com/0xdevelop/protenix_service`。API key 前缀：`ptxk_`。嵌套在 `protenix_build` 仓库中，沿用父仓许可证，不另放 LICENSE。
 
-本阶段只提供可启动的服务骨架和固定功能入口，不执行 GPU 推理，不安装 MySQL。
+固定功能入口的 Go 服务，异步任务使用 SQLite 主库，不需要 MySQL/Redis；验收事实见父仓 `docs/acceptance_service.md`。
 
 ## 构建
 
@@ -23,7 +23,7 @@ go build -o protenix_service .
 - 本机运行（不要提交）：把示例复制为 `example_files/config_local.yaml` 后按需修改
 - Debug 启动读取 `./example_files/config_local.yaml`；工作目录必须是本目录
 - 存储默认只开 SQLite（`storage_cfg.primary: sqlite`，mysql/postgres/redis 为 `enabled: false`）。Auth/User 走主库 SQLite。
-- 模板契约：Async/Task 固定走 `storage.MysqlDB`。未启用 MySQL 时，异步受理返回明确错误（`storage_mysql is not enabled`），不会把任务改写到 SQLite，也不要为此安装 MySQL。
+- Async/Task 使用 `storage.GormDB` 主库，SQLite 原子认领与持久状态。仅单 daemon 负责一个队列库；本机孤儿恢复不是 HA 租约。
 - 原生 CLI 路径写在 `cli_cfg`（见示例配置），不要在代码或 URL 里写死。`cli_cfg.protenix.binary` / `cli_cfg.pxdesign.binary` 为空时，`Execute` 拒绝启动进程。作业输入会拷贝到 `cli_cfg.work_root/<task_id>/input/`，输出写到同任务的 `output/`，不修改原输入文件。`version` 仍只作方法参数，不作为 CLI 开关。
 - `example_files/config_local.yaml` 与 `data/` 已加入忽略规则，不要提交密钥或 SQLite 数据文件。
 
@@ -74,4 +74,6 @@ JSON-RPC 示例（Public `test`）：
 
 向 `http://127.0.0.1:<jsonrpc-port>/` 发 POST。方法清单见 `docs/api_methods.md`（由 `./gen_api_docs.sh` 生成，不要手改）。
 
-HTTP/JSON-RPC 调用 `protenix` / `pxdesign` 仍先走异步受理：未启用 MySQL 时失败，不会进入 `Execute`。直接调用 `Execute` 时，若已配置对应 `cli_cfg.*.binary`，会在新进程组中启动 `protenix-run pred` 或 `pxdesign-run pipeline`；context 取消时向整个进程组发 SIGTERM，超时后再发 SIGKILL。模板 `task.cancel` 仍只取消排队中的任务，执行中任务不可取消；Worker 对已认领任务使用不会取消的 context。原生结果要同时看退出码、CIF 和 ERR，不能只看退出码。不要把未配置真实二进制或未跑 GPU 的检查当成生产级推理验收。
+HTTP/JSON-RPC `protenix`/`pxdesign` 经鉴权 → SQLite 持久受理 → Policy → 同一 Execute → 独立 CLI 进程组。`task.cancel` 对 queued 返回 `cancelled:true`；对 running 返回 `cancelling:true`，待进程组退出后 `task.get` 才显示 done/cancelled。正常停机也取消在途任务。`policy_cfg.max_workers: 1` 适合单 GPU；不要按 CPU 核数盲目启动大量推理。Protenix 成功还需 CIF/ERR 核验。数据库重开恢复、systemd KillMode=control-group 下短脚本主进程 SIGKILL/清组/重启恢复均有实测；裸 SIGKILL、GPU 中断恢复和多实例 HA 未验收。
+
+当前版本边界：`version` 字段尚未完成 v1/v2 独立 runtime 的结构化选择，实际调用仍是单一配置 binary + model_name；本轮只验 v1，不能把传入 v2 标签当作 v2 跑通。show_yeah 数据契约与取件缺口见 [对接说明](docs/show_yeah_data_contract.md)。

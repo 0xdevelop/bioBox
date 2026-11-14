@@ -14,7 +14,7 @@ storage_cfg:
 
 `primary` 只选择一个已启用的关系库，取值为 `mysql`、`sqlite`、`postgresql`。只开一个关系库时可省略；开多个时必须显式指定。指向关闭的库、未知引擎或多库未指定主库，均在打开连接前拒绝。
 
-Auth/User 经 `GormDB(ctx)` 使用主库；指定引擎使用 `MysqlDB(ctx)`、`SqliteDB(ctx)`、`PostgreSQLDB(ctx)`。Task 按既有 MySQL 8.0+ 契约固定使用 `MysqlDB(ctx)`；未启用 MySQL 时异步受理返回明确错误。
+Auth/User 经 `GormDB(ctx)` 使用主库；指定引擎使用 `MysqlDB(ctx)`、`SqliteDB(ctx)`、`PostgreSQLDB(ctx)`。Task 同样使用 `GormDB(ctx)` 主库，本实例只启用 SQLite。SQLite 单连接池和条件 UPDATE … RETURNING 原子认领，不使用其不支持的行锁。
 
 Redis 经 `Redis()` 取句柄；`storage_redis.database: true` 时可用 `RedisDatabase()`。Redis 不参与关系库主库选择。
 

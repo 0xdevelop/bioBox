@@ -702,7 +702,7 @@ MCP 凭证使用 HTTP 头，`tools/list` 只暴露业务入参，不含 `jwt_tok
 
 ## 6.3. task.cancel
 
-取消我的排队中任务（执行中任务不可取消）
+取消我的排队或执行中任务（执行中返回 cancelling，进程组退出后落终态）
 
 `arguments` 传参举例（仅含必填字段）：
 
@@ -741,7 +741,7 @@ MCP 凭证使用 HTTP 头，`tools/list` 只暴露业务入参，不含 `jwt_tok
 
 # 7. protenix
 
-提交 Protenix 结构预测任务（对应 CLI：protenix-run pred）。版本/模型走 arguments。异步队列固定走 MySQL，未启用时受理失败。未配置 cli_cfg.protenix.binary 时 Execute 拒绝启动进程。
+提交 Protenix 结构预测任务（对应 CLI：protenix-run pred）。版本/模型走 arguments。异步队列使用配置的主关系库（支持 SQLite）。未配置 cli_cfg.protenix.binary 时 Execute 拒绝启动进程。
 
 异步方法：受理后返回 `task_id`，进度与结果经任务查询方法读取。
 
@@ -839,7 +839,7 @@ MCP 凭证使用 HTTP 头，`tools/list` 只暴露业务入参，不含 `jwt_tok
 
 # 8. pxdesign
 
-提交 PXDesign 设计流水线任务（对应 CLI：pxdesign-run pipeline）。preset 走 arguments。异步队列固定走 MySQL，未启用时受理失败。未配置 cli_cfg.pxdesign.binary 时 Execute 拒绝启动进程。
+提交 PXDesign 设计流水线任务（对应 CLI：pxdesign-run pipeline）。preset 走 arguments。异步队列使用配置的主关系库（支持 SQLite）。未配置 cli_cfg.pxdesign.binary 时 Execute 拒绝启动进程。
 
 异步方法：受理后返回 `task_id`，进度与结果经任务查询方法读取。
 

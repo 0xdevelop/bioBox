@@ -5,6 +5,8 @@ Wants=network-online.target
 
 [Service]
 Type=simple
+# 重启前清理任务进程组，不能只杀 MAINPID
+KillMode=control-group
 Restart=on-failure
 RestartSec=5s
 ExecStart=/home/certa/workspace/protenix_build/protenix_service/protenix_service

@@ -26,7 +26,7 @@ var errCLINotConfigured = errors.New("pxdesign CLI binary is not configured")
 func LoadAPIMethods() {
 	api_supported_methods.AddMethod(&api_supported_methods.SupportedMethod{
 		Name:        MethodPXDesign,
-		Description: "提交 PXDesign 设计流水线任务（对应 CLI：pxdesign-run pipeline）。preset 走 arguments。异步队列固定走 MySQL，未启用时受理失败。未配置 cli_cfg.pxdesign.binary 时 Execute 拒绝启动进程。",
+		Description: "提交 PXDesign 设计流水线任务（对应 CLI：pxdesign-run pipeline）。preset 走 arguments。异步队列使用配置的主关系库（支持 SQLite）。未配置 cli_cfg.pxdesign.binary 时 Execute 拒绝启动进程。",
 		Async:       true,
 		InputSchema: api_auth_common.InputSchema(
 			map[string]interface{}{

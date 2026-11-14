@@ -73,6 +73,9 @@ func Run(ctx context.Context, spec Spec) (*Result, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
+	if ctx.Err() != nil {
+		return nil, fmt.Errorf("%w: %v", ErrCancelled, ctx.Err())
+	}
 	if strings.TrimSpace(spec.Path) == "" {
 		return nil, fmt.Errorf("cli binary path is required")
 	}
@@ -120,7 +123,7 @@ func Run(ctx context.Context, spec Spec) (*Result, error) {
 		if reaped {
 			return result, fmt.Errorf("cli wrapper exited but leftover process group members were reaped: pgid=%d", result.PGID)
 		}
-		if waitErr != nil && result.ExitCode == 0 {
+		if waitErr != nil {
 			return result, waitErr
 		}
 		return result, nil
@@ -129,6 +132,7 @@ func Run(ctx context.Context, spec Spec) (*Result, error) {
 		_ = signalProcessGroup(cmd.Process.Pid, termSignal())
 		select {
 		case waitErr := <-done:
+			_ = reapLeftoverProcessGroup(cmd.Process.Pid, grace)
 			result.Duration = time.Since(started)
 			result.ExitCode = exitCode(waitErr)
 			if result.ExitCode == 0 && waitErr != nil {

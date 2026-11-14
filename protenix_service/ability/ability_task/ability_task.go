@@ -49,17 +49,19 @@ const (
 
 var ErrTaskNotActive = errors.New("task is not active")
 
-// inFlightTasks 记录本进程 Worker 正在执行的 task_id（claim 事务提交前登记、finish 后移除），
-// 供孤儿侦测排除——登记先于 DB running 状态出现，无误判窗口。
+// inFlightTasks tracks owned tasks for recovery/cancellation. Claim and recovery share
+// taskLifecycleMutex: ownership is registered before that lock is released.
 var (
 	inFlightTasksMutex sync.Mutex
-	inFlightTasks      = map[string]struct{}{}
+	inFlightTasks      = map[string]context.CancelFunc{}
+	// Serializes claim/recovery/cancel/finish lifecycle transitions within this daemon.
+	taskLifecycleMutex sync.Mutex
 )
 
 func markTaskInFlight(taskID string) {
 	inFlightTasksMutex.Lock()
 	defer inFlightTasksMutex.Unlock()
-	inFlightTasks[taskID] = struct{}{}
+	inFlightTasks[taskID] = nil
 }
 
 func unmarkTaskInFlight(taskID string) {
@@ -100,7 +102,7 @@ func LoadAPIMethods() {
 	})
 	api_supported_methods.AddMethod(&api_supported_methods.SupportedMethod{
 		Name:        MethodTaskCancel,
-		Description: "取消我的排队中任务（执行中任务不可取消）",
+		Description: "取消我的排队或执行中任务（执行中返回 cancelling，进程组退出后落终态）",
 		InputSchema: api_auth_common.InputSchema(
 			map[string]interface{}{
 				"task_id": api_auth_common.StringSchema("", 36, 36),
@@ -122,7 +124,7 @@ func AcceptAsyncTask(ctx context.Context, methodName string, abilityParams inter
 	if user, _, identityErr := api_auth_session.AuthenticatedUser(ctx); identityErr == nil {
 		userID = &user.UserID
 	}
-	db, err := storage.MysqlDB(ctx)
+	db, err := storage.GormDB(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -169,13 +171,32 @@ func ExecuteNextQueuedTask(ctx context.Context) (bool, error) {
 	return true, nil
 }
 
-// claimQueuedTask 用 FOR UPDATE SKIP LOCKED 认领一条排队任务（高并发多 worker 零踩踏），无任务返回 nil。
+// claimQueuedTask uses the primary DB. SQLite claims with one atomic UPDATE ... RETURNING;
+// row-locking engines retain SKIP LOCKED. Recovery is single-daemon, not an HA lease.
 func claimQueuedTask(ctx context.Context) (*ability_task_model.AsyncTask, error) {
-	db, err := storage.MysqlDB(ctx)
+	taskLifecycleMutex.Lock()
+	defer taskLifecycleMutex.Unlock()
+	db, err := storage.GormDB(ctx)
 	if err != nil {
 		return nil, err
 	}
 	task := &ability_task_model.AsyncTask{}
+	if db.Dialector.Name() == "sqlite" {
+		now := time.Now().UTC()
+		candidate := db.Model(&ability_task_model.AsyncTask{}).Select("id").
+			Where("run_status = ?", RunStatusQueued).Order("id ASC").Limit(1)
+		result := db.Model(task).Clauses(clause.Returning{}).
+			Where("id = (?) AND run_status = ?", candidate, RunStatusQueued).
+			Updates(map[string]interface{}{"run_status": RunStatusRunning, "started_at": &now})
+		if result.Error != nil {
+			return nil, result.Error
+		}
+		if result.RowsAffected == 0 {
+			return nil, nil
+		}
+		markTaskInFlight(task.TaskID)
+		return task, nil
+	}
 	claimed := false
 	err = db.Transaction(func(tx *gorm.DB) error {
 		findErr := tx.Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"}).
@@ -212,9 +233,29 @@ func claimQueuedTask(ctx context.Context) (*ability_task_model.AsyncTask, error)
 // executeClaimedTask 调用注册表里同一个 Execute 并落终态；panic、方法下线、序列化故障归 system_error。
 func executeClaimedTask(ctx context.Context, task *ability_task_model.AsyncTask) {
 	defer unmarkTaskInFlight(task.TaskID)
-	// 停止信号不中断已认领任务：跑完当前再退
+	// Cancellation reaches the existing Execute and CLI process-group runner.
+	runCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	inFlightTasksMutex.Lock()
+	inFlightTasks[task.TaskID] = cancel
+	inFlightTasksMutex.Unlock()
+	// A cancellation can arrive after claim but before this cancel function is installed.
+	db, dbErr := storage.GormDB(context.WithoutCancel(ctx))
+	if dbErr != nil {
+		gtbox_log.LogErrorf("async task storage unavailable before Execute: task_id=%s: %v", task.TaskID, dbErr)
+		return
+	}
+	if dbErr == nil {
+		var current ability_task_model.AsyncTask
+		if err := db.Where("task_id = ?", task.TaskID).Take(&current).Error; err != nil {
+			finishTask(context.WithoutCancel(ctx), task.TaskID, ProcessStatusSystemError, "", 0, err.Error())
+			return
+		} else if current.CancelRequested {
+			cancel()
+		}
+	}
 	taskCtx := context.WithValue(
-		context.WithoutCancel(ctx),
+		runCtx,
 		asyncTaskInfoContextKey{},
 		&AsyncTaskInfo{TaskID: task.TaskID, UserID: task.UserID},
 	)
@@ -232,6 +273,10 @@ func executeClaimedTask(ctx context.Context, task *ability_task_model.AsyncTask)
 
 	value, execErr := callExecuteRecovered(taskCtx, supportedMethod, task, input)
 
+	if taskCtx.Err() != nil {
+		finishTask(context.WithoutCancel(taskCtx), task.TaskID, ProcessStatusCancelled, "", 0, "task execution cancelled")
+		return
+	}
 	if execErr != nil {
 		if businessErr, isBusiness := api_error_code.As(execErr); isBusiness {
 			finishTask(taskCtx, task.TaskID, ProcessStatusFailed, "", businessErr.Code, businessErr.Message)
@@ -262,10 +307,21 @@ func callExecuteRecovered(
 
 // finishTask 把任务落到唯一终态 done + 对应业务结局；running 行由当前 worker 独占，直接条件更新。
 func finishTask(ctx context.Context, taskID string, processStatus string, resultPayload string, errorCode int, errorMessage string) {
-	db, err := storage.MysqlDB(ctx)
+	taskLifecycleMutex.Lock()
+	defer taskLifecycleMutex.Unlock()
+	ctx = context.WithoutCancel(ctx)
+	db, err := storage.GormDB(ctx)
 	if err != nil {
 		gtbox_log.LogErrorf("async task finish failed: task_id=%s: %v", taskID, err)
 		return
+	}
+	var current ability_task_model.AsyncTask
+	if err := db.Where("task_id = ?", taskID).Take(&current).Error; err != nil {
+		gtbox_log.LogErrorf("async task finish read failed: task_id=%s: %v", taskID, err)
+		return
+	}
+	if current.CancelRequested {
+		processStatus, resultPayload, errorCode, errorMessage = ProcessStatusCancelled, "", 0, "task execution cancelled"
 	}
 	now := time.Now().UTC()
 	updates := map[string]interface{}{
@@ -296,7 +352,9 @@ func finishTask(ctx context.Context, taskID string, processStatus string, result
 // 运行中意外产生的孤儿同样每轮自愈。重跑兜底依赖异步 Execute 幂等（契约明记，责任归业务函数）。
 // 由 policy 周期维护大循环调用。
 func RequeueOrphanedTasks(ctx context.Context) error {
-	db, err := storage.MysqlDB(ctx)
+	taskLifecycleMutex.Lock()
+	defer taskLifecycleMutex.Unlock()
+	db, err := storage.GormDB(ctx)
 	if err != nil {
 		return err
 	}
@@ -305,7 +363,14 @@ func RequeueOrphanedTasks(ctx context.Context) error {
 	if inFlight := inFlightTaskIDs(); len(inFlight) > 0 {
 		query = query.Where("task_id NOT IN ?", inFlight)
 	}
-	result := query.Updates(map[string]interface{}{
+	now := time.Now().UTC()
+	cancelled := query.Session(&gorm.Session{}).Where("cancel_requested = ?", true).Updates(map[string]interface{}{
+		"run_status": RunStatusDone, "process_status": ProcessStatusCancelled, "completed_at": &now,
+	})
+	if cancelled.Error != nil {
+		return cancelled.Error
+	}
+	result := query.Where("cancel_requested = ?", false).Updates(map[string]interface{}{
 		"run_status": RunStatusQueued,
 		"started_at": nil,
 	})
@@ -323,7 +388,7 @@ func UpdateProgress(ctx context.Context, taskID string, progress float64, messag
 	if taskID == "" || progress < 0 || progress > 100 {
 		return errors.New("invalid task progress")
 	}
-	db, err := storage.MysqlDB(ctx)
+	db, err := storage.GormDB(ctx)
 	if err != nil {
 		return err
 	}
@@ -356,7 +421,7 @@ func TaskGet(ctx context.Context, input interface{}) (interface{}, error) {
 	if err != nil {
 		return nil, err
 	}
-	db, err := storage.MysqlDB(ctx)
+	db, err := storage.GormDB(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -381,7 +446,7 @@ func TaskList(ctx context.Context, input interface{}) (interface{}, error) {
 	if err != nil {
 		return nil, err
 	}
-	db, err := storage.MysqlDB(ctx)
+	db, err := storage.GormDB(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -400,40 +465,57 @@ func TaskList(ctx context.Context, input interface{}) (interface{}, error) {
 	return map[string]interface{}{"tasks": taskResults}, nil
 }
 
-// TaskCancel 取消我的排队中任务：queued 原子置 done+cancelled；running/done 或非属主统一拒绝。
+// TaskCancel persists cancellation before signalling the owned running task.
+// A running task is not done until Execute and process-group cleanup return.
 func TaskCancel(ctx context.Context, input interface{}) (interface{}, error) {
 	params, ok := api_auth_common.InputObject(input)
 	if !ok || !api_auth_common.HasOnlyKeys(params, "task_id") {
 		return nil, api_error_code.ErrInvalidArguments
 	}
-	taskID, taskIDOK := api_auth_common.RequiredString(params, "task_id")
-	if !taskIDOK || uuid.Validate(taskID) != nil {
+	taskID, ok := api_auth_common.RequiredString(params, "task_id")
+	if !ok || uuid.Validate(taskID) != nil {
 		return nil, api_error_code.ErrInvalidArguments
 	}
 	user, _, err := api_auth_session.AuthenticatedUser(ctx)
 	if err != nil {
 		return nil, err
 	}
-	db, err := storage.MysqlDB(ctx)
+	taskLifecycleMutex.Lock()
+	defer taskLifecycleMutex.Unlock()
+	db, err := storage.GormDB(ctx)
 	if err != nil {
 		return nil, err
 	}
-
-	now := time.Now().UTC()
-	result := db.Model(&ability_task_model.AsyncTask{}).
-		Where("task_id = ? AND user_id = ? AND run_status = ?", taskID, user.UserID, RunStatusQueued).
-		Updates(map[string]interface{}{
-			"run_status":     RunStatusDone,
-			"process_status": ProcessStatusCancelled,
-			"completed_at":   &now,
-		})
+	var task ability_task_model.AsyncTask
+	if err = db.Where("task_id = ? AND user_id = ?", taskID, user.UserID).Take(&task).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, api_error_code.ErrInvalidArguments
+		}
+		return nil, err
+	}
+	if task.RunStatus == RunStatusDone {
+		return nil, api_error_code.ErrInvalidArguments
+	}
+	updates := map[string]interface{}{"cancel_requested": true}
+	queued := task.RunStatus == RunStatusQueued
+	if queued {
+		now := time.Now().UTC()
+		updates["run_status"], updates["process_status"], updates["completed_at"] = RunStatusDone, ProcessStatusCancelled, &now
+	}
+	result := db.Model(&ability_task_model.AsyncTask{}).Where("task_id = ? AND run_status = ?", taskID, task.RunStatus).Updates(updates)
 	if result.Error != nil {
 		return nil, result.Error
 	}
 	if result.RowsAffected != 1 {
 		return nil, api_error_code.ErrInvalidArguments
 	}
-	return map[string]interface{}{"cancelled": true, "task_id": taskID}, nil
+	inFlightTasksMutex.Lock()
+	cancel := inFlightTasks[taskID]
+	inFlightTasksMutex.Unlock()
+	if cancel != nil {
+		cancel()
+	}
+	return map[string]interface{}{"task_id": taskID, "cancelled": queued, "cancelling": !queued}, nil
 }
 
 func taskResult(task *ability_task_model.AsyncTask, includeResult bool) map[string]interface{} {
@@ -444,6 +526,7 @@ func taskResult(task *ability_task_model.AsyncTask, includeResult bool) map[stri
 		"process_status":   task.ProcessStatus,
 		"progress":         task.Progress,
 		"progress_message": task.ProgressMessage,
+		"cancel_requested": task.CancelRequested,
 		"error_code":       task.ErrorCode,
 		"error_message":    task.ErrorMessage,
 		"created_at":       task.CreatedAt.UTC().Format(time.RFC3339),

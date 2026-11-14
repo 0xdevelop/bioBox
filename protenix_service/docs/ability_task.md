@@ -16,7 +16,7 @@
 
 # 1. Task 域定位与边界
 
-Task 域负责异步长任务的持久状态、统一受理、后台执行与查询。MySQL 任务记录是唯一真相源，不使用内存 channel、请求 goroutine 或连接存活状态冒充可恢复任务池。运行前提：MySQL 8.0+（认领依赖 `FOR UPDATE SKIP LOCKED`）。
+Task 域负责异步长任务的持久状态、统一受理、后台执行与查询。主关系库（本实例 SQLite）任务记录是唯一真相源，不使用内存 channel、请求 goroutine 或连接存活状态冒充可恢复任务池。仅单 daemon 负责一个队列库，不能多实例共用本机孤儿恢复。
 
 `SupportedMethod.Async` 只由后端方法注册设置，默认同步。受理统一收口在 `APIExecuter`：门禁通过后读取 `Async` 标识，经 `ability_task.AcceptAsyncTask` 写入持久化排队区并立即返回 `task_id`；Policy 后续按空闲名额认领任务，并按方法名调用**同一注册项的同一个 `Execute`**。`Execute` 保持纯业务工作函数，各方法不得自写受理。
 
@@ -40,7 +40,7 @@ flowchart LR
         Inject --> Run["Execute(ctx, input 反序列化)"]
         Run --> Finish["落终态 done + 业务结局"]
     end
-    Accept -. MySQL 任务记录（唯一真相源） .-> Claim
+    Accept -. 主关系库任务记录（唯一真相源） .-> Claim
 ```
 
 状态三字段（与 model 列 comment、包内常量三处同步维护）：
@@ -103,35 +103,40 @@ stateDiagram-v2
 
 ## 3.3. task.cancel
 
-取消我的排队中任务。
+请求取消我的排队或执行中任务。
 
 ```json
 { "task_id": "b3f11655-..." }
 ```
 
-- 仅 `queued` 可取消（原子置 `done + cancelled`）；`running` 与终态拒绝。
+- queued 原子置 done/cancelled；running 持久化 cancel_requested 并返回 cancelling，Execute/进程组退出后落 done/cancelled；终态拒绝。
 
 # 4. 数据与并发纪律
 
-- **认领**：事务内 `SELECT ... WHERE run_status='queued' ORDER BY id ASC LIMIT 1 FOR UPDATE SKIP LOCKED` → 置 `running` → 提交后才执行。多 Worker 零踩踏，同一任务不可能被认领两次。
-- **Worker 并发**：由 Policy 按 `runtime.NumCPU() × policy_cfg.workers_scaller` 计算全局上限；每个 Worker 只认领并执行一条任务，完成后 goroutine 自然释放。
-- **排队区**：受理层不设人为的每用户在途数量上限；MySQL 任务记录承载排队，资源故障按正常数据库错误返回。
-- **选库与退出**：Task 全流程使用 `storage.MysqlDB(ctx)`，不随主库切换；未启用 MySQL 时受理明确报错，Policy 不派发 Task。退出时停止新的派发，等待已认领任务和维护事项结束，再关闭程序固定存储。
+- **认领**：SQLite 单条条件 `UPDATE … WHERE id=(SELECT … queued … LIMIT 1) AND run_status=queued RETURNING *`，返回行才执行；其他行锁引擎保留事务 SKIP LOCKED（本轮未验）。8 Worker/24 任务实测每条 Execute 一次。
+- **Worker 并发**：由 Policy 按 `runtime.NumCPU() × policy_cfg.workers_scaller` 计算全局上限，可用 `max_workers` 正数加绝对上限（取较小值）；每个 Worker 只认领并执行一条任务，完成后 goroutine 自然释放。
+- **排队区**：受理层不设人为的每用户在途数量上限；主关系库 任务记录承载排队，资源故障按正常数据库错误返回。
+- **选库与退出**：Task 使用 `storage.GormDB(ctx)` 主库；停机停止派发并取消在途 Execute，等进程组清理后关闭库。SQLite 单连接池，短生命周期锁串行认领/恢复/取消/终态转换，调度仍只有 Policy。
 - 普通状态查询读已提交快照不加锁；并发状态变更一律条件原子更新或行锁事务。共享瓶颈是全局 DB 连接池（Worker 与请求线程共用），池容量属部署参数。
 - **任务身份快照**：Worker 把 `AsyncTaskInfo{TaskID, UserID}` 注入 context，业务 `Execute` 经 `AsyncTaskInfoFromContext` 读取——与门禁在线身份语义分离，异步执行不要求受理时的 session 仍存活。
 - **执行单元**：Policy 每轮只填充当前空闲名额，长任务持续占用其名额，下一轮不会重复扩容。
-- **未尽之事自愈（取代一次性启动恢复）**：`policy` 维护大循环每轮调 `RequeueOrphanedTasks`——DB `running` 且不在本进程 in-flight 执行集合的孤儿任务重置回 `queued` 拉起来继续。重启后第一轮即捞回全部死进程遗留；运行中意外孤儿同样自愈。防误拉：`claimQueuedTask` 在认领事务提交**前**登记 in-flight、任务落终态后移除——DB `running` 可见时执行记录必已存在，无误判窗口。**异步 `Execute` 必须幂等或自查重**——重跑兜底依赖此契约，责任归业务函数。
+- **未尽之事自愈（取代一次性启动恢复）**：`policy` 维护大循环每轮调 `RequeueOrphanedTasks`——DB `running` 且不在本进程 in-flight 执行集合的孤儿任务重置回 `queued` 拉起来继续。重启后第一轮即捞回全部死进程遗留；运行中意外孤儿同样自愈。防误拉：认领与恢复共用短生命周期锁，认领在释放锁前登记 in-flight，终态后移除。**异步 `Execute` 必须幂等或自查重**——重跑兜底依赖此契约，责任归业务函数。
 - **单实例边界**：不做分布式认领/租约；多实例部署是将来的独立命题。
 - **载荷**：`input_payload`/`result_payload` 明文 JSON 存储；**敏感值（密码、token、密钥等）不得进入异步方法的 arguments 与结果**（门禁参数 `jwt_token` 已在受理前被 APIExecuter 移除）。持久化加密待真实敏感任务出现时另立契约。
+
+## 4.1. 取消与恢复补充（2026-11-14）
+`cancel_requested` 为持久布尔字段，不增状态枚举。queued 直接 done/cancelled；running 返回 `{cancelled:false,cancelling:true}`，由 Worker 在 Execute 和进程组清理返回后落终态。属主校验不变；非属主或无效 ID 拒绝。取消请求早于 cancel func 安装，由 Worker 重读 DB 补接。恢复时取消过的孤儿落 cancelled，其他孤儿重排。
+
+已验 SQLite close/reopen 后恢复至 Execute；另以编译后的服务和 systemd KillMode=control-group 实测 SIGKILL 主进程、旧脚本父子进程先清理、新主进程重启后同 task_id 成功（短脚本，不是 GPU 模型）。裸运行 SIGKILL/GPU 中断恢复和完全幂等推理仍未验收。
 
 # 5. 验收边界
 
 真实验收必须分别证明：
 
 - Async 方法受理立即返回 `task_id`，Worker 后续执行同一注册项 Execute。
-- 多 Worker 并发认领零踩踏（SKIP LOCKED），同一任务不被执行两次。
+- 多 Worker 并发认领零踩踏（SQLite UPDATE RETURNING），同一任务不被执行两次。
 - 进程杀死后重启，`running` 孤儿任务被重置回 `queued` 并重跑完成。
-- `task.cancel` 仅对 `queued` 生效；`running` 与终态拒绝。
+- queued/running 属主可取消，running 等进程组清理完成才落终态；终态拒绝。
 - 跨用户 `task.get` / `task.cancel` 被所有权校验拒绝；无属主任务不可查询或取消。
 
 首个真实异步业务方法接入后完成上述端到端验收（仓内禁造演示方法）。
@@ -145,9 +150,9 @@ stateDiagram-v2
 - [ ] 🟡 DONE — `SupportedMethod.Async` 受理一次性接入 `APIExecuter`（api 层就此封版）。
 - [ ] 🟡 DONE — 状态三字段（`run_status`/`process_status`/`progress`）落 model，枚举三处同步。
 - [ ] 🟡 DONE — `AcceptAsyncTask` 受理（持久化排队 + 身份快照）。
-- [ ] 🟡 DONE — Policy 按 CPU 倍率填充执行名额（SKIP LOCKED 认领、临时 Worker、panic 归 system_error）。
+- [ ] 🟡 DONE — Policy 按 CPU 倍率填充执行名额（SQLite 原子认领、绝对上限、临时 Worker、panic 归 system_error）。
 - [ ] 🟡 DONE — 未尽之事自愈：`RequeueOrphanedTasks` 经 `policy` 维护大循环每轮侦测（in-flight 防误拉）。
 - [ ] 🟡 DONE — `task.get` / `task.list` / `task.cancel` 带所有权校验接入统一调用链。
-- [ ] ⬜ TODO — 首个真实异步业务方法接入后完成受理→执行端到端验收（仓内禁造演示方法）。
+- [x] ✅ ACCEPTED — Protenix v1 经真实 HTTP Bearer → SQLite → Policy → Execute → 原生小任务，产出 1 CIF；低采样烟测不是科学质量验收。
 - [ ] ⬜ TODO — done 任务的归档/清理策略（保留窗口拍板后作为 `policy` 定期轮询租户实施）。
 - [ ] ⬜ TODO — 任务载荷持久化加密契约（待真实敏感任务出现）。

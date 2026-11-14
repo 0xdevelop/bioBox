@@ -18,6 +18,7 @@ type AsyncTask struct {
 	Method          string     `gorm:"size:191;not null;index" json:"method"`
 	RunStatus       string     `gorm:"size:16;not null;index;comment:程序级运行状态枚举——queued:排队待认领 running:Worker 执行中 done:唯一终态" json:"run_status"`
 	ProcessStatus   string     `gorm:"size:16;not null;default:'';comment:业务级处理结局枚举——空:进行中 success:成功 failed:业务失败 cancelled:已取消 system_error:系统故障" json:"process_status"`
+	CancelRequested bool       `gorm:"not null;default:false;comment:持久取消请求，执行停止后落 cancelled" json:"cancel_requested"`
 	Progress        float64    `gorm:"not null;default:0;comment:量化进度 0-100" json:"progress"`
 	ProgressMessage string     `gorm:"size:512" json:"progress_message"`
 	ErrorCode       int        `gorm:"not null;default:0" json:"error_code"`

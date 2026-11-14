@@ -3,7 +3,7 @@ storage_cfg: # 存储。enabled 为 true 的引擎会打开，可以同时开多
   storage_sqlite:
     enabled: true
     path: "./data/protenix_service.db"
-  # Async/Task 固定走 storage.MysqlDB；未启用 MySQL 时异步受理失败，不会改走 SQLite。
+  # Auth/User/Task 均走主库，本实例只启用 SQLite，不需要 MySQL/Redis。
   storage_mysql:
     enabled: false
     dbname: "protenix_service"
@@ -56,6 +56,7 @@ frontend_cfg: # 前端页面服务配置
   bind_address: "127.0.0.1"
   port: 13006
 policy_cfg: # Policy scheduling configurations
+  max_workers: 1 # 单 GPU 的绝对并发上限；正数生效
   policy_duration: "10s" # 定期轮询事项执行完一次到下一次的间隔，Go duration 字符串
   workers_scaller: 5 # 最大异步并发 = CPU 数量 × 倍率
 auth_cfg: # Auth configurations

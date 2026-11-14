@@ -30,3 +30,16 @@ func TestCurrentMaxWorkers(t *testing.T) {
 		})
 	}
 }
+
+func TestAbsoluteWorkerCap(t *testing.T) {
+	previous := CurrentCfgPolicy
+	t.Cleanup(func() { CurrentCfgPolicy = previous })
+	CurrentCfgPolicy = &PolicyConfig{WorkersScaller: 5, MaxWorkers: 1}
+	if got := CurrentMaxWorkers(); got != 1 {
+		t.Fatalf("single GPU cap ignored: %d", got)
+	}
+	CurrentCfgPolicy.MaxWorkers = runtime.NumCPU() * 10
+	if got := CurrentMaxWorkers(); got != runtime.NumCPU()*5 {
+		t.Fatalf("cap must not increase CPU limit: %d", got)
+	}
+}

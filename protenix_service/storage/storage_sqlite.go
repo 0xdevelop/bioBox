@@ -22,6 +22,14 @@ func openSqlite(cfg *storage_config.StorageSqliteConfig) error {
 		return err
 	}
 	opened.SqliteDB.Config.NowFunc = func() time.Time { return time.Now().UTC() }
+	pool, err := opened.SqliteDB.DB()
+	if err != nil {
+		_ = opened.Close()
+		return err
+	}
+	// SQLite has one writer. A single connection avoids deferred transaction upgrade contention.
+	pool.SetMaxOpenConns(1)
+	pool.SetMaxIdleConns(1)
 	globalSqlite = opened
 	return nil
 }

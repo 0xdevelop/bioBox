@@ -149,7 +149,7 @@ func TestExecuteCancelStopsDummyProcess(t *testing.T) {
 	}
 }
 
-func TestAsyncAcceptRejectsSqliteWithoutMysql(t *testing.T) {
+func TestAsyncAcceptUsesSqliteWithoutMysql(t *testing.T) {
 	previous := config.GlobalConfig
 	previousAuth := api_auth_config.CurrentCfgAuth
 	t.Cleanup(func() {
@@ -199,8 +199,8 @@ func TestAsyncAcceptRejectsSqliteWithoutMysql(t *testing.T) {
 			"seeds":      "101",
 		},
 	}, "")
-	if err == nil || !strings.Contains(err.Error(), "storage_mysql") {
-		t.Fatalf("protenix async accept must require MySQL: %v", err)
+	if err != nil {
+		t.Fatalf("protenix async accept on SQLite: %v", err)
 	}
 
 	_, err = api_executer.APIExecuter(ctx, api_executer.ToolsCallMethod, map[string]interface{}{
@@ -212,8 +212,8 @@ func TestAsyncAcceptRejectsSqliteWithoutMysql(t *testing.T) {
 			"N_sample": 2,
 		},
 	}, "")
-	if err == nil || !strings.Contains(err.Error(), "storage_mysql") {
-		t.Fatalf("pxdesign async accept must require MySQL: %v", err)
+	if err != nil {
+		t.Fatalf("pxdesign async accept on SQLite: %v", err)
 	}
 }
 
@@ -259,4 +259,24 @@ func containsToken(argv []string, token string) bool {
 		}
 	}
 	return false
+}
+
+// Upstream can exit zero after invalid JSON; no structures must never mean success.
+func TestExecuteRejectsZeroExitWithoutCIF(t *testing.T) {
+	work := t.TempDir()
+	src := filepath.Join(work, "bad.json")
+	if err := os.WriteFile(src, []byte("{not-json"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	previous := config.GlobalConfig
+	t.Cleanup(func() { config.GlobalConfig = previous })
+	config.GlobalConfig = &config.FileConfig{CliCfg: &config.CLIConfig{WorkRoot: filepath.Join(work, "jobs"), Protenix: &config.CLIBinaryConfig{Binary: dummyRun(t)}}}
+	value, err := Execute(context.Background(), map[string]interface{}{"input": src, "out_dir": "out"})
+	if err == nil {
+		t.Fatal("zero exit with no CIF was accepted as success")
+	}
+	payload := value.(map[string]interface{})
+	if payload["exit_code"] != 0 || payload["cif_count"] != 0 {
+		t.Fatalf("unexpected regression fixture result: %v", payload)
+	}
 }

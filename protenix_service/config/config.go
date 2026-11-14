@@ -287,6 +287,7 @@ func generateDefaultConfig() *FileConfig {
 			Port:        aport + 2,
 		},
 		PolicyCfg: &policy_config.PolicyConfig{
+			MaxWorkers:     1,
 			PolicyDuration: "10s",
 			WorkersScaller: 1,
 		},
