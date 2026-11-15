@@ -81,6 +81,14 @@ func TestFlowDebugPageAndCatalogIncludesArtifactMethods(t *testing.T) {
 		`await callSelected("task.list"`,
 		"该 API key 下还没有任务",
 		"探测或刷新后列出；没有任务就空着",
+		"function resetTaskView",
+		"function stageAtoms",
+		"stageTaskId",
+		"不会继续显示上一任务的原子",
+		"忽略过期产物",
+		"alreadyReset",
+		"上一任务产物已从舞台撤下",
+		"只绑定当前 task_id",
 	} {
 		if !strings.Contains(body, needle) {
 			t.Fatalf("flow_debug.html missing %q", needle)

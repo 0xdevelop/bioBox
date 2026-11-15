@@ -67,7 +67,7 @@
 <body>
   <header>
     <h1>Protenix 真实任务流调试</h1>
-    <p>只填服务地址和 API key（<code>ptxk_</code>）。页面只展示服务返回的状态与产物，不用动画伪造进度或 CIF。show_yeah 仅作视觉参考，本页不改造该仓。</p>
+    <p>只填服务地址和 API key（<code>ptxk_</code>）。页面只展示服务返回的状态与产物，不用动画伪造进度或 CIF。提交或跟踪另一任务时，舞台、产物表和任务流程枢纽会先撤下上一任务的结果，只绑定当前 task_id。show_yeah 仅作视觉参考，本页不改造该仓。</p>
     <p class="note" id="host-note">正在检测是否位于 test_ui 同源页面…</p>
   </header>
   <main>
@@ -213,6 +213,8 @@
       flowHubs: {},
       flowPackets: [],
       cifCount: null,
+      stageTaskId: "",
+      stagePath: "",
     };
 
     function maskSecret(text) {
@@ -621,7 +623,7 @@
       if (state.runStatus) bits.push("run_status=" + state.runStatus);
       if (state.processStatus) bits.push("process_status=" + state.processStatus);
       if (state.cifCount != null) bits.push("cif_count=" + state.cifCount);
-      if (state.atoms.length) bits.push("atoms=" + state.atoms.length);
+      if (stageAtoms().length) bits.push("atoms=" + stageAtoms().length + (state.stageTaskId ? ("@" + state.stageTaskId) : ""));
       ctx.fillStyle = "#8aa0b8";
       ctx.font = "12px sans-serif";
       ctx.fillText(bits.join(" · ") || "尚未发生可点亮的真实事件", 16, 36);
@@ -659,15 +661,23 @@
       const el = $("stage-caption");
       if (el && el.textContent !== text) el.textContent = text;
     }
+    function stageAtoms() {
+      if (!state.atoms.length) return [];
+      if (state.stageTaskId && state.stageTaskId !== state.taskId) return [];
+      return state.atoms;
+    }
     function drawAtoms() {
       const canvas = $("stage");
       const ctx = canvas.getContext("2d");
       const now = performance.now();
       drawBackdrop(ctx, canvas, now);
-      if (!state.atoms.length) {
+      const atoms = stageAtoms();
+      if (!atoms.length) {
         const waiting = state.runStatus === "running"
-          ? "run_status=running。舞台只显示等待态，没有结构就不用随机点冒充计算。"
-          : "没有可绘制的真实原子。等待 task.artifact 返回含 ATOM/_atom_site 的 CIF/PDB。";
+          ? "run_status=running。当前任务还没有产物，舞台只显示等待态，没有结构就不用随机点冒充计算。"
+          : (state.taskId
+            ? ("当前任务 " + state.taskId + " 还没有可绘制的真实原子。等待该任务的 task.artifact，不会继续显示上一任务的结构。")
+            : "没有可绘制的真实原子。等待 task.artifact 返回含 ATOM/_atom_site 的 CIF/PDB。");
         setCaption(waiting);
         ctx.fillStyle = "#8aa0b8";
         ctx.font = "16px sans-serif";
@@ -683,7 +693,7 @@
       const arrive = state.arriveAt ? Math.max(0, Math.min(1, (now - state.arriveAt) / 1400)) : 1;
       const ease = 1 - Math.pow(1 - arrive, 3);
       let maxR = 1;
-      const centered = state.atoms.map((atom, index) => {
+      const centered = atoms.map((atom, index) => {
         const spread = (1 - ease) * (40 + unitHash(index, 1) * 80);
         const ang = unitHash(index, 2) * Math.PI * 2;
         const x = atom.x + Math.cos(ang) * spread;
@@ -725,7 +735,7 @@
         return { sx: cx + atom.x * scale, sy: cy + atom.y * scale, r: 2.2 + depth * 3.6, atom };
       });
       const hover = state.hoverAtom;
-      let caption = "真实原子 " + state.atoms.length + " 个（由产物坐标绘制"
+      let caption = "真实原子 " + atoms.length + " 个（由产物坐标绘制"
         + (cas.length ? "；CA 连线只按残基序号，不是化学键验证" : "")
         + (arrive < 1 ? "；入场是把已解析坐标放到画面上，不是计算进度" : "")
         + "）。拖拽旋转，滚轮缩放。悬停查看残基。";
@@ -787,8 +797,46 @@
     }
     function tick() { drawFlowRail(); drawAtoms(); requestAnimationFrame(tick); }
 
+    function resetTaskView(taskId, keepHubIds) {
+      if (state.pollTimer) {
+        clearInterval(state.pollTimer);
+        state.pollTimer = 0;
+      }
+      const keep = {};
+      (keepHubIds || ["probe"]).forEach((id) => {
+        if (state.flowHubs[id]) keep[id] = state.flowHubs[id];
+      });
+      state.taskId = taskId || "";
+      state.lastStatusKey = "";
+      state.atoms = [];
+      state.stageTaskId = "";
+      state.stagePath = "";
+      state.runStatus = "";
+      state.processStatus = "";
+      state.arriveAt = 0;
+      state.hoverAtom = null;
+      state.hitAtoms = [];
+      state.cifCount = null;
+      state.flowHubs = keep;
+      state.flowPackets = [];
+      $("task-id").value = state.taskId;
+      $("progress-bar").style.width = "0%";
+      $("progress-label").textContent = state.taskId
+        ? ("已切换到 task_id=" + state.taskId + "，等待该任务的后端 progress。上一任务产物已从舞台撤下。")
+        : "尚未受理";
+      $("status-chips").innerHTML = "";
+      $("artifact-rows").innerHTML = '<tr><td colspan="4" class="note">尚未取回当前任务产物</td></tr>';
+      $("cif-note").textContent = state.taskId
+        ? ("舞台已清空。当前跟踪 " + state.taskId + "，不会继续显示上一任务的原子。")
+        : "CIF 原子来自取回的真实文件；若文件没有原子记录，这里会如实显示，不会用随机点冒充。结构入场只是把已解析的真实坐标呈现到画面上，不是计算进度。悬停查看残基与原子名称，坐标仍来自产物，不是估算。";
+      highlightHistory(state.taskId);
+    }
     async function loadArtifacts(taskId) {
       const listed = await callSelected("task.artifacts", { task_id: taskId }, true);
+      if (taskId !== state.taskId) {
+        log("忽略过期产物清单", { task_id: taskId, current: state.taskId });
+        return;
+      }
       const items = listed.artifacts || [];
       const body = $("artifact-rows");
       body.innerHTML = "";
@@ -815,17 +863,23 @@
     }
     async function fetchArtifact(taskId, path, kind) {
       const got = await callSelected("task.artifact", { task_id: taskId, path }, true);
+      if (taskId !== state.taskId) {
+        log("忽略过期产物 " + path, { task_id: taskId, current: state.taskId });
+        return;
+      }
       if (got.encoding !== "base64" || !got.content) throw new Error("产物未按 base64 返回");
       const bytes = atob(got.content);
-      log("读取产物 " + path, { kind: got.kind || kind, size: got.size, content_type: got.content_type });
+      log("读取产物 " + path, { kind: got.kind || kind, size: got.size, content_type: got.content_type, task_id: taskId });
       const looksStructure = (got.kind === "cif" || got.kind === "pdb" || /\.(cif|pdb)$/i.test(path));
       if (looksStructure) {
         state.atoms = parseCIF(bytes);
+        state.stageTaskId = taskId;
+        state.stagePath = path;
         state.arriveAt = performance.now();
         state.autoRot = true;
         markFlow("structure", state.atoms.length ? "ok" : "wait", state.atoms.length ? "task.artifact" : "无原子", state.flowHubs.artifacts ? "artifacts" : "");
         $("cif-note").textContent = state.atoms.length
-          ? ("已从 " + path + " 解析 " + state.atoms.length + " 个原子。这是服务返回的文件，不是随机结构。入场动画只移动这些真实坐标。悬停查看残基。")
+          ? ("已从 " + path + " 解析 " + state.atoms.length + " 个原子，属于 task_id=" + taskId + "。这是服务返回的文件，不是随机结构。入场动画只移动这些真实坐标。悬停查看残基。")
           : (path + " 没有 ATOM/_atom_site 坐标，已如实显示为空，未用随机点填充。");
       } else {
         $("cif-note").textContent = path + " 不是结构文件。预览：\n" + bytes.slice(0, 400);
@@ -921,7 +975,9 @@
         return null;
       }
     }
-    async function followTask(taskId) {
+    async function followTask(taskId, options) {
+      const opts = options || {};
+      if (!opts.alreadyReset) resetTaskView(taskId, opts.keepHubs || ["probe"]);
       state.taskId = taskId;
       $("task-id").value = taskId;
       $("btn-cancel").disabled = false;
@@ -998,10 +1054,11 @@
         log("提交 " + method + " via " + selectedTransport(), args);
         const accepted = await callSelected(method, args, true);
         if (!accepted.task_id) throw new Error("受理结果没有 task_id");
+        resetTaskView(accepted.task_id, ["probe"]);
         addTimeline("已受理 " + accepted.task_id + " run_status=" + (accepted.run_status || "queued") + "（这不是结构完成）");
         markFlow("submit", "ok", "已受理", state.flowHubs.probe ? "probe" : "");
         await loadHistory("受理后刷新");
-        await followTask(accepted.task_id);
+        await followTask(accepted.task_id, { alreadyReset: true });
       } catch (err) {
         markFlow("submit", "err", "提交失败", state.flowHubs.probe ? "probe" : "");
         log("提交失败", err.message);

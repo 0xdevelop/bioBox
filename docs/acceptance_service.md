@@ -1,3 +1,12 @@
+# 最新状态：调试页舞台绑定当前任务（2026-11-15 09:02 Asia/Singapore UTC+8）
+
+本节补上「跟踪或提交另一任务时，舞台仍可能继续显示上一任务原子」的缺口。此前 Linux Chrome 第一次点击已记录该现象并作废该次提交证据；本轮改正页面绑定，而不是放宽等待条件。这不是 Linux Chrome 再点击、官方 GPU 设计、长期服务或生产级前端。
+
+- 提交、点击历史或手动跟踪另一 `task_id` 时，`resetTaskView` 先撤下上一任务的原子、产物表、进度和任务流程枢纽（协议探测枢纽保留），再轮询当前任务。
+- `task.artifacts` / `task.artifact` 返回后若 `task_id` 已不是当前跟踪对象，结果会被忽略，不会把过期 CIF 画到新任务舞台上。
+- 舞台只绘制 `stageTaskId` 与当前 `task_id` 一致的原子。页面仍禁止 `Math.random()` 与伪造进度。`168` 原子 / `20` 个 CA 回归未改。
+- 未改 Task 契约、取件规则、show_yeah、`build_srcs` 或三仓。未装 MySQL/Redis，未跑 GPU，未启长期服务。
+
 # 最新状态：调试页真实历史任务列表（2026-11-15 07:54 Asia/Singapore UTC+8）
 
 本节补上调试页此前只把 `task.list` 用在协议探测、需手工粘贴 `task_id` 才能回顾历史的缺口。这不是 Linux Chrome 再点击、官方 GPU 设计、长期服务或生产级前端。
