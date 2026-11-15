@@ -11,8 +11,15 @@ type CLIConfig struct {
 
 // CLIBinaryConfig 指向已安装的官方包装命令，不在代码里写死路径。
 type CLIBinaryConfig struct {
-	Binary   string            `yaml:"binary" json:"binary" toml:"binary"`
-	ExtraEnv map[string]string `yaml:"extra_env" json:"extra_env" toml:"extra_env" comment:"额外环境变量，例如 LAYERNORM_TYPE=torch"`
+	Binary          string                       `yaml:"binary" json:"binary" toml:"binary"`
+	ExtraEnv        map[string]string            `yaml:"extra_env" json:"extra_env" toml:"extra_env" comment:"额外环境变量，例如 LAYERNORM_TYPE=torch"`
+	VersionRuntimes map[string]*CLIRuntimeConfig `yaml:"version_runtimes" json:"version_runtimes" toml:"version_runtimes" comment:"按 arguments.version 选择独立 runtime。v1 未单独配置时回退到上级 binary；v2 必须单独配置，不会使用 v1 的 binary。version 不进 CLI 参数或 URL"`
+}
+
+// CLIRuntimeConfig 是某一产品版本对应的独立 runtime。
+type CLIRuntimeConfig struct {
+	Binary   string            `yaml:"binary" json:"binary" toml:"binary" comment:"该版本已安装包装命令的路径；空字符串表示该版本未配置"`
+	ExtraEnv map[string]string `yaml:"extra_env" json:"extra_env" toml:"extra_env" comment:"该版本的额外环境变量；省略或 null 时沿用上级 extra_env，显式空映射表示不附加额外变量"`
 }
 
 func DefaultCLIConfig() *CLIConfig {
@@ -20,7 +27,7 @@ func DefaultCLIConfig() *CLIConfig {
 		WorkRoot:              "./data/cli_jobs",
 		CancelGraceSeconds:    10,
 		ExecuteTimeoutSeconds: 0,
-		Protenix:              &CLIBinaryConfig{ExtraEnv: map[string]string{}},
+		Protenix:              &CLIBinaryConfig{ExtraEnv: map[string]string{}, VersionRuntimes: map[string]*CLIRuntimeConfig{}},
 		PXDesign:              &CLIBinaryConfig{ExtraEnv: map[string]string{}},
 	}
 }

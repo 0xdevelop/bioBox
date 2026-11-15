@@ -87,6 +87,86 @@ func TestBuildArgvOmitsVersionAndStagesInput(t *testing.T) {
 	}
 }
 
+func TestVersionSelectsIndependentRuntime(t *testing.T) {
+	work := t.TempDir()
+	src := filepath.Join(work, "input.json")
+	if err := os.WriteFile(src, []byte(`{"name":"src"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runtimeOne := copyDummyRun(t, work, "runtime-one")
+	runtimeTwo := copyDummyRun(t, work, "runtime-two")
+	previous := config.GlobalConfig
+	t.Cleanup(func() { config.GlobalConfig = previous })
+	config.GlobalConfig = &config.FileConfig{CliCfg: &config.CLIConfig{
+		WorkRoot:           filepath.Join(work, "jobs"),
+		CancelGraceSeconds: 1,
+		Protenix: &config.CLIBinaryConfig{
+			Binary:   runtimeOne,
+			ExtraEnv: map[string]string{"FROM": "base"},
+			VersionRuntimes: map[string]*config.CLIRuntimeConfig{
+				"v2": {Binary: runtimeTwo, ExtraEnv: map[string]string{"FROM": "v2"}},
+			},
+		},
+	}}
+
+	argvV1, err := BuildArgvForTest(context.Background(), map[string]interface{}{"input": src, "out_dir": "out"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if argvV1[0] != runtimeOne {
+		t.Fatalf("omitted version must use v1 base binary, got %s", argvV1[0])
+	}
+	if containsFlag(argvV1, "--version") || containsToken(argvV1, "v1") || containsToken(argvV1, "v2") {
+		t.Fatalf("version must not enter CLI args: %v", argvV1)
+	}
+
+	argvV2, err := BuildArgvForTest(context.Background(), map[string]interface{}{"version": "v2", "input": src, "out_dir": "out"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if argvV2[0] != runtimeTwo {
+		t.Fatalf("version=v2 must use v2 runtime, got %s", argvV2[0])
+	}
+	if containsFlag(argvV2, "--version") || containsToken(argvV2, "v1") || containsToken(argvV2, "v2") {
+		t.Fatalf("version must not enter CLI args: %v", argvV2)
+	}
+
+	override := copyDummyRun(t, work, "runtime-one-override")
+	config.GlobalConfig.CliCfg.Protenix.VersionRuntimes["v1"] = &config.CLIRuntimeConfig{Binary: override}
+	argvOverride, err := BuildArgvForTest(context.Background(), map[string]interface{}{"version": "v1", "input": src, "out_dir": "out"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if argvOverride[0] != override {
+		t.Fatalf("version=v1 must use version_runtimes.v1 when set, got %s", argvOverride[0])
+	}
+}
+
+func TestV2DoesNotFallBackToV1Binary(t *testing.T) {
+	work := t.TempDir()
+	src := filepath.Join(work, "input.json")
+	if err := os.WriteFile(src, []byte(`{"name":"src"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	previous := config.GlobalConfig
+	t.Cleanup(func() { config.GlobalConfig = previous })
+	config.GlobalConfig = &config.FileConfig{CliCfg: &config.CLIConfig{
+		WorkRoot: filepath.Join(work, "jobs"),
+		Protenix: &config.CLIBinaryConfig{Binary: dummyRun(t)},
+	}}
+	_, err := Execute(context.Background(), map[string]interface{}{"version": "v2", "input": src, "out_dir": "out"})
+	if err == nil || !strings.Contains(err.Error(), "protenix v2 CLI binary is not configured") {
+		t.Fatalf("v2 without its own runtime must be rejected, err=%v", err)
+	}
+	if strings.Contains(err.Error(), "protenix CLI binary is not configured") && !strings.Contains(err.Error(), "v2") {
+		t.Fatalf("v2 rejection must not be confused with v1 unconfigured: %v", err)
+	}
+	entries, _ := os.ReadDir(filepath.Join(work, "jobs"))
+	if len(entries) != 0 {
+		t.Fatalf("rejected v2 must not stage a job directory, got %v", entries)
+	}
+}
+
 func TestExecuteRunsConfiguredDummyAndReportsCIF(t *testing.T) {
 	work := t.TempDir()
 	src := filepath.Join(work, "input.json")
@@ -215,6 +295,19 @@ func TestAsyncAcceptUsesSqliteWithoutMysql(t *testing.T) {
 	if err != nil {
 		t.Fatalf("pxdesign async accept on SQLite: %v", err)
 	}
+}
+
+func copyDummyRun(t *testing.T, dir, name string) string {
+	t.Helper()
+	data, err := os.ReadFile(dummyRun(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, name)
+	if err := os.WriteFile(path, data, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return path
 }
 
 func dummyRun(t *testing.T) string {

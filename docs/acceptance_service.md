@@ -1,3 +1,12 @@
+# 最新状态：Protenix version 选择独立 runtime（2026-11-15 13:00 Asia/Singapore UTC+8）
+
+本节补上 `arguments.version` 虽接受 v1/v2、却始终使用同一条 `cli_cfg.protenix.binary` 的缺口。这是结构化配置与占位脚本测试，**不是**官方 v2 推理、授权权重验收、官方 PXDesign GPU 设计、长期服务或生产级 runtime。
+
+- 新增 `cli_cfg.protenix.version_runtimes`：按 `version` 选择独立 runtime，`version` 仍不进入 CLI 参数或 URL。`version` 缺省为 `v1`。`v1` 未在 `version_runtimes.v1` 给出非空路径时，回退到 `cli_cfg.protenix.binary`。`v2` 必须配置 `version_runtimes.v2.binary`，不会使用 v1 的 binary；未配置时返回 `protenix v2 CLI binary is not configured`，也不会为该请求创建作业目录。runtime 的 `extra_env` 若省略或为 null，沿用上级 `extra_env`；显式空映射表示不附加额外变量。
+- `execute_timeout_seconds` 仍默认与示例为 `0`，未启用正数，未新造超时/重试/重连机制，未改 Task 契约。
+- 已测：`TestVersionSelectsIndependentRuntime`、`TestV2DoesNotFallBackToV1Binary`；`go test ./ability/ability_protenix ./config ./ability/ability_task ./test_ui ./api/api_jsonRPC` 与 `go build` 退出码 0。官方烟测 CIF 的 node 解析仍为 168 原子 / 20 个 CA。
+- 未装 MySQL/Redis，未跑 GPU，未启长期服务，未改本机 `config_local.yaml`（sha256 仍为 `684b906075c72cd76806cafd645bb7da9c6ac6b235550b5e77eaf15f0e31bf6c`），未改 `build_srcs`、三仓、show_yeah。模板远端仍为 `ebef2c6`，已 `fetch`/`ls-remote` 确认不是主动锁旧版。仍无 ego-browser / Playwright MCP。v2 仍缺授权权重，配置了 v2 runtime 路径也不等于 v2 已跑通。
+
 # 最新状态：Execute 超时取消进程组（2026-11-15 10:59 Asia/Singapore UTC+8）
 
 本节补上第三阶段仍缺的「执行超时」：在不改 Task 方法名和 `process_status` 枚举的前提下，用已有进程组取消路径限制单次 Execute 时长。这不是官方 GPU 长预测、长期服务、Linux Chrome 再点击或生产级超时策略。

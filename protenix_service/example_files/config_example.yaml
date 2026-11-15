@@ -87,8 +87,12 @@ cli_cfg: # 原生 CLI 接线（protenix-run / pxdesign-run）。binary 为空时
   cancel_grace_seconds: 10 # 向进程组发 SIGTERM 后、再发 SIGKILL 的等待秒数
   execute_timeout_seconds: 0 # 单次 Execute 最长秒数；0 表示不限制。到期后取消进程组，任务记 system_error
   protenix:
-    binary: "" # 已安装的 protenix-run 路径
+    binary: "" # v1 runtime 缺省使用的已安装 protenix-run 路径；为空且未在 version_runtimes.v1 给出非空路径时，version=v1（或缺省）拒绝启动
     extra_env: {}
+    version_runtimes: # 按 arguments.version 选择独立 runtime；version 不进 CLI 参数或 URL
+      v2:
+        binary: "" # v2 必须单独配置的已安装路径。空字符串表示未配置；version=v2 不会回退到上级 binary。跑通 v2 还需要授权权重
+        extra_env: {} # 显式空映射表示不附加额外变量；若省略该键则沿用上级 extra_env
   pxdesign:
     binary: "" # 已安装的 pxdesign-run 路径
     extra_env: {}

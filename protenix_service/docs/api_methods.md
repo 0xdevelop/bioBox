@@ -826,7 +826,7 @@ MCP 凭证使用 HTTP 头，`tools/list` 只暴露业务入参，不含 `jwt_tok
 
 # 7. protenix
 
-提交 Protenix 结构预测任务（对应 CLI：protenix-run pred）。版本/模型走 arguments。异步队列使用配置的主关系库（支持 SQLite）。未配置 cli_cfg.protenix.binary 时 Execute 拒绝启动进程。
+提交 Protenix 结构预测任务（对应 CLI：protenix-run pred）。版本/模型走 arguments。异步队列使用配置的主关系库（支持 SQLite）。version 缺省 v1，用于选择独立 runtime：v1 未单独配置时使用 cli_cfg.protenix.binary，v2 必须配置 cli_cfg.protenix.version_runtimes.v2.binary，不会回退到 v1。对应版本未配置时 Execute 拒绝启动进程。
 
 异步方法：受理后返回 `task_id`，进度与结果经任务查询方法读取。
 
@@ -906,7 +906,7 @@ MCP 凭证使用 HTTP 头，`tools/list` 只暴露业务入参，不含 `jwt_tok
       "type": "boolean"
     },
     "version": {
-      "description": "产品版本（v1/v2），不是 URL 路径。缺省 v1。v2 需要授权权重。不作为 CLI 开关传入。",
+      "description": "产品版本（v1/v2），不是 URL 路径。缺省 v1。用于选择 cli_cfg.protenix.version_runtimes 中的独立 runtime；v1 未单独配置时回退到 cli_cfg.protenix.binary。v2 必须单独配置，不会使用 v1 的 binary，且还需要授权权重。不作为 CLI 开关传入。",
       "enum": [
         "v1",
         "v2"

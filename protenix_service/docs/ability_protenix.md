@@ -2,11 +2,11 @@
 
 固定方法名：`protenix`（MCP `tools/call` 的 `name`，不是 URL 路径）。
 
-对应命令行：`protenix-run pred`。arguments 与 CLI 长选项对齐：`input`、`out_dir`、`model_name`、`seeds`、`cycle`、`step`、`sample`、`dtype`、`use_msa`、`use_default_params`。产品版本 `version`（`v1`/`v2`）也放在 arguments 中，不作为 CLI 开关、不进路径；v2 需要授权权重。
+对应命令行：`protenix-run pred`。arguments 与 CLI 长选项对齐：`input`、`out_dir`、`model_name`、`seeds`、`cycle`、`step`、`sample`、`dtype`、`use_msa`、`use_default_params`。产品版本 `version`（`v1`/`v2`）也放在 arguments 中，不作为 CLI 开关、不进路径；缺省 `v1`。`version` 只用于选择 `cli_cfg.protenix.version_runtimes` 中的独立 runtime：`v1` 未单独配置时回退到 `cli_cfg.protenix.binary`，`v2` 必须配置 `cli_cfg.protenix.version_runtimes.v2.binary`，不会使用 v1 的 binary。对应版本未配置时 Execute 拒绝启动，不猜路径。跑通 v2 还需要授权权重，配置了 v2 runtime 也不等于 v2 已验收。
 
 注册为 `Async: true`。受理走 `AcceptAsyncTask` → `storage.GormDB` 主库（本实例 SQLite）→ Policy → 同一 Execute，不安装 MySQL/Redis。
 
-`Execute` 会按 `cli_cfg.protenix.binary` 组装命令：把输入拷贝到 `work_root/<task_id>/input/`，输出写到同任务 `output/`，在新进程组中启动官方包装命令。`binary` 为空时返回 `protenix CLI binary is not configured`，不会猜路径，也不会启动进程。结果摘要包含退出码、是否取消、CIF 数量和是否存在 ERR 目录；原生预测是否成功不能只看退出码。
+`Execute` 会按所选版本的 runtime 组装命令：把输入拷贝到 `work_root/<task_id>/input/`，输出写到同任务 `output/`，在新进程组中启动该版本的官方包装命令。`v1` 未配置时返回 `protenix CLI binary is not configured`，`v2` 未配置时返回 `protenix v2 CLI binary is not configured`，都不会猜路径或启动进程。结果摘要包含退出码、是否取消、CIF 数量和是否存在 ERR 目录；原生预测是否成功不能只看退出码。
 
 取消：`task.cancel` 支持属主取消 queued/running。running 先持久化 `cancel_requested`，传递 Execute context 到现有 `cli_proc.Run`；SIGTERM/SIGKILL 作用于任务整组，清理后才落 done/cancelled。短脚本 HTTP 测试覆盖取消其一而另一任务完成，不等于全部原生 GPU 工作流取消已验收。
 

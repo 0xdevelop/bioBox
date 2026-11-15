@@ -22,15 +22,16 @@ import (
 const MethodProtenix = "protenix"
 
 var errCLINotConfigured = errors.New("protenix CLI binary is not configured")
+var errV2CLINotConfigured = errors.New("protenix v2 CLI binary is not configured")
 
 func LoadAPIMethods() {
 	api_supported_methods.AddMethod(&api_supported_methods.SupportedMethod{
 		Name:        MethodProtenix,
-		Description: "提交 Protenix 结构预测任务（对应 CLI：protenix-run pred）。版本/模型走 arguments。异步队列使用配置的主关系库（支持 SQLite）。未配置 cli_cfg.protenix.binary 时 Execute 拒绝启动进程。",
+		Description: "提交 Protenix 结构预测任务（对应 CLI：protenix-run pred）。版本/模型走 arguments。异步队列使用配置的主关系库（支持 SQLite）。version 缺省 v1，用于选择独立 runtime：v1 未单独配置时使用 cli_cfg.protenix.binary，v2 必须配置 cli_cfg.protenix.version_runtimes.v2.binary，不会回退到 v1。对应版本未配置时 Execute 拒绝启动进程。",
 		Async:       true,
 		InputSchema: api_auth_common.InputSchema(
 			map[string]interface{}{
-				"version":            schemaWithDesc(api_auth_common.EnumStringSchema("v1", "v2"), "产品版本（v1/v2），不是 URL 路径。缺省 v1。v2 需要授权权重。不作为 CLI 开关传入。"),
+				"version":            schemaWithDesc(api_auth_common.EnumStringSchema("v1", "v2"), "产品版本（v1/v2），不是 URL 路径。缺省 v1。用于选择 cli_cfg.protenix.version_runtimes 中的独立 runtime；v1 未单独配置时回退到 cli_cfg.protenix.binary。v2 必须单独配置，不会使用 v1 的 binary，且还需要授权权重。不作为 CLI 开关传入。"),
 				"input":              schemaWithDesc(api_auth_common.StringSchema("", 1, 4096), "输入 JSON 文件或目录。对应 CLI -i/--input。"),
 				"out_dir":            schemaWithDesc(api_auth_common.StringSchema("", 1, 4096), "调用方给出的结果目录名；实际写入隔离作业目录下的 output/，不直接改原输入。对应 CLI -o/--out_dir。"),
 				"model_name":         schemaWithDesc(api_auth_common.StringSchema("", 1, 256), "模型检查点名。对应 CLI -n/--model_name，例如 protenix_base_default_v1.0.0。"),
@@ -79,7 +80,11 @@ func buildProtenixSpec(ctx context.Context, input interface{}) (*cli_proc.Spec, 
 	if !ok {
 		return nil, "", "", api_error_code.ErrInvalidArguments
 	}
-	cliCfg, binary, err := configuredBinary()
+	version, err := requestedVersion(params)
+	if err != nil {
+		return nil, "", "", err
+	}
+	cliCfg, binary, err := configuredBinary(version)
 	if err != nil {
 		return nil, "", "", err
 	}
@@ -154,7 +159,18 @@ func appendProtenixOptionalFlags(args []string, params map[string]interface{}) (
 	return args, nil
 }
 
-func configuredBinary() (*config.CLIConfig, *config.CLIBinaryConfig, error) {
+func requestedVersion(params map[string]interface{}) (string, error) {
+	if version, exists := params["version"]; exists {
+		versionText, isString := version.(string)
+		if !isString || (versionText != "v1" && versionText != "v2") {
+			return "", api_error_code.ErrInvalidArguments
+		}
+		return versionText, nil
+	}
+	return "v1", nil
+}
+
+func configuredBinary(version string) (*config.CLIConfig, *config.CLIBinaryConfig, error) {
 	if config.GlobalConfig == nil || config.GlobalConfig.CliCfg == nil || config.GlobalConfig.CliCfg.Protenix == nil {
 		return nil, nil, errCLINotConfigured
 	}
@@ -162,11 +178,38 @@ func configuredBinary() (*config.CLIConfig, *config.CLIBinaryConfig, error) {
 	if strings.TrimSpace(cliCfg.WorkRoot) == "" {
 		cliCfg.WorkRoot = "./data/cli_jobs"
 	}
-	binary := cliCfg.Protenix
-	if strings.TrimSpace(binary.Binary) == "" {
-		return nil, nil, errCLINotConfigured
+	binary, err := runtimeForVersion(cliCfg.Protenix, version)
+	if err != nil {
+		return nil, nil, err
 	}
 	return cliCfg, binary, nil
+}
+
+func runtimeForVersion(base *config.CLIBinaryConfig, version string) (*config.CLIBinaryConfig, error) {
+	if override := versionRuntime(base, version); override != nil && strings.TrimSpace(override.Binary) != "" {
+		env := base.ExtraEnv
+		if override.ExtraEnv != nil {
+			env = override.ExtraEnv
+		}
+		return &config.CLIBinaryConfig{
+			Binary:   strings.TrimSpace(override.Binary),
+			ExtraEnv: env,
+		}, nil
+	}
+	if version == "v2" {
+		return nil, errV2CLINotConfigured
+	}
+	if base == nil || strings.TrimSpace(base.Binary) == "" {
+		return nil, errCLINotConfigured
+	}
+	return base, nil
+}
+
+func versionRuntime(base *config.CLIBinaryConfig, version string) *config.CLIRuntimeConfig {
+	if base == nil || base.VersionRuntimes == nil {
+		return nil
+	}
+	return base.VersionRuntimes[version]
 }
 
 func executionTaskID(ctx context.Context) string {
