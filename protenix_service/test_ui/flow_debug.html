@@ -126,7 +126,7 @@
         </div>
         <label for="extra-json">附加 arguments（JSON 对象）</label>
         <textarea id="extra-json" placeholder='{"use_msa": false, "sample": 1}'>{"use_msa": false, "sample": 1, "use_default_params": false}</textarea>
-        <p class="note warn" id="version-warn" hidden>现有 version 尚未完成独立 v1/v2 runtime 切换；勾选 v2 不能当成 v2 已跑通。</p>
+        <p class="note warn" id="version-warn" hidden>v2 会按 cli_cfg.protenix.version_runtimes.v2 选择独立 runtime，不会回退到 v1 binary；未配置时请求会被拒绝。勾选 v2 或仅配置路径不能当成官方 v2 已跑通，仍缺授权权重。</p>
         <div class="actions">
           <button class="primary" id="btn-submit" type="button">提交并跟踪</button>
           <button id="btn-cancel" type="button" disabled>请求取消</button>

@@ -94,6 +94,9 @@ func TestFlowDebugPageAndCatalogIncludesArtifactMethods(t *testing.T) {
 		"async function loadArtifacts(taskId, options)",
 		`{ autoFetch: autoFetch }`,
 		"{ alreadyReset: true }",
+		"不会回退到 v1 binary",
+		"仍缺授权权重",
+		"cli_cfg.protenix.version_runtimes.v2",
 	} {
 		if !strings.Contains(body, needle) {
 			t.Fatalf("flow_debug.html missing %q", needle)
@@ -109,6 +112,8 @@ func TestFlowDebugPageAndCatalogIncludesArtifactMethods(t *testing.T) {
 		`await callJSONRPC("task.cancel"`,
 		"await callJSONRPC(method, args, true)",
 		"终态不是 success，未自动取件",
+		"尚未完成独立 v1/v2 runtime 切换",
+		"实际调用仍是单一配置 binary",
 	} {
 		if strings.Contains(body, banned) {
 			t.Fatalf("flow_debug.html should not contain %q", banned)

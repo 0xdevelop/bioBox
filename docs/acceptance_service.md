@@ -1,3 +1,12 @@
+# 最新状态：纠正调试页与 README 过时的 v2 runtime 提示（2026-11-15 14:00 Asia/Singapore UTC+8）
+
+本节补上上一轮已落地 `cli_cfg.protenix.version_runtimes` 后，调试页与 README 仍写「尚未完成独立 v1/v2 runtime 切换 / 实际调用仍是单一配置 binary」的过时表述。这是面向使用者的文案与页面测试对齐，**不是**官方 v2 推理、授权权重验收、官方 PXDesign GPU 设计、长期服务、Linux Chrome 再点击或生产级声明。
+
+- `flow_debug.html` 在选择 v2 时仍显示警告，但改为说明：v2 按 `cli_cfg.protenix.version_runtimes.v2` 选择独立 runtime，不会回退到 v1 binary；未配置时请求会被拒绝。勾选 v2 或仅配置路径不能当成官方 v2 已跑通，仍缺授权权重。`README.md` 的版本边界同步更正。
+- `TestFlowDebugPageAndCatalogIncludesArtifactMethods` 固定新提示，并禁止上述过时句子回到页面。
+- 已测：`go test ./test_ui ./api/api_jsonRPC` 与 `go build` 退出码 0。官方烟测 CIF 的 node 解析仍为 168 原子 / 20 个 CA。
+- 未改 runtime 选择逻辑、未把 `execute_timeout_seconds` 设为正数、未新造超时/重试/重连机制、未改 Task 契约。未装 MySQL/Redis，未跑 GPU，未启长期服务，未改本机 `config_local.yaml`（sha256 仍为 `684b906075c72cd76806cafd645bb7da9c6ac6b235550b5e77eaf15f0e31bf6c`），未改 `build_srcs`、三仓、show_yeah。模板远端仍为 `ebef2c6`，已 `fetch`/`ls-remote` 确认不是主动锁旧版。仍无 ego-browser / Playwright MCP。
+
 # 最新状态：Protenix version 选择独立 runtime（2026-11-15 13:00 Asia/Singapore UTC+8）
 
 本节补上 `arguments.version` 虽接受 v1/v2、却始终使用同一条 `cli_cfg.protenix.binary` 的缺口。这是结构化配置与占位脚本测试，**不是**官方 v2 推理、授权权重验收、官方 PXDesign GPU 设计、长期服务或生产级 runtime。

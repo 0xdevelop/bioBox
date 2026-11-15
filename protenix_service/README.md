@@ -87,4 +87,4 @@ http://127.0.0.1:<test_ui-port>/flow_debug.html
 
 HTTP/JSON-RPC `protenix`/`pxdesign` 经鉴权 → SQLite 持久受理 → Policy → 同一 Execute → 独立 CLI 进程组。`task.cancel` 对 queued 返回 `cancelled:true`；对 running 返回 `cancelling:true`，待进程组退出后 `task.get` 才显示 done/cancelled。正常停机也取消在途任务。`policy_cfg.max_workers: 1` 适合单 GPU；不要按 CPU 核数盲目启动大量推理。Protenix 成功还需 CIF/ERR 核验。已完成任务用 `task.artifacts` / `task.artifact` 按属主读取产物（相对路径，base64），不要把结果里的本机路径当成下载 URL。数据库重开恢复、systemd KillMode=control-group 下短脚本主进程 SIGKILL/清组/重启恢复均有实测；裸 SIGKILL、GPU 中断恢复和多实例 HA 未验收。
 
-当前版本边界：`version` 字段尚未完成 v1/v2 独立 runtime 的结构化选择，实际调用仍是单一配置 binary + model_name；本轮只验 v1，不能把传入 v2 标签当作 v2 跑通。show_yeah 数据契约与取件缺口见 [对接说明](docs/show_yeah_data_contract.md)。
+当前版本边界：`version` 按 arguments 选择 `cli_cfg.protenix.version_runtimes` 中的独立 runtime，不进 URL。`v1` 未单独配置时回退到 `cli_cfg.protenix.binary`；`v2` 必须配置 `version_runtimes.v2.binary`，不会使用 v1 的 binary，未配置时拒绝启动。官方烟测仍只验证 v1；v2 仍缺授权权重，不能把传入 v2 或仅配置路径当作 v2 已跑通。show_yeah 数据契约与取件说明见 [对接说明](docs/show_yeah_data_contract.md)。
