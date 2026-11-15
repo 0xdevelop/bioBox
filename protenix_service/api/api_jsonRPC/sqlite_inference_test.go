@@ -3,6 +3,7 @@ package api_jsonRPC
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -167,7 +168,7 @@ while [ "$#" -gt 0 ]; do
 done
 read -r mode < "$input" || true
 case "$mode" in
- fail) exit 7;;
+ fail) printf 'fixture_exit_7\n' >&2; exit 7;;
  cancel) echo $$ > parent.pid; sleep 300 & child=$!; echo "$child" > child.pid; wait "$child";;
  quick) sleep 0.3; mkdir -p "$out"; printf 'data_fixture\n' > "$out/fixture.cif";;
 esac
@@ -207,6 +208,31 @@ esac
 	fault := submit("fail")
 	if task := f.waitDone(t, fault, 10*time.Second); task["process_status"] != "system_error" {
 		t.Fatalf("CLI nonzero falsely succeeded: %v", task["process_status"])
+	} else {
+		result, _ := task["result"].(map[string]interface{})
+		if result == nil {
+			t.Fatal("system_error task.get omitted Execute summary")
+		}
+		artifacts := f.call(t, "task.artifacts", map[string]interface{}{"task_id": fault}, f.key, false)
+		items, _ := artifacts["artifacts"].([]interface{})
+		var logPath string
+		for _, raw := range items {
+			item, _ := raw.(map[string]interface{})
+			path, _ := item["path"].(string)
+			if path == "run.log" {
+				logPath = path
+				break
+			}
+		}
+		if logPath != "run.log" {
+			t.Fatalf("failed task artifacts omitted run.log: %v", artifacts)
+		}
+		file := f.call(t, "task.artifact", map[string]interface{}{"task_id": fault, "path": logPath}, f.key, false)
+		content, _ := file["content"].(string)
+		decoded, decErr := base64.StdEncoding.DecodeString(content)
+		if file["kind"] != "log" || file["encoding"] != "base64" || decErr != nil || !bytes.Equal(decoded, []byte("fixture_exit_7\n")) {
+			t.Fatal("failed task log was not readable")
+		}
 	}
 	cancelled := submit("cancel")
 	quick := submit("quick")

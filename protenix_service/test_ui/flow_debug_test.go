@@ -89,6 +89,11 @@ func TestFlowDebugPageAndCatalogIncludesArtifactMethods(t *testing.T) {
 		"alreadyReset",
 		"上一任务产物已从舞台撤下",
 		"只绑定当前 task_id",
+		"含失败/取消/系统错误",
+		"已按 task.artifacts 列出真实产物",
+		"async function loadArtifacts(taskId, options)",
+		`{ autoFetch: autoFetch }`,
+		"{ alreadyReset: true }",
 	} {
 		if !strings.Contains(body, needle) {
 			t.Fatalf("flow_debug.html missing %q", needle)
@@ -103,6 +108,7 @@ func TestFlowDebugPageAndCatalogIncludesArtifactMethods(t *testing.T) {
 		`await callJSONRPC("task.artifact"`,
 		`await callJSONRPC("task.cancel"`,
 		"await callJSONRPC(method, args, true)",
+		"终态不是 success，未自动取件",
 	} {
 		if strings.Contains(body, banned) {
 			t.Fatalf("flow_debug.html should not contain %q", banned)

@@ -140,22 +140,24 @@ func loadOwnedTaskFromParams(ctx context.Context, params map[string]interface{})
 }
 
 func confinedJobDir(task *ability_task_model.AsyncTask) (string, error) {
-	if task == nil || task.RunStatus != RunStatusDone || task.ResultPayload == "" {
+	if task == nil || task.RunStatus != RunStatusDone {
 		return "", errNoArtifactRoot
 	}
 	workRoot, err := configuredWorkRoot()
 	if err != nil {
 		return "", err
 	}
-	var payload map[string]interface{}
-	if err = json.Unmarshal([]byte(task.ResultPayload), &payload); err != nil {
-		return "", errNoArtifactRoot
+	if task.ResultPayload != "" {
+		var payload map[string]interface{}
+		if err = json.Unmarshal([]byte(task.ResultPayload), &payload); err == nil {
+			if jobDir, ok := payload["job_dir"].(string); ok && strings.TrimSpace(jobDir) != "" {
+				if verified, verifyErr := verifyJobDir(workRoot, task.TaskID, jobDir); verifyErr == nil {
+					return verified, nil
+				}
+			}
+		}
 	}
-	jobDir, ok := payload["job_dir"].(string)
-	if !ok || strings.TrimSpace(jobDir) == "" {
-		return "", errNoArtifactRoot
-	}
-	return verifyJobDir(workRoot, task.TaskID, jobDir)
+	return verifyJobDir(workRoot, task.TaskID, filepath.Join(workRoot, task.TaskID))
 }
 
 var errNoArtifactRoot = errors.New("no confined artifact root")

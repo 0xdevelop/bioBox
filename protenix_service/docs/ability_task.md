@@ -91,7 +91,7 @@ stateDiagram-v2
 { "task_id": "b3f11655-08df-458f-aa8d-aaa02a20bd51" }
 ```
 
-- 所有权 `task.user_id == 当前用户`；`success` 时附 result。
+- 所有权 `task.user_id == 当前用户`；任务 `done` 且有结果摘要时附 `result`（成功、失败、取消或系统错误均可，含 `job_dir` / `exit_code` / 日志路径等本机字段；这些路径不能直接当下载 URL）。
 
 ## 3.2. task.list
 
@@ -121,7 +121,7 @@ stateDiagram-v2
 { "task_id": "b3f11655-08df-458f-aa8d-aaa02a20bd51" }
 ```
 
-- 所有权与 `task.get` 相同；未完成、无结果或作业目录不可用时返回空列表。
+- 所有权与 `task.get` 相同。只服务已完成任务（含失败/取消/系统错误）；未完成或作业目录不可用时返回空列表。作业目录必须等于 `cli_cfg.work_root` + `task_id`，不信任载荷里的外路径。
 - 只返回相对 `job_dir` 的路径（`.cif` / `.pdb` / `.json` / `.log` / `.txt`），不返回服务器绝对路径，不列出 `input/` 下的原始输入，不跟随符号链接。
 
 ## 3.5. task.artifact

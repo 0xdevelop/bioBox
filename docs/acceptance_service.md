@@ -1,3 +1,14 @@
+# 最新状态：失败/取消任务的真实产物取件（2026-11-15 09:58 Asia/Singapore UTC+8）
+
+本节补上已完成但非 success 的任务无法取回真实日志或产物摘要的缺口。这不是 Linux Chrome 再点击、官方 GPU 设计、长期服务或生产级取件。
+
+- Execute 在失败、取消或系统错误时仍会留下作业目录（例如 `run.log`）。此前结果摘要只在 success 时写入，`task.artifacts` 也就列不出这些文件。本轮在不改变方法名、所有权和目录禁锢的前提下，把已有摘要持久化并允许已完成非 success 任务取件。
+- `task.get` 在任务 `done` 且有结果摘要时附 `result`（含 `job_dir` / `exit_code` / 日志路径等本机字段；这些路径不能直接当下载 URL）。
+- 作业目录必须等于 `cli_cfg.work_root` + `task_id`。载荷里的外路径会被忽略，不会用来越权读文件。
+- 调试页对失败/取消/系统错误终态也会列出 `task.artifacts`；有 CIF/PDB 才自动上舞台，否则可点读日志，不会把失败结果画成成功结构。取消后立即再跟踪当前任务。
+- 已测：隔离 HTTP Bearer fixture 中 CLI exit 7 的任务 `process_status=system_error`，属主可列出并读取 `run.log`（内容为脚本写入的 `fixture_exit_7`）。`go test ./ability/ability_task ./test_ui ./api/api_jsonRPC` 与 `go build` 退出码 0。
+- 未装 MySQL/Redis，未跑 GPU，未启长期服务，未改本机 `config_local.yaml`（sha256 仍为 `684b906075c72cd76806cafd645bb7da9c6ac6b235550b5e77eaf15f0e31bf6c`），未改 `build_srcs`、三仓、show_yeah。模板远端仍为 `ebef2c6`，已 `fetch`/`ls-remote` 确认不是主动锁旧版。仍无 ego-browser / Playwright MCP，故未对本次改动再做 Linux Chrome 点击。v2 runtime 仍缺授权权重。
+
 # 最新状态：调试页舞台绑定当前任务（2026-11-15 09:02 Asia/Singapore UTC+8）
 
 本节补上「跟踪或提交另一任务时，舞台仍可能继续显示上一任务原子」的缺口。此前 Linux Chrome 第一次点击已记录该现象并作废该次提交证据；本轮改正页面绑定，而不是放宽等待条件。这不是 Linux Chrome 再点击、官方 GPU 设计、长期服务或生产级前端。

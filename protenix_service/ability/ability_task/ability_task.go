@@ -295,25 +295,25 @@ func executeClaimedTask(ctx context.Context, task *ability_task_model.AsyncTask)
 	}
 
 	value, execErr := callExecuteRecovered(taskCtx, supportedMethod, task, input)
+	resultJSON, marshalErr := marshalTaskResult(value)
 
 	if taskCtx.Err() != nil {
-		finishTask(context.WithoutCancel(taskCtx), task.TaskID, ProcessStatusCancelled, "", 0, "task execution cancelled")
+		finishTask(context.WithoutCancel(taskCtx), task.TaskID, ProcessStatusCancelled, resultJSON, 0, "task execution cancelled")
 		return
 	}
 	if execErr != nil {
 		if businessErr, isBusiness := api_error_code.As(execErr); isBusiness {
-			finishTask(taskCtx, task.TaskID, ProcessStatusFailed, "", businessErr.Code, businessErr.Message)
+			finishTask(taskCtx, task.TaskID, ProcessStatusFailed, resultJSON, businessErr.Code, businessErr.Message)
 			return
 		}
-		finishTask(taskCtx, task.TaskID, ProcessStatusSystemError, "", 0, execErr.Error())
+		finishTask(taskCtx, task.TaskID, ProcessStatusSystemError, resultJSON, 0, execErr.Error())
 		return
 	}
-	resultJSON, err := json.Marshal(value)
-	if err != nil {
+	if marshalErr != nil {
 		finishTask(taskCtx, task.TaskID, ProcessStatusSystemError, "", 0, "task result is not serializable")
 		return
 	}
-	finishTask(taskCtx, task.TaskID, ProcessStatusSuccess, string(resultJSON), 0, "")
+	finishTask(taskCtx, task.TaskID, ProcessStatusSuccess, resultJSON, 0, "")
 }
 
 // callExecuteRecovered 执行业务函数；panic 经统一封装 common.PanicHandler
@@ -344,7 +344,7 @@ func finishTask(ctx context.Context, taskID string, processStatus string, result
 		return
 	}
 	if current.CancelRequested {
-		processStatus, resultPayload, errorCode, errorMessage = ProcessStatusCancelled, "", 0, "task execution cancelled"
+		processStatus, errorCode, errorMessage = ProcessStatusCancelled, 0, "task execution cancelled"
 	}
 	now := time.Now().UTC()
 	updates := map[string]interface{}{
@@ -355,8 +355,10 @@ func finishTask(ctx context.Context, taskID string, processStatus string, result
 		"error_message":  errorMessage,
 	}
 	if processStatus == ProcessStatusSuccess {
-		updates["result_payload"] = resultPayload
 		updates["progress"] = 100.0
+	}
+	if resultPayload != "" {
+		updates["result_payload"] = resultPayload
 	}
 	result := db.Model(&ability_task_model.AsyncTask{}).
 		Where("task_id = ? AND run_status = ?", taskID, RunStatusRunning).
@@ -560,11 +562,22 @@ func taskResult(task *ability_task_model.AsyncTask, includeResult bool) map[stri
 	if task.CompletedAt != nil {
 		item["completed_at"] = task.CompletedAt.UTC().Format(time.RFC3339)
 	}
-	if includeResult && task.ProcessStatus == ProcessStatusSuccess && task.ResultPayload != "" {
+	if includeResult && task.RunStatus == RunStatusDone && task.ResultPayload != "" {
 		var resultValue interface{}
 		if err := json.Unmarshal([]byte(task.ResultPayload), &resultValue); err == nil {
 			item["result"] = resultValue
 		}
 	}
 	return item
+}
+
+func marshalTaskResult(value interface{}) (string, error) {
+	if value == nil {
+		return "", nil
+	}
+	raw, err := json.Marshal(value)
+	if err != nil {
+		return "", err
+	}
+	return string(raw), nil
 }

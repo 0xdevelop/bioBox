@@ -177,7 +177,7 @@
         <h2>产物与结构（来自 task.artifact）</h2>
         <table>
           <thead><tr><th>相对路径</th><th>类型</th><th>大小</th><th></th></tr></thead>
-          <tbody id="artifact-rows"><tr><td colspan="4" class="note">提交或跟踪完成任务后列出，不含 input/</td></tr></tbody>
+          <tbody id="artifact-rows"><tr><td colspan="4" class="note">提交或跟踪已完成任务后列出（含失败/取消/系统错误），不含 input/</td></tr></tbody>
         </table>
         <div class="stage-wrap">
           <canvas id="stage" width="900" height="720" aria-label="真实产物结构舞台"></canvas>
@@ -831,7 +831,8 @@
         : "CIF 原子来自取回的真实文件；若文件没有原子记录，这里会如实显示，不会用随机点冒充。结构入场只是把已解析的真实坐标呈现到画面上，不是计算进度。悬停查看残基与原子名称，坐标仍来自产物，不是估算。";
       highlightHistory(state.taskId);
     }
-    async function loadArtifacts(taskId) {
+    async function loadArtifacts(taskId, options) {
+      const opts = options || {};
       const listed = await callSelected("task.artifacts", { task_id: taskId }, true);
       if (taskId !== state.taskId) {
         log("忽略过期产物清单", { task_id: taskId, current: state.taskId });
@@ -840,8 +841,9 @@
       const items = listed.artifacts || [];
       const body = $("artifact-rows");
       body.innerHTML = "";
+      const process = state.processStatus || "";
       if (!items.length) {
-        body.innerHTML = '<tr><td colspan="4" class="note">没有可列出的产物（任务未完成、无作业目录，或只有 input/）</td></tr>';
+        body.innerHTML = '<tr><td colspan="4" class="note">没有可列出的产物（task.artifacts 空清单，process_status=' + (process || "未知") + '；未完成、无作业目录或只有 input/）</td></tr>';
         markFlow("artifacts", "wait", "task.artifacts 空清单", state.flowHubs.done ? "done" : "");
         return;
       }
@@ -858,8 +860,9 @@
         body.appendChild(tr);
       });
       markFlow("artifacts", "ok", "task.artifacts", state.flowHubs.done ? "done" : "");
-      const prefer = items.find((item) => item.kind === "cif" || (item.path || "").endsWith(".cif")) || items[0];
-      if (prefer) await fetchArtifact(taskId, prefer.path, prefer.kind);
+      const preferStructure = items.find((item) => item.kind === "cif" || item.kind === "pdb" || /\.(cif|pdb)$/i.test(item.path || ""));
+      if (preferStructure) await fetchArtifact(taskId, preferStructure.path, preferStructure.kind);
+      else if (opts.autoFetch === "prefer") await fetchArtifact(taskId, items[0].path, items[0].kind);
     }
     async function fetchArtifact(taskId, path, kind) {
       const got = await callSelected("task.artifact", { task_id: taskId, path }, true);
@@ -994,8 +997,11 @@
             state.pollTimer = 0;
             $("btn-cancel").disabled = true;
             log("任务终态", { process_status: task.process_status, result: task.result });
-            if (task.process_status === "success") await loadArtifacts(taskId);
-            else $("artifact-rows").innerHTML = '<tr><td colspan="4" class="note">终态不是 success，未自动取件</td></tr>';
+            const autoFetch = task.process_status === "success" ? "prefer" : "structure";
+            await loadArtifacts(taskId, { autoFetch: autoFetch });
+            if (task.process_status !== "success" && !state.atoms.length) {
+              $("cif-note").textContent = "终态 process_status=" + (task.process_status || "") + "。已按 task.artifacts 列出真实产物（若有日志或文本可点读取），未把失败结果画成成功结构。";
+            }
             await loadHistory("终态后刷新");
           }
         } catch (err) {
@@ -1078,6 +1084,7 @@
         const result = await callSelected("task.cancel", { task_id: state.taskId }, true);
         log("取消返回", result);
         addTimeline("task.cancel cancelled=" + result.cancelled + " cancelling=" + result.cancelling);
+        await followTask(state.taskId, { alreadyReset: true });
         await loadHistory("取消后刷新");
       } catch (err) { log("取消失败", err.message); }
     });

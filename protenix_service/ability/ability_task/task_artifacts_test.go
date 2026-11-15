@@ -136,7 +136,23 @@ func TestVerifyJobDirRejectsForeignPath(t *testing.T) {
 		RunStatus:     RunStatusDone,
 		ResultPayload: `{"job_dir":"` + filepath.ToSlash(foreign) + `"}`,
 	}
-	if _, err = confinedJobDir(task); err == nil {
+	dir, err := confinedJobDir(task)
+	if err != nil {
+		t.Fatalf("foreign payload should be ignored in favor of work_root/task_id: %v", err)
+	}
+	if dir == foreign || dir == filepath.Clean(foreign) {
 		t.Fatal("payload with foreign job_dir accepted")
+	}
+	if filepath.Base(dir) != taskID {
+		t.Fatalf("confined fallback was not work_root/task_id: %s", dir)
+	}
+
+	running := &ability_task_model.AsyncTask{TaskID: taskID, RunStatus: RunStatusRunning}
+	if _, err = confinedJobDir(running); err == nil {
+		t.Fatal("running task must not expose artifacts")
+	}
+	failed := &ability_task_model.AsyncTask{TaskID: taskID, RunStatus: RunStatusDone, ProcessStatus: ProcessStatusSystemError}
+	if dir, err = confinedJobDir(failed); err != nil || filepath.Base(dir) != taskID {
+		t.Fatalf("done non-success without payload should still use work_root/task_id: %s %v", dir, err)
 	}
 }
