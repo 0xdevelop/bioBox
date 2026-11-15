@@ -13,8 +13,9 @@ import (
 
 // TestHoldLiveProtocolFixtureForBrowser is skipped unless FLOW_DEBUG_HOLD=1.
 // It starts the same-origin test_ui handlers plus the four loopback protocols,
-// accepts one short-script task that writes the official smoke CIF, then waits
-// for a stop file so a Linux Chrome click script can drive /flow_debug.html.
+// accepts one short-script success task that writes the official smoke CIF and
+// one short-script failure that exits 7 and writes run.log, then waits for a
+// stop file so a Linux Chrome click script can drive /flow_debug.html.
 func TestHoldLiveProtocolFixtureForBrowser(t *testing.T) {
 	if os.Getenv("FLOW_DEBUG_HOLD") == "" {
 		t.Skip("optional fixture for a Linux Chrome click run; set FLOW_DEBUG_HOLD=1 and FLOW_DEBUG_HOLD_DIR")
@@ -33,13 +34,18 @@ func TestHoldLiveProtocolFixtureForBrowser(t *testing.T) {
 		t.Fatal("cannot resolve test file path")
 	}
 	sampleCIF := filepath.Join(filepath.Dir(thisFile), "testdata", "sqlite_smoke_sample_0.cif")
-	script := writeProxyFixtureFile(t, root, "hold-cli.sh", "#!/bin/sh\n"+
-		"input=\"\"; out=\"\"\n"+
-		"while [ \"$#\" -gt 0 ]; do\n"+
-		" case \"$1\" in --input) input=\"$2\"; shift 2;; --out_dir) out=\"$2\"; shift 2;; *) shift;; esac\n"+
-		"done\n"+
-		"mkdir -p \"$out\"\n"+
-		"cp -- \""+sampleCIF+"\" \"$out/pred.cif\"\n")
+	script := writeProxyFixtureFile(t, root, "hold-cli.sh", `#!/bin/sh
+input=""; out=""
+while [ "$#" -gt 0 ]; do
+ case "$1" in --input) input="$2"; shift 2;; --out_dir) out="$2"; shift 2;; *) shift;; esac
+done
+read -r mode < "$input" || true
+case "$mode" in
+ fail) printf 'fixture_exit_7\n' >&2; exit 7;;
+esac
+mkdir -p "$out"
+cp -- "`+sampleCIF+`" "$out/pred.cif"
+`)
 	if err := os.Chmod(script, 0700); err != nil {
 		t.Fatal(err)
 	}
@@ -60,17 +66,45 @@ func TestHoldLiveProtocolFixtureForBrowser(t *testing.T) {
 		t.Fatalf("fixture task status=%v", task["process_status"])
 	}
 
+	failInput := writeProxyFixtureFile(t, root, "fail.json", "fail\n")
+	failAccepted := fixture.call(t, "jsonrpc", "protenix", map[string]interface{}{
+		"input": failInput, "out_dir": "out", "version": "v1",
+	}, true, false)
+	failID, _ := failAccepted["task_id"].(string)
+	if failID == "" || failAccepted["run_status"] != "queued" {
+		t.Fatal("fail short-script task was not durably accepted")
+	}
+	failTask := fixture.waitDone(t, failID, 10*time.Second)
+	if failTask["process_status"] != "system_error" {
+		t.Fatalf("fixture fail task status=%v error=%v", failTask["process_status"], failTask["error_message"])
+	}
+	artifacts := fixture.call(t, "jsonrpc", "task.artifacts", map[string]interface{}{"task_id": failID}, true, false)
+	items, _ := artifacts["artifacts"].([]interface{})
+	hasLog := false
+	for _, raw := range items {
+		item, _ := raw.(map[string]interface{})
+		if item["path"] == "run.log" {
+			hasLog = true
+			break
+		}
+	}
+	if !hasLog {
+		t.Fatalf("fixture fail task omitted run.log: %v", artifacts)
+	}
+
 	keyFile := filepath.Join(outDir, "key.ptxk")
 	if err := os.WriteFile(keyFile, []byte(fixture.key), 0600); err != nil {
 		t.Fatal(err)
 	}
 	stopFile := filepath.Join(outDir, "stop")
 	manifest := map[string]string{
-		"page_url":   fixture.proxy.URL + "/flow_debug.html",
-		"task_id":    taskID,
-		"input_path": input,
-		"key_file":   keyFile,
-		"stop_file":  stopFile,
+		"page_url":        fixture.proxy.URL + "/flow_debug.html",
+		"task_id":         taskID,
+		"failed_task_id":  failID,
+		"input_path":      input,
+		"fail_input_path": failInput,
+		"key_file":        keyFile,
+		"stop_file":       stopFile,
 	}
 	raw, err := json.MarshalIndent(manifest, "", "  ")
 	if err != nil {
