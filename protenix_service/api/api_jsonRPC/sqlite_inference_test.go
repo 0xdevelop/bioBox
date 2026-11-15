@@ -389,3 +389,71 @@ printf 'pxdesign_fixture_cif\n' > "$out/design.cif"
 	}
 	t.Log("HTTP Bearer ptxk_ -> SQLite -> policy -> pxdesign Execute: short-script CIF listed and fetchable; missing and forged keys were rejected")
 }
+
+func TestSQLiteHTTPExecuteTimeoutStopsProcessGroup(t *testing.T) {
+	root := t.TempDir()
+	script := writeQueueInput(t, root, "timeout-cli.sh", `#!/bin/sh
+input=""; out=""
+while [ "$#" -gt 0 ]; do
+ case "$1" in --input) input="$2"; shift 2;; --out_dir) out="$2"; shift 2;; *) shift;; esac
+done
+read -r mode < "$input" || true
+case "$mode" in
+ hang) echo $$ > parent.pid; sleep 300 & child=$!; echo "$child" > child.pid; wait "$child";;
+ quick) sleep 0.2; mkdir -p "$out"; printf 'timeout_ok\n' > "$out/fixture.cif";;
+esac
+`)
+	if err := os.Chmod(script, 0700); err != nil {
+		t.Fatal(err)
+	}
+	f := newQueueHTTPFixture(t, script, root)
+	config.GlobalConfig.CliCfg.ExecuteTimeoutSeconds = 1
+	stop := policy.PolicyServicesStart()
+	t.Cleanup(stop)
+
+	hangInput := writeQueueInput(t, root, "hang.json", "hang\n")
+	hangID := f.call(t, "protenix", map[string]interface{}{"input": hangInput, "out_dir": "out", "version": "v1"}, f.key, false)["task_id"].(string)
+	job := filepath.Join(root, "jobs", hangID)
+	pidDeadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(pidDeadline) {
+		if _, err := os.Stat(filepath.Join(job, "child.pid")); err == nil {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	var pids []int
+	for _, name := range []string{"parent.pid", "child.pid"} {
+		b, err := os.ReadFile(filepath.Join(job, name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		pid, err := strconv.Atoi(strings.TrimSpace(string(b)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		pids = append(pids, pid)
+	}
+
+	task := f.waitDone(t, hangID, 10*time.Second)
+	if task["process_status"] != "system_error" || task["error_message"] != "task execution timed out" {
+		t.Fatalf("timeout status=%v message=%v", task["process_status"], task["error_message"])
+	}
+	if task["cancel_requested"] == true {
+		t.Fatal("timeout must not be recorded as a user cancel")
+	}
+	for _, pid := range pids {
+		if b, err := os.ReadFile(fmt.Sprintf("/proc/%d/stat", pid)); err == nil {
+			fields := strings.Fields(string(b)[strings.LastIndex(string(b), ")")+1:])
+			if len(fields) > 0 && fields[0] != "Z" {
+				t.Fatalf("task process survived execute timeout: %d", pid)
+			}
+		}
+	}
+
+	quickInput := writeQueueInput(t, root, "quick.json", "quick\n")
+	quickID := f.call(t, "protenix", map[string]interface{}{"input": quickInput, "out_dir": "out", "version": "v1"}, f.key, false)["task_id"].(string)
+	if quick := f.waitDone(t, quickID, 10*time.Second); quick["process_status"] != "success" {
+		t.Fatalf("job within timeout was affected: %v %v", quick["process_status"], quick["error_message"])
+	}
+	t.Log("HTTP Bearer ptxk_ -> SQLite -> policy -> Execute: timeout stopped shell+child; shorter job still succeeded")
+}

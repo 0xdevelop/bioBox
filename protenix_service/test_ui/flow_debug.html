@@ -419,11 +419,18 @@
       setChip($("status-chips"), "chip-run", "run_status=" + run, run === "done" ? (process === "success" ? "ok" : "err") : "wait");
       setChip($("status-chips"), "chip-proc", "process_status=" + process, process === "success" ? "ok" : (process === "" ? "wait" : "err"));
       if (task.cancel_requested) setChip($("status-chips"), "chip-cancel", "cancel_requested", "wait");
+      const errorMessage = task.error_message || "";
+      if (errorMessage && process && process !== "success") {
+        setChip($("status-chips"), "chip-error", "error_message=" + errorMessage, "err");
+      } else {
+        const stale = $("chip-error");
+        if (stale) stale.remove();
+      }
       state.runStatus = run;
       state.processStatus = process;
       $("progress-bar").style.width = Math.max(0, Math.min(100, progress)) + "%";
       $("progress-label").textContent = "后端上报 progress=" + progress + (task.progress_message ? (" · " + task.progress_message) : "") + "（非估算）";
-      const key = [run, process, progress, task.progress_message || ""].join("|");
+      const key = [run, process, progress, task.progress_message || "", errorMessage].join("|");
       if (task.result && task.result.cif_count != null) state.cifCount = task.result.cif_count;
       if (key !== state.lastStatusKey) {
         state.lastStatusKey = key;
@@ -996,11 +1003,11 @@
             clearInterval(state.pollTimer);
             state.pollTimer = 0;
             $("btn-cancel").disabled = true;
-            log("任务终态", { process_status: task.process_status, result: task.result });
+            log("任务终态", { process_status: task.process_status, error_message: task.error_message || "", result: task.result });
             const autoFetch = task.process_status === "success" ? "prefer" : "structure";
             await loadArtifacts(taskId, { autoFetch: autoFetch });
             if (task.process_status !== "success" && !state.atoms.length) {
-              $("cif-note").textContent = "终态 process_status=" + (task.process_status || "") + "。已按 task.artifacts 列出真实产物（若有日志或文本可点读取），未把失败结果画成成功结构。";
+              $("cif-note").textContent = "终态 process_status=" + (task.process_status || "") + (task.error_message ? ("，error_message=" + task.error_message) : "") + "。已按 task.artifacts 列出真实产物（若有日志或文本可点读取），未把失败结果画成成功结构。";
             }
             await loadHistory("终态后刷新");
           }

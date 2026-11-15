@@ -24,7 +24,7 @@ go build -o protenix_service .
 - Debug 启动读取 `./example_files/config_local.yaml`；工作目录必须是本目录
 - 存储默认只开 SQLite（`storage_cfg.primary: sqlite`，mysql/postgres/redis 为 `enabled: false`）。Auth/User 走主库 SQLite。
 - Async/Task 使用 `storage.GormDB` 主库，SQLite 原子认领与持久状态。仅单 daemon 负责一个队列库；本机孤儿恢复不是 HA 租约。
-- 原生 CLI 路径写在 `cli_cfg`（见示例配置），不要在代码或 URL 里写死。`cli_cfg.protenix.binary` / `cli_cfg.pxdesign.binary` 为空时，`Execute` 拒绝启动进程。作业输入会拷贝到 `cli_cfg.work_root/<task_id>/input/`，输出写到同任务的 `output/`，不修改原输入文件。`version` 仍只作方法参数，不作为 CLI 开关。
+- 原生 CLI 路径写在 `cli_cfg`（见示例配置），不要在代码或 URL 里写死。`cli_cfg.protenix.binary` / `cli_cfg.pxdesign.binary` 为空时，`Execute` 拒绝启动进程。作业输入会拷贝到 `cli_cfg.work_root/<task_id>/input/`，输出写到同任务的 `output/`，不修改原输入文件。`version` 仍只作方法参数，不作为 CLI 开关。`cli_cfg.execute_timeout_seconds` 为正数时，单次 Execute 到期会取消进程组，任务记 `system_error`（`error_message=task execution timed out`）；`0` 表示不限制。
 - `example_files/config_local.yaml` 与 `data/` 已加入忽略规则，不要提交密钥或 SQLite 数据文件。
 
 默认端口（示例配置）：JSON-RPC `13001`、MCP `13002`、test_ui `13003`、WebSocket `13004`、gRPC `13005`、frontend `13006`。test_ui 与 frontend 默认只绑定 `127.0.0.1`。本机验收如需避开占用，可在 `config_local.yaml` 改为 `18001`–`18006`。

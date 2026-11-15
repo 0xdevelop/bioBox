@@ -53,7 +53,7 @@ flowchart LR
 | 业务级 | `process_status` | 空（进行中）/ `success` / `failed` / `cancelled` / `system_error` | Worker 落结局、cancel 落取消 |
 | 业务级 | `progress` | 0–100（`progress_message` 为伴随文案） | 业务 Execute 经 `UpdateProgress` |
 
-两层值域零交集；`run_status=done ⟺ process_status 非空`。程序性故障（方法下线、输入/结果序列化失败、Execute panic）落 `system_error`；`Execute` 返回业务错误落 `failed`——排障时一眼分清系统坏了还是业务没通过。**部分成功**不设枚举，由业务在 result 中自描述；**自动重试**不做，重试 = 重新发起新任务。
+两层值域零交集；`run_status=done ⟺ process_status 非空`。程序性故障（方法下线、输入/结果序列化失败、Execute panic、`cli_cfg.execute_timeout_seconds` 到期取消进程组）落 `system_error`（超时时 `error_message` 为 `task execution timed out`），不新增 `process_status` 枚举；用户 `task.cancel` 仍落 `cancelled`。`Execute` 返回业务错误落 `failed`——排障时一眼分清系统坏了还是业务没通过。**部分成功**不设枚举，由业务在 result 中自描述；**自动重试**不做，重试 = 重新发起新任务。
 
 状态流转：
 
@@ -64,7 +64,7 @@ stateDiagram-v2
     queued --> done_cancelled : task.cancel
     running --> done_success : Execute 返回值
     running --> done_failed : Execute 返回业务错误
-    running --> done_system_error : panic / 方法下线 / 序列化失败
+    running --> done_system_error : panic / 方法下线 / 序列化失败 / Execute 超时
     running --> queued : 进程崩溃 → 重启恢复重置（幂等重跑）
     done_success --> [*]
     done_failed --> [*]

@@ -85,6 +85,7 @@ auth_cfg: # Auth configurations
 cli_cfg: # 原生 CLI 接线（protenix-run / pxdesign-run）。binary 为空时 Execute 拒绝启动进程，不猜路径。
   work_root: "./data/cli_jobs" # 每任务作业目录根路径；输入会拷贝到子目录，不改原文件
   cancel_grace_seconds: 10 # 向进程组发 SIGTERM 后、再发 SIGKILL 的等待秒数
+  execute_timeout_seconds: 0 # 单次 Execute 最长秒数；0 表示不限制。到期后取消进程组，任务记 system_error
   protenix:
     binary: "" # 已安装的 protenix-run 路径
     extra_env: {}

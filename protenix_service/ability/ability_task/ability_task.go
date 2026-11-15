@@ -15,6 +15,7 @@ import (
 	"github.com/0xdevelop/protenix_service/api/api_error_code"
 	"github.com/0xdevelop/protenix_service/api/api_supported_methods"
 	"github.com/0xdevelop/protenix_service/common"
+	"github.com/0xdevelop/protenix_service/config"
 	"github.com/0xdevelop/protenix_service/storage"
 	"github.com/george012/gtbox/gtbox_log"
 	"github.com/goccy/go-json"
@@ -253,11 +254,28 @@ func claimQueuedTask(ctx context.Context) (*ability_task_model.AsyncTask, error)
 	return task, nil
 }
 
-// executeClaimedTask 调用注册表里同一个 Execute 并落终态；panic、方法下线、序列化故障归 system_error。
+func executeTimeout() time.Duration {
+	if config.GlobalConfig == nil || config.GlobalConfig.CliCfg == nil {
+		return 0
+	}
+	seconds := config.GlobalConfig.CliCfg.ExecuteTimeoutSeconds
+	if seconds <= 0 {
+		return 0
+	}
+	return time.Duration(seconds) * time.Second
+}
+
+// executeClaimedTask 调用注册表里同一个 Execute 并落终态；panic、方法下线、序列化故障或 Execute 超时归 system_error。
 func executeClaimedTask(ctx context.Context, task *ability_task_model.AsyncTask) {
 	defer unmarkTaskInFlight(task.TaskID)
-	// Cancellation reaches the existing Execute and CLI process-group runner.
-	runCtx, cancel := context.WithCancel(ctx)
+	// Cancellation and optional Execute timeout both reach the existing CLI process-group runner.
+	var runCtx context.Context
+	var cancel context.CancelFunc
+	if timeout := executeTimeout(); timeout > 0 {
+		runCtx, cancel = context.WithTimeout(ctx, timeout)
+	} else {
+		runCtx, cancel = context.WithCancel(ctx)
+	}
 	defer cancel()
 	inFlightTasksMutex.Lock()
 	inFlightTasks[task.TaskID] = cancel
@@ -297,9 +315,16 @@ func executeClaimedTask(ctx context.Context, task *ability_task_model.AsyncTask)
 	value, execErr := callExecuteRecovered(taskCtx, supportedMethod, task, input)
 	resultJSON, marshalErr := marshalTaskResult(value)
 
-	if taskCtx.Err() != nil {
-		finishTask(context.WithoutCancel(taskCtx), task.TaskID, ProcessStatusCancelled, resultJSON, 0, "task execution cancelled")
-		return
+	// A job that already succeeded is kept as success even if the timer fires in the same window.
+	if execErr != nil || marshalErr != nil {
+		if errors.Is(taskCtx.Err(), context.DeadlineExceeded) {
+			finishTask(context.WithoutCancel(taskCtx), task.TaskID, ProcessStatusSystemError, resultJSON, 0, "task execution timed out")
+			return
+		}
+		if taskCtx.Err() != nil {
+			finishTask(context.WithoutCancel(taskCtx), task.TaskID, ProcessStatusCancelled, resultJSON, 0, "task execution cancelled")
+			return
+		}
 	}
 	if execErr != nil {
 		if businessErr, isBusiness := api_error_code.As(execErr); isBusiness {

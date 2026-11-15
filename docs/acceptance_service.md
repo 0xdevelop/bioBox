@@ -1,3 +1,12 @@
+# 最新状态：Execute 超时取消进程组（2026-11-15 10:59 Asia/Singapore UTC+8）
+
+本节补上第三阶段仍缺的「执行超时」：在不改 Task 方法名和 `process_status` 枚举的前提下，用已有进程组取消路径限制单次 Execute 时长。这不是官方 GPU 长预测、长期服务、Linux Chrome 再点击或生产级超时策略。
+
+- 新增结构化配置 `cli_cfg.execute_timeout_seconds`（示例与默认均为 `0`，表示不限制；本机 `config_local.yaml` 未改）。正数到期后取消进程组，任务 `done` + `system_error`，`error_message=task execution timed out`。用户 `task.cancel` 仍落 `cancelled`。若任务在同一窗口内已经成功返回，仍记 `success`。
+- 调试页对 `task.get` 返回的真实 `error_message` 加以展示（状态芯片与终态说明），仍不编造进度。
+- 已测：`TestSQLiteHTTPExecuteTimeoutStopsProcessGroup` 在隔离 SQLite HTTP Bearer `ptxk_` 下，1 秒超时使挂起短脚本的包装壳与子进程退出，属主看到上述终态且 `cancel_requested` 不为真；同配置下 0.2 秒成功任务仍为 `success`。`go test ./ability/ability_task ./test_ui ./api/api_jsonRPC` 与 `go build` 退出码 0。官方烟测 CIF 的 node 解析回归仍为 168 原子 / 20 个 CA。
+- 未装 MySQL/Redis，未跑 GPU，未启长期服务，未改本机 `config_local.yaml`（sha256 仍为 `684b906075c72cd76806cafd645bb7da9c6ac6b235550b5e77eaf15f0e31bf6c`），未改 `build_srcs`、三仓、show_yeah。模板远端仍为 `ebef2c6`，已 `fetch`/`ls-remote` 确认不是主动锁旧版。仍无 ego-browser / Playwright MCP，故未对本次改动再做 Linux Chrome 点击。v2 runtime 仍缺授权权重。
+
 # 最新状态：失败/取消任务的真实产物取件（2026-11-15 09:58 Asia/Singapore UTC+8）
 
 本节补上已完成但非 success 的任务无法取回真实日志或产物摘要的缺口。这不是 Linux Chrome 再点击、官方 GPU 设计、长期服务或生产级取件。

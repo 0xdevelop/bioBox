@@ -2,10 +2,11 @@ package config
 
 // CLIConfig 是原生 CLI 接线的结构化配置。版本/模型/preset 仍走方法 arguments，不进路径。
 type CLIConfig struct {
-	WorkRoot           string           `yaml:"work_root" json:"work_root" toml:"work_root" comment:"每任务作业目录的根路径；输入会拷贝到子目录，不改原文件"`
-	CancelGraceSeconds int              `yaml:"cancel_grace_seconds" json:"cancel_grace_seconds" toml:"cancel_grace_seconds" comment:"向进程组发送 SIGTERM 后、再发 SIGKILL 的等待秒数"`
-	Protenix           *CLIBinaryConfig `yaml:"protenix" json:"protenix" toml:"protenix" comment:"protenix-run 可执行文件；路径为空时 Execute 拒绝启动进程"`
-	PXDesign           *CLIBinaryConfig `yaml:"pxdesign" json:"pxdesign" toml:"pxdesign" comment:"pxdesign-run 可执行文件；路径为空时 Execute 拒绝启动进程"`
+	WorkRoot              string           `yaml:"work_root" json:"work_root" toml:"work_root" comment:"每任务作业目录的根路径；输入会拷贝到子目录，不改原文件"`
+	CancelGraceSeconds    int              `yaml:"cancel_grace_seconds" json:"cancel_grace_seconds" toml:"cancel_grace_seconds" comment:"向进程组发送 SIGTERM 后、再发 SIGKILL 的等待秒数"`
+	ExecuteTimeoutSeconds int              `yaml:"execute_timeout_seconds" json:"execute_timeout_seconds" toml:"execute_timeout_seconds" comment:"单次 Execute 最长秒数；0 表示不限制。到期后取消进程组，任务记 system_error"`
+	Protenix              *CLIBinaryConfig `yaml:"protenix" json:"protenix" toml:"protenix" comment:"protenix-run 可执行文件；路径为空时 Execute 拒绝启动进程"`
+	PXDesign              *CLIBinaryConfig `yaml:"pxdesign" json:"pxdesign" toml:"pxdesign" comment:"pxdesign-run 可执行文件；路径为空时 Execute 拒绝启动进程"`
 }
 
 // CLIBinaryConfig 指向已安装的官方包装命令，不在代码里写死路径。
@@ -16,9 +17,10 @@ type CLIBinaryConfig struct {
 
 func DefaultCLIConfig() *CLIConfig {
 	return &CLIConfig{
-		WorkRoot:           "./data/cli_jobs",
-		CancelGraceSeconds: 10,
-		Protenix:           &CLIBinaryConfig{ExtraEnv: map[string]string{}},
-		PXDesign:           &CLIBinaryConfig{ExtraEnv: map[string]string{}},
+		WorkRoot:              "./data/cli_jobs",
+		CancelGraceSeconds:    10,
+		ExecuteTimeoutSeconds: 0,
+		Protenix:              &CLIBinaryConfig{ExtraEnv: map[string]string{}},
+		PXDesign:              &CLIBinaryConfig{ExtraEnv: map[string]string{}},
 	}
 }
