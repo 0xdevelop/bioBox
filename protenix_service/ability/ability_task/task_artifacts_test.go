@@ -1,7 +1,9 @@
 package ability_task
 
 import (
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"os"
 	"path/filepath"
 	"strings"
@@ -106,6 +108,10 @@ func TestListAndReadTaskArtifactsConfined(t *testing.T) {
 	decoded, err := base64.StdEncoding.DecodeString(file.Content)
 	if err != nil || string(decoded) != string(cif) {
 		t.Fatalf("content mismatch: %q", decoded)
+	}
+	wantDigest := sha256.Sum256(cif)
+	if file.SHA256 != hex.EncodeToString(wantDigest[:]) {
+		t.Fatalf("sha256 mismatch: got %s", file.SHA256)
 	}
 	if _, err = readTaskArtifact(job, "input/source.cif"); err == nil {
 		t.Fatal("input read must fail")

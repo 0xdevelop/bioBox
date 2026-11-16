@@ -67,6 +67,17 @@
     .three-hud { top: 15px; letter-spacing: .08em; }
     .three-tooltip { bottom: 18px; color: #ffe8ab; }
     [hidden] { display: none !important; }
+    .stage-table td, .stage-table th { vertical-align: top; }
+    .stage-table td.mono, .proof-table td.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; word-break: break-all; }
+    .stage-table tr.pending td { color: var(--muted); }
+    .stage-table tr.ok td:first-child { color: var(--ok); }
+    .stage-table tr.err td:first-child { color: var(--err); }
+    .stage-table tr.wait td:first-child { color: var(--warn); }
+    .badge-inferred { display: inline-block; border: 1px solid rgba(251,191,36,.55); color: var(--warn); border-radius: 6px; padding: 0 6px; font-size: 11px; margin-right: 6px; }
+    .badge-record { display: inline-block; border: 1px solid rgba(52,211,153,.5); color: var(--ok); border-radius: 6px; padding: 0 6px; font-size: 11px; margin-right: 6px; }
+    pre.failure-log { max-height: 260px; overflow: auto; background: #12070b; border: 1px solid rgba(251,113,133,.35); border-radius: 8px; padding: 10px; font-size: 11px; color: #fecdd3; white-space: pre-wrap; }
+    .check { display: flex; align-items: center; gap: 6px; margin: 8px 0 4px; color: var(--muted); font-size: 12px; }
+    .check input { width: auto; }
     @media (max-width: 640px) { .three-stage { height: 410px; } }
     a { color: var(--accent-2); }
   </style>
@@ -174,6 +185,15 @@
         <div class="chips" id="status-chips"></div>
         <div class="progress-wrap"><div class="progress-bar" id="progress-bar"></div></div>
         <div id="progress-label" class="note">尚未受理</div>
+        <div class="chips" id="conn-chips"><span class="chip" id="conn-state">连接：尚未查询</span></div>
+        <p class="note" id="resume-note" hidden></p>
+        <div class="actions" id="resume-actions" hidden><button id="btn-resume" type="button">恢复跟踪上次 task_id（只查询 task.get，不重新提交）</button></div>
+        <table class="stage-table" aria-label="任务阶段（只显示服务返回值）">
+          <thead><tr><th>阶段</th><th>服务返回的状态</th><th>服务时间戳（Asia/Shanghai）</th><th>原始字段值</th></tr></thead>
+          <tbody id="flow-stage-rows"><tr class="pending"><td colspan="4" class="note">尚未提交或跟踪任务</td></tr></tbody>
+        </table>
+        <p class="note">阶段表只填 <code>tools/call</code> 受理响应、<code>task.get</code> 的 <code>run_status</code> / <code>process_status</code> / <code>created_at</code> / <code>started_at</code> / <code>completed_at</code> / <code>error_*</code> 和 <code>task.artifact</code> 的 <code>size</code> / <code>sha256</code>。服务没返回的格子保持“—”，不用浏览器时间顶替；耗时只由服务时间戳相减（秒级）。</p>
+        <pre class="failure-log" id="failure-log" hidden></pre>
         <ul class="timeline" id="timeline"></ul>
         <div class="flow-rail-wrap">
           <canvas id="flow-rail" width="1100" height="220" aria-label="真实任务流程轨道"></canvas>
@@ -185,6 +205,10 @@
         <table>
           <thead><tr><th>相对路径</th><th>类型</th><th>大小</th><th></th></tr></thead>
           <tbody id="artifact-rows"><tr><td colspan="4" class="note">提交或跟踪已完成任务后列出（含失败/取消/系统错误），不含 input/</td></tr></tbody>
+        </table>
+        <table class="proof-table" aria-label="当前产物核对">
+          <thead><tr><th>当前取件</th><th>值</th></tr></thead>
+          <tbody id="artifact-proof"><tr><td colspan="2" class="note">尚未经 task.artifact 取件</td></tr></tbody>
         </table>
         <p class="note warn">最终预测结构 / 不同样本，不是物理折叠过程；sample 编号与 MODEL 编号都不是时间轴。</p>
         <div class="row">
@@ -198,9 +222,11 @@
         <div class="row">
           <div><label for="structure-model">文件内 MODEL（不同构象，非时间帧）</label><select id="structure-model" disabled></select></div>
           <div><label for="structure-chain">链</label><select id="structure-chain" disabled></select></div>
-          <div><label for="structure-view">表示方式</label><select id="structure-view"><option value="atoms">原子 + Cα 主链示意</option><option value="trace">Cα 主链示意（非化学键）</option></select></div>
-          <div><label for="structure-color">着色</label><select id="structure-color"><option value="chain">按链</option><option value="element">按元素（C/N/O/S/P/H）</option></select></div>
+          <div><label for="structure-view">表示方式</label><select id="structure-view"><option value="cartoon" selected>飘带 cartoon（默认；Cα 样条 + Cα→O 朝向，断链即断开）</option><option value="atoms">原子 + Cα 主链示意</option><option value="trace">Cα 主链示意（非化学键）</option></select></div>
+          <div><label for="structure-color">着色</label><select id="structure-color"><option value="ss" selected>按二级结构（H 螺旋 / E 折叠 / C 其他）</option><option value="chain">按链</option><option value="element">按元素（C/N/O/S/P/H）</option></select></div>
         </div>
+        <label class="check" for="structure-atom-layer"><input type="checkbox" id="structure-atom-layer"> <span id="structure-atom-layer-label">原子点细节层 enabled=false（只在飘带模式叠加）</span></label>
+        <p class="note" id="structure-ss-note" aria-live="polite">二级结构来源：尚未加载结构</p>
         <div class="actions">
           <button id="structure-rotate" type="button" aria-pressed="true">暂停旋转</button>
           <button id="structure-reset" type="button">重置视角</button>
@@ -249,6 +275,16 @@
       three: null,
       threeLoading: false,
       pageActive: true,
+      threeModule: null,
+      structureText: "",
+      ssRecords: null,
+      lastSummary: null,
+      acceptInfo: null,
+      observedRuns: [],
+      lastTask: null,
+      lastProof: null,
+      pollFailures: 0,
+      submitting: false,
     };
 
     function maskSecret(text) {
@@ -448,6 +484,8 @@
     }
     function renderStatus(task) {
       const run = task.run_status || "";
+      if (run && state.observedRuns[state.observedRuns.length - 1] !== run) state.observedRuns.push(run);
+      state.lastTask = task;
       const process = task.process_status || "进行中";
       const progress = Number(task.progress ?? 0);
       setChip($("status-chips"), "chip-run", "run_status=" + run, run === "done" ? (process === "success" ? "ok" : "err") : "wait");
@@ -474,6 +512,113 @@
         else if (run === "running") markFlow("running", "wait", "task.get running", state.flowHubs.queued ? "queued" : (from === "submit" ? "submit" : ""));
         else if (run === "done") markFlow("done", process === "success" ? "ok" : "err", "task.get done/" + process, state.flowHubs.running ? "running" : (state.flowHubs.queued ? "queued" : (from === "submit" ? "submit" : "")));
       }
+    }
+
+    const RESUME_KEY = "protenix_flow_debug.task_id";
+    const SS_COLORS = { H: "#3dffa6", E: "#ffc857", C: "#5f9d86" };
+    const SS_NAMES = { H: "H 螺旋", E: "E 折叠", C: "C 其他" };
+    function serverTime(raw) {
+      if (!raw) return "—";
+      const d = new Date(raw);
+      if (isNaN(d.getTime())) return "—（无法解析）";
+      return d.toLocaleString("zh-CN", { timeZone: "Asia/Shanghai", hour12: false });
+    }
+    function serverSeconds(a, b) {
+      const x = Date.parse(a || ""), y = Date.parse(b || "");
+      return Number.isFinite(x) && Number.isFinite(y) ? Math.round((y - x) / 1000) : null;
+    }
+    // Only values returned by the service are written here; empty cells stay "—".
+    function renderFlowStages() {
+      const body = $("flow-stage-rows");
+      body.replaceChildren();
+      if (!state.taskId) { body.innerHTML = '<tr class="pending"><td colspan="4" class="note">尚未提交或跟踪任务</td></tr>'; return; }
+      const t = state.lastTask && state.lastTask.task_id === state.taskId ? state.lastTask : null;
+      const acc = state.acceptInfo && state.acceptInfo.task_id === state.taskId ? state.acceptInfo : null;
+      const rows = [];
+      rows.push(["提交受理", acc || t ? "ok" : "pending",
+        acc ? ("受理响应 task_id=" + acc.task_id + " · run_status=" + (acc.run_status || "（响应未带）")) : "本页未提交；跟踪既有 task_id，只查询不重提",
+        t ? serverTime(t.created_at) : "—", t ? "created_at=" + (t.created_at || "") : "—"]);
+      rows.push(["排队", !t ? "pending" : (t.run_status === "queued" ? "wait" : "ok"),
+        !t ? "—" : ((state.observedRuns.includes("queued") ? "task.get 返回过 run_status=queued" : "本页轮询未观测到 queued")
+          + (t.started_at ? "；排队 " + serverSeconds(t.created_at, t.started_at) + " s（started_at−created_at）" : "")),
+        t ? serverTime(t.created_at) : "—", t ? "created_at=" + (t.created_at || "") : "—"]);
+      rows.push(["运行", !t ? "pending" : (t.run_status === "running" ? "wait" : (t.started_at ? "ok" : "pending")),
+        !t ? "—" : (t.started_at ? ((state.observedRuns.includes("running") ? "task.get 返回过 run_status=running" : "本页轮询未观测到 running")
+          + (t.completed_at ? "；运行 " + serverSeconds(t.started_at, t.completed_at) + " s（completed_at−started_at）" : "")) : "服务尚未返回 started_at"),
+        t ? serverTime(t.started_at) : "—", t && t.started_at ? "started_at=" + t.started_at : "—"]);
+      const done = !!t && t.run_status === "done";
+      rows.push(["终态", !done ? "pending" : (t.process_status === "success" ? "ok" : "err"),
+        !done ? (t ? "run_status=" + t.run_status + "（未到终态）" : "—")
+          : ("run_status=done · process_status=" + (t.process_status || "") + (t.error_code ? " · error_code=" + t.error_code : "") + (t.error_message ? " · error_message=" + t.error_message : "")),
+        done ? serverTime(t.completed_at) : "—", done && t.completed_at ? "completed_at=" + t.completed_at : "—"]);
+      const proof = state.lastProof && state.lastProof.taskId === state.taskId ? state.lastProof : null;
+      rows.push(["取件", !proof ? "pending" : (proof.match ? "ok" : "err"),
+        !proof ? "尚未调用 task.artifact" : ("task.artifact " + proof.path + " · size=" + proof.serverSize + " B · sha256 " + (proof.match ? "与浏览器复算一致" : "不一致或无法复算")),
+        "—（task.artifact 不返回时间戳）", proof ? "sha256=" + (proof.serverSha || "（服务未返回）") : "—"]);
+      for (const [name, kind, status, time, raw] of rows) {
+        const tr = document.createElement("tr");
+        tr.className = kind;
+        tr.dataset.stage = name;
+        [name, status, time, raw].forEach((v, i) => { const td = document.createElement("td"); td.textContent = v; if (i === 3) td.className = "mono"; tr.appendChild(td); });
+        body.appendChild(tr);
+      }
+      if (state.observedRuns.length) {
+        const tr = document.createElement("tr"); tr.className = "pending";
+        const td = document.createElement("td"); td.colSpan = 4;
+        td.textContent = "本页经 task.get 依次观测到的 run_status：" + state.observedRuns.join(" → ") + "（只记服务返回值）";
+        tr.appendChild(td); body.appendChild(tr);
+      }
+    }
+    function setConn(kind, text) { const chip = $("conn-state"); chip.className = "chip " + (kind || ""); chip.textContent = text; chip.dataset.kind = kind || ""; }
+    async function sha256Hex(bytes) {
+      if (!(window.crypto && crypto.subtle)) return "";
+      const digest = await crypto.subtle.digest("SHA-256", bytes);
+      return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
+    }
+    function renderProof(proof, note) {
+      const body = $("artifact-proof");
+      body.replaceChildren();
+      if (!proof) { body.innerHTML = '<tr><td colspan="2" class="note"></td></tr>'; body.querySelector("td").textContent = note || "尚未经 task.artifact 取件"; delete body.dataset.match; return; }
+      const rows = [
+        ["task_id", proof.taskId], ["相对路径（服务返回 path）", proof.path], ["服务返回 size", proof.serverSize + " B"],
+        ["浏览器解码 base64 后字节数", proof.decodedSize + " B" + (proof.decodedSize === proof.serverSize ? "（与 size 一致）" : "（与 size 不一致）")],
+        ["服务返回 sha256", proof.serverSha || "（服务未返回）"], ["浏览器 crypto.subtle 复算 sha256", proof.browserSha || "（浏览器不可用）"],
+        ["核对结论", proof.match ? "一致：页面使用的就是服务端读出的这份字节" : "不一致或无法复算：不作为已核对产物"],
+      ];
+      for (const [k, v] of rows) {
+        const tr = document.createElement("tr");
+        const a = document.createElement("td"); a.textContent = k;
+        const b = document.createElement("td"); b.textContent = v; b.className = "mono";
+        tr.append(a, b); body.appendChild(tr);
+      }
+      body.dataset.match = String(proof.match);
+    }
+    function renderSecondaryNote(summary) {
+      const el = $("structure-ss-note");
+      el.replaceChildren();
+      if (!summary || !summary.residues) {
+        el.textContent = "二级结构来源：当前选择没有带 Cα 的氨基酸残基，飘带为空";
+        el.dataset.source = "";
+        return;
+      }
+      const inferred = !String(summary.secondarySource).startsWith("records");
+      const badge = document.createElement("span");
+      badge.className = inferred ? "badge-inferred" : "badge-record";
+      badge.textContent = inferred ? "推断" : "文件记录";
+      const breaks = summary.breaks || [];
+      const detail = summary.representation === "cartoon"
+        ? (" · 飘带 " + summary.ribbonSegments + " 段，断开 " + breaks.length + " 处"
+          + (breaks.length ? "（" + breaks.slice(0, 4).map((b) => (b.chain || "?") + ":" + b.from + "→" + b.to + " " + b.reason).join("；") + (breaks.length > 4 ? "；…" : "") + "）" : "")
+          + (summary.singleResidueSegments ? " · " + summary.singleResidueSegments + " 个孤立残基不画飘带" : ""))
+        : "";
+      el.append(badge, document.createTextNode("二级结构来源：" + summary.secondaryNote + " · H " + summary.counts.H + " / E " + summary.counts.E + " / C " + summary.counts.C + " 残基" + detail));
+      el.dataset.source = summary.secondarySource;
+    }
+    function showTaskLog(text, header, failed) {
+      const el = $("failure-log");
+      el.hidden = false;
+      el.style.borderColor = failed ? "" : "rgba(120,200,255,.25)";
+      el.textContent = header + "\n" + text;
     }
 
     // PARSE_CIF_BEGIN
@@ -558,7 +703,10 @@
       const atoms = stageAtoms(), backbone = backboneSegments(atoms);
       const indexes = new Map(atoms.map((a, i) => [a, i]));
       try {
-        state.three.update({ atoms, links: backbone.links.map(([a, b]) => [indexes.get(a), indexes.get(b)]), colors: atoms.map(atomColor), trace: $("structure-view").value === "trace", traceIndices: backbone.ca.map((a) => indexes.get(a)), label: (state.stageTaskId ? "TASK " + state.stageTaskId : "本地文件 / 来源未验证") + " / " + state.stagePath, rotating: state.autoRot });
+        const summary = state.three.update({ atoms, links: backbone.links.map(([a, b]) => [indexes.get(a), indexes.get(b)]), colors: atoms.map(atomColor), traceIndices: backbone.ca.map((a) => indexes.get(a)), label: (state.stageTaskId ? "TASK " + state.stageTaskId : "本地文件 / 来源未验证") + " / " + state.stagePath, rotating: state.autoRot,
+          representation: $("structure-view").value, atomLayerEnabled: $("structure-atom-layer").checked, colorMode: $("structure-color").value, secondaryRecords: state.ssRecords });
+        state.lastSummary = atoms.length ? summary : null;
+        renderSecondaryNote(state.lastSummary);
       } catch (err) { failThree(err.message); }
     }
     function failThree(message) {
@@ -576,6 +724,8 @@
         const module = await import("/structure_stage.js");
         if (!state.pageActive) return;
         state.three = module.createStructureStage($("three-stage"), failThree);
+        state.threeModule = module;
+        if (state.structureText && !state.ssRecords) state.ssRecords = module.parseSecondaryRecords(state.structureText);
         $("three-status").textContent = "Three.js 三维舞台已就绪 · 左键旋转 / 滚轮缩放 / 右键或方向键平移 · 环线和星点仅为视觉装饰。";
         $("three-retry").hidden = true;
         $("structure-renderer").value = "three";
@@ -596,9 +746,11 @@
       const residues = new Set(atoms.filter((a) => a.seq != null).map((a) => [a.chain, a.segment, a.seq, a.insertion].join("|")));
       $("structure-summary").textContent = state.stagePath ? (state.stagePath + " · MODEL " + $("structure-model").value + " · " + atoms.length + " 原子 · " + residues.size + " 残基编号 · Cα 连线 " + backbone.links.length + " 条" + (backbone.rejected ? " · 警告：" + backbone.rejected + " 处相邻 Cα 距离超出 2.5–4.5 Å，已断开；不能据此当作有效折叠" : "") + " · 原始坐标单位 Å，未做结构质量或化学键验证") : "尚未加载结构";
       $("structure-legend").replaceChildren();
-      const values = $("structure-color").value === "chain" ? [...new Set(atoms.map((a) => a.chain))] : [...new Set(atoms.map((a) => a.element))];
+      const mode = $("structure-color").value;
       syncThree();
-      values.forEach((v) => { const chip = document.createElement("span"); chip.className = "chip"; chip.style.color = $("structure-color").value === "chain" ? chainColor(v) : (elementColor[v] || "#94a3b8"); chip.textContent = $("structure-color").value === "chain" ? "链 " + (v || "（空）") : v; $("structure-legend").appendChild(chip); });
+      if (mode === "ss" && !state.three) renderSecondaryNote(null);
+      const values = mode === "chain" ? [...new Set(atoms.map((a) => a.chain))] : (mode === "ss" ? (state.three && state.lastSummary && state.lastSummary.counts ? ["H", "E", "C"] : []) : [...new Set(atoms.map((a) => a.element))]);
+      values.forEach((v) => { const chip = document.createElement("span"); chip.className = "chip"; chip.style.color = mode === "chain" ? chainColor(v) : (mode === "ss" ? SS_COLORS[v] : (elementColor[v] || "#94a3b8")); chip.textContent = mode === "chain" ? "链 " + (v || "（空）") : (mode === "ss" ? SS_NAMES[v] + " " + state.lastSummary.counts[v] : v); $("structure-legend").appendChild(chip); });
     }
     const elementColor = { C: "#d7e3f4", N: "#7dd3fc", O: "#fb7185", S: "#fbbf24", P: "#f0abfc", H: "#94a3b8" };
 
@@ -824,7 +976,7 @@
       state.hitAtoms = points.map((atom) => ({ sx: cx + atom.x * scale, sy: cy + atom.y * scale, r: 2.2 + (atom.z / maxR + 1) * 1.8, atom }));
       const cas = backbone.ca;
       const hover = state.hoverAtom;
-      let caption = "真实原子 " + atoms.length + " 个（由产物坐标绘制"
+      let caption = ($("structure-view").value === "cartoon" ? "兼容 Canvas 不绘制飘带，改显原子 + Cα；" : "") + "真实原子 " + atoms.length + " 个（由产物坐标绘制"
         + (cas.length ? "；CA 连线只按残基序号，不是化学键验证" : "")
         + "；最终结构，旋转不是折叠"
         + "）。拖拽旋转，滚轮缩放。悬停查看残基。";
@@ -913,6 +1065,17 @@
       $("structure-legend").replaceChildren();
       state.stageTaskId = "";
       state.stagePath = "";
+      state.structureText = "";
+      state.ssRecords = null;
+      state.lastSummary = null;
+      state.lastProof = null;
+      state.lastTask = null;
+      state.observedRuns = [];
+      state.pollFailures = 0;
+      setConn("", state.taskId ? "连接：等待首次 task.get" : "连接：尚未查询");
+      renderProof(null);
+      renderSecondaryNote(null);
+      $("failure-log").hidden = true; $("failure-log").textContent = "";
       state.runStatus = "";
       state.processStatus = "";
       state.arriveAt = 0;
@@ -932,6 +1095,7 @@
         ? ("舞台已清空。当前跟踪 " + state.taskId + "，不会继续显示上一任务的原子。")
         : "CIF 原子来自取回的真实文件；若文件没有原子记录，这里会如实显示，不会用随机点冒充。结构展示只使用产物坐标，旋转不是折叠过程。悬停查看残基与原子名称，坐标仍来自产物，不是估算。";
       highlightHistory(state.taskId);
+      renderFlowStages();
     }
     async function loadArtifacts(taskId, options) {
       const opts = options || {};
@@ -964,6 +1128,12 @@
         body.appendChild(tr);
       });
       markFlow("artifacts", "ok", "task.artifacts", state.flowHubs.done ? "done" : "");
+      if (opts.autoFetch === "failure") {
+        // A failed/cancelled task never auto-renders a structure; its real run.log is fetched instead.
+        const logItem = items.find((item) => item.path === "run.log");
+        if (logItem) await fetchArtifact(taskId, logItem.path, logItem.kind);
+        return;
+      }
       const preferStructure = items.find((item) => item.kind === "cif" || item.kind === "pdb" || /\.(cif|pdb)$/i.test(item.path || ""));
       if (preferStructure) await fetchArtifact(taskId, preferStructure.path, preferStructure.kind);
       else if (opts.autoFetch === "prefer") await fetchArtifact(taskId, items[0].path, items[0].kind);
@@ -973,6 +1143,8 @@
       const request = ++state.artifactRequest;
       if (state.three) state.three.clear();
       state.atoms = []; state.stagePath = ""; state.hoverAtom = null; state.hitAtoms = [];
+      state.structureText = ""; state.ssRecords = null; state.lastSummary = null; state.lastProof = null;
+      renderProof(null, "正在经 task.artifact 读取 " + path); renderSecondaryNote(null);
       setOptions("structure-model", [], (v) => v); setOptions("structure-chain", [], (v) => v);
       $("structure-summary").textContent = "正在读取 " + path;
       $("structure-legend").replaceChildren();
@@ -984,9 +1156,23 @@
       }
       if (got.encoding !== "base64" || !got.content) throw new Error("产物未按 base64 返回");
       const bytes = atob(got.content);
-      log("读取产物 " + path, { kind: got.kind || kind, size: got.size, content_type: got.content_type, task_id: taskId });
+      const raw = Uint8Array.from(bytes, (ch) => ch.charCodeAt(0));
+      const browserSha = await sha256Hex(raw);
+      if (taskId !== state.taskId || request !== state.artifactRequest) {
+        log("忽略过期产物 " + path, { task_id: taskId, current: state.taskId });
+        return;
+      }
+      const proof = { taskId, path: got.path || path, serverSize: Number(got.size), decodedSize: raw.length, serverSha: got.sha256 || "", browserSha };
+      proof.match = !!proof.serverSha && proof.serverSha === browserSha && proof.decodedSize === proof.serverSize;
+      state.lastProof = proof;
+      renderProof(proof);
+      renderFlowStages();
+      log("读取产物 " + path, { kind: got.kind || kind, size: got.size, sha256: got.sha256 || "", browser_sha256: browserSha, content_type: got.content_type, task_id: taskId });
       const looksStructure = (got.kind === "cif" || got.kind === "pdb" || /\.(cif|pdb)$/i.test(path));
+      const failedTask = !!state.processStatus && state.processStatus !== "success";
       if (looksStructure) {
+        state.structureText = bytes;
+        state.ssRecords = state.threeModule ? state.threeModule.parseSecondaryRecords(bytes) : null;
         state.atoms = parseCIF(bytes);
         state.stageTaskId = taskId;
         state.stagePath = path;
@@ -994,11 +1180,16 @@
         $("structure-rotate").setAttribute("aria-pressed", String(state.autoRot)); $("structure-rotate").textContent = state.autoRot ? "暂停旋转" : "继续旋转";
         updateStructureView(true);
         markFlow("structure", state.atoms.length ? "ok" : "wait", state.atoms.length ? "task.artifact" : "无原子", state.flowHubs.artifacts ? "artifacts" : "");
-        $("cif-note").textContent = state.atoms.length
+        $("cif-note").textContent = (failedTask ? ("注意：这是 process_status=" + state.processStatus + " 的失败任务产物，手动读取，不代表成功结果。") : "") + (state.atoms.length
           ? ("已从 " + path + " 解析 " + state.atoms.length + " 个原子，属于 task_id=" + taskId + "。这是服务返回的文件，不是随机结构。仅展示最终结果，不把不同样本连成折叠动画；坐标不做插值。悬停查看残基。")
-          : (path + " 没有 ATOM/_atom_site 坐标，已如实显示为空，未用随机点填充。");
+          : (path + " 没有 ATOM/_atom_site 坐标，已如实显示为空，未用随机点填充。"));
       } else {
-        $("cif-note").textContent = path + " 不是结构文件。预览：\n" + bytes.slice(0, 400);
+        const text = new TextDecoder().decode(raw);
+        if (path === "run.log" || (got.kind || kind) === "log") {
+          showTaskLog(text.length > 65536 ? "（仅显示末尾 64 KiB）\n" + text.slice(-65536) : text,
+            path + "（task.artifact 原文 · " + raw.length + " B · sha256 " + (browserSha || "不可算") + " · 任务 process_status=" + (state.processStatus || "未终态") + (state.lastTask && state.lastTask.error_message ? " · error_message=" + state.lastTask.error_message : "") + "）", failedTask);
+        }
+        $("cif-note").textContent = path + " 不是结构文件。预览：\n" + text.slice(0, 400);
       }
     }
 
@@ -1097,33 +1288,55 @@
       state.taskId = taskId;
       $("task-id").value = taskId;
       $("btn-cancel").disabled = false;
+      try { sessionStorage.setItem(RESUME_KEY, taskId); } catch (_) {}
+      $("resume-note").hidden = true; $("resume-actions").hidden = true;
       highlightHistory(taskId);
       addTimeline("开始跟踪 " + taskId + " via " + selectedTransport());
       if (state.pollTimer) clearInterval(state.pollTimer);
+      // One in-flight poll per tracked task. The interval keeps retrying task.get (and the terminal
+      // task.artifacts/task.artifact fetch) after a disconnect; it never resubmits.
+      let busy = false, finished = false;
       const poll = async () => {
+        if (busy || finished) return;
+        busy = true;
         try {
           const result = await callSelected("task.get", { task_id: taskId }, true);
           const task = result.task || result;
           if (taskId !== state.taskId) return;
+          if (state.pollFailures) {
+            addTimeline("连接恢复：task.get 在连续失败 " + state.pollFailures + " 次后成功，task_id 未变，未重新提交");
+            setConn("ok", "已恢复：连续失败 " + state.pollFailures + " 次后 task.get 成功 · 同一 task_id，未重新提交");
+            state.pollFailures = 0;
+          } else if ($("conn-state").dataset.kind !== "ok") setConn("ok", "连接正常：task.get 经 " + selectedTransport() + " 成功");
           renderStatus(task);
+          renderFlowStages();
           if (task.run_status === "done") {
-            clearInterval(state.pollTimer);
-            state.pollTimer = 0;
             $("btn-cancel").disabled = true;
             log("任务终态", { process_status: task.process_status, error_message: task.error_message || "", result: task.result });
-            const autoFetch = task.process_status === "success" ? "prefer" : "structure";
+            const autoFetch = task.process_status === "success" ? "prefer" : "failure";
             await loadArtifacts(taskId, { autoFetch: autoFetch });
+            if (task.process_status !== "success" && $("failure-log").hidden) {
+              showTaskLog("task.artifacts 没有列出 run.log；只能显示 task.get 返回的 error_code=" + (task.error_code || 0) + " error_message=" + (task.error_message || "（空）"), "失败任务日志不可用", true);
+            }
             if (task.process_status !== "success" && !state.atoms.length) {
               $("cif-note").textContent = "终态 process_status=" + (task.process_status || "") + (task.error_message ? ("，error_message=" + task.error_message) : "") + "。已按 task.artifacts 列出真实产物（若有日志或文本可点读取），未把失败结果画成成功结构。";
             }
+            finished = true;
+            if (taskId === state.taskId && state.pollTimer) { clearInterval(state.pollTimer); state.pollTimer = 0; }
             await loadHistory("终态后刷新");
           }
         } catch (err) {
+          if (taskId !== state.taskId) return;
+          state.pollFailures++;
+          if (state.pollFailures === 1) addTimeline("连接中断：task.get 失败（" + err.message + "），继续只查询同一 task_id，不会重新提交");
+          setConn("err", "连接中断：task.get 连续失败 " + state.pollFailures + " 次（" + err.message + "）· 每 1.5 s 重试查询，不重提");
           log("轮询失败", err.message);
+        } finally {
+          busy = false;
         }
       };
       await poll();
-      if (state.pollTimer === 0 && $("btn-cancel").disabled === false) {
+      if (!finished && taskId === state.taskId && state.pollTimer === 0) {
         state.pollTimer = setInterval(poll, 1500);
       }
     }
@@ -1168,6 +1381,9 @@
       }
     });
     $("btn-submit").addEventListener("click", async () => {
+      if (state.submitting) { log("上一提交仍在等待受理响应，已忽略重复点击"); return; }
+      state.submitting = true;
+      $("btn-submit").disabled = true;
       try {
         const args = collectArguments();
         const method = $("method").value;
@@ -1175,13 +1391,19 @@
         const accepted = await callSelected(method, args, true);
         if (!accepted.task_id) throw new Error("受理结果没有 task_id");
         resetTaskView(accepted.task_id, ["probe"]);
+        state.acceptInfo = { task_id: accepted.task_id, run_status: accepted.run_status || "" };
+        renderFlowStages();
         addTimeline("已受理 " + accepted.task_id + " run_status=" + (accepted.run_status || "queued") + "（这不是结构完成）");
         markFlow("submit", "ok", "已受理", state.flowHubs.probe ? "probe" : "");
         await loadHistory("受理后刷新");
         await followTask(accepted.task_id, { alreadyReset: true });
       } catch (err) {
         markFlow("submit", "err", "提交失败", state.flowHubs.probe ? "probe" : "");
-        log("提交失败", err.message);
+        log("提交失败：没有拿到受理响应。服务端可能已受理也可能没有，页面不会自动重提；已刷新历史供核对", err.message);
+        await loadHistory("提交失败后刷新：核对服务端是否已受理");
+      } finally {
+        state.submitting = false;
+        $("btn-submit").disabled = false;
       }
     });
     $("btn-history").addEventListener("click", async () => {
@@ -1211,7 +1433,22 @@
       if ($("method").value === "protenix" && $("model").value === "preview") $("model").value = "protenix_base_default_v1.0.0";
     });
 
+    function offerResume() {
+      let stored = "";
+      try { stored = sessionStorage.getItem(RESUME_KEY) || ""; } catch (_) {}
+      if (!stored || state.taskId) return;
+      $("resume-note").hidden = false;
+      $("resume-note").textContent = "本标签页上次跟踪 task_id=" + stored + "（sessionStorage 只存 task_id，不存 API key）。填入 API key 后点击恢复：只调用 task.get / task.artifacts / task.artifact，不会重新提交。";
+      $("resume-actions").hidden = false;
+      $("btn-resume").dataset.taskId = stored;
+    }
+    $("btn-resume").addEventListener("click", async () => {
+      const id = $("btn-resume").dataset.taskId;
+      if (!id) return;
+      try { await followTask(id); } catch (err) { log("恢复跟踪失败", err.message); }
+    });
     async function boot() {
+      offerResume();
       try {
         const response = await fetch("/api/config", { headers: { Accept: "application/json" } });
         if (response.ok) {
@@ -1240,6 +1477,10 @@
       if (item) fetchArtifact(state.taskId, item.path, item.kind).catch((err) => { $("structure-summary").textContent = "读取失败：" + err.message; log("取件失败", err.message); });
     });
     ["structure-model", "structure-chain", "structure-view", "structure-color"].forEach((id) => $(id).addEventListener("change", () => updateStructureView(false)));
+    $("structure-atom-layer").addEventListener("change", () => {
+      $("structure-atom-layer-label").textContent = "原子点细节层 enabled=" + $("structure-atom-layer").checked + "（只在飘带模式叠加）";
+      updateStructureView(false);
+    });
     $("structure-rotate").addEventListener("click", () => { state.autoRot = !state.autoRot; $("structure-rotate").setAttribute("aria-pressed", String(state.autoRot)); $("structure-rotate").textContent = state.autoRot ? "暂停旋转" : "继续旋转"; if (state.three) state.three.pause(!state.autoRot); });
     $("structure-reset").addEventListener("click", () => { state.rotY = 0.35; state.rotX = 0.28; state.zoom = 1; state.hoverAtom = null; if (state.three) state.three.reset(); });
     $("structure-renderer").addEventListener("change", () => {
@@ -1259,7 +1500,10 @@
       try {
         const text = await file.text();
         if (request !== state.artifactRequest) return;
+        state.structureText = text;
+        state.ssRecords = state.threeModule ? state.threeModule.parseSecondaryRecords(text) : null;
         state.atoms = parseCIF(text); state.stagePath = file.name;
+        renderProof(null, "本地文件 " + file.name + "：仅在浏览器读取，未经 task.artifact，不做服务端核对");
         updateStructureView(true);
         $("cif-note").textContent = "本地文件 " + file.name + "，仅在浏览器读取，未上传。来源未验证，不能称为服务预测或真实折叠轨迹。只显示 primary alt 位置（空/A/1）；未做结构质量验证。";
       } catch (err) { $("structure-summary").textContent = "本地文件读取失败：" + err.message; }

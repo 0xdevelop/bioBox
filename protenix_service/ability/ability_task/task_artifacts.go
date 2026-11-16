@@ -2,7 +2,9 @@ package ability_task
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"io"
@@ -104,6 +106,7 @@ func TaskArtifact(ctx context.Context, input interface{}) (interface{}, error) {
 		"kind":         file.Kind,
 		"size":         file.Size,
 		"content_type": file.ContentType,
+		"sha256":       file.SHA256,
 		"encoding":     "base64",
 		"content":      file.Content,
 	}, nil
@@ -318,6 +321,7 @@ func depthOf(rel string) int {
 
 func readTaskArtifact(jobDir, rawPath string) (*struct {
 	artifactInfo
+	SHA256  string
 	Content string
 }, error) {
 	rel, ok := cleanArtifactRelPath(rawPath)
@@ -355,8 +359,10 @@ func readTaskArtifact(jobDir, rawPath string) (*struct {
 		return nil, api_error_code.ErrInvalidArguments
 	}
 	kind, _ := artifactType(rel)
+	digest := sha256.Sum256(data)
 	return &struct {
 		artifactInfo
+		SHA256  string
 		Content string
 	}{
 		artifactInfo: artifactInfo{
@@ -366,6 +372,9 @@ func readTaskArtifact(jobDir, rawPath string) (*struct {
 			Size:        int64(len(data)),
 			ContentType: kind.contentType,
 		},
+		// SHA256 is computed over exactly the bytes returned in Content, so a
+		// client can verify the decoded payload against the server-side file.
+		SHA256:  hex.EncodeToString(digest[:]),
 		Content: base64.StdEncoding.EncodeToString(data),
 	}, nil
 }

@@ -133,7 +133,7 @@ stateDiagram-v2
 ```
 
 - `path` 必须是 `task.artifacts` 列出的相对路径；越权、越界、符号链接、超限或非允许类型一律拒绝。
-- 成功返回 `encoding=base64` 的 `content`，以及 `kind` / `size` / `content_type`。单文件上限 32MiB。
+- 成功返回 `encoding=base64` 的 `content`，以及 `kind` / `size` / `content_type` / `sha256`。`sha256` 是服务端对本次实际读出、并编码进 `content` 的同一份字节计算的十六进制摘要，客户端解码后可自行复算核对。单文件上限 32MiB。
 
 # 4. 数据与并发纪律
 
