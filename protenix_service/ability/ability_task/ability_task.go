@@ -16,6 +16,7 @@ import (
 	"github.com/0xdevelop/protenix_service/api/api_supported_methods"
 	"github.com/0xdevelop/protenix_service/common"
 	"github.com/0xdevelop/protenix_service/config"
+	"github.com/0xdevelop/protenix_service/policy/policy_config"
 	"github.com/0xdevelop/protenix_service/storage"
 	"github.com/george012/gtbox/gtbox_log"
 	"github.com/goccy/go-json"
@@ -204,14 +205,24 @@ func claimQueuedTask(ctx context.Context) (*ability_task_model.AsyncTask, error)
 	if err != nil {
 		return nil, err
 	}
+	if timeout := policy_config.CurrentTaskLifecycleTimeout(); timeout > 0 {
+		if expireErr := expireTimedOutQueuedTasks(ctx, db, timeout); expireErr != nil {
+			return nil, expireErr
+		}
+	}
 	task := &ability_task_model.AsyncTask{}
+	now := time.Now().UTC()
+	updates := map[string]interface{}{
+		"run_status":      RunStatusRunning,
+		"started_at":      &now,
+		"execution_count": gorm.Expr("execution_count + 1"),
+	}
 	if db.Dialector.Name() == "sqlite" {
-		now := time.Now().UTC()
 		candidate := db.Model(&ability_task_model.AsyncTask{}).Select("id").
 			Where("run_status = ?", RunStatusQueued).Order("id ASC").Limit(1)
 		result := db.Model(task).Clauses(clause.Returning{}).
 			Where("id = (?) AND run_status = ?", candidate, RunStatusQueued).
-			Updates(map[string]interface{}{"run_status": RunStatusRunning, "started_at": &now})
+			Updates(updates)
 		if result.Error != nil {
 			return nil, result.Error
 		}
@@ -233,11 +244,7 @@ func claimQueuedTask(ctx context.Context) (*ability_task_model.AsyncTask, error)
 		if findErr != nil {
 			return findErr
 		}
-		now := time.Now().UTC()
-		if updateErr := tx.Model(task).Updates(map[string]interface{}{
-			"run_status": RunStatusRunning,
-			"started_at": &now,
-		}).Error; updateErr != nil {
+		if updateErr := tx.Model(task).Updates(updates).Error; updateErr != nil {
 			return updateErr
 		}
 		// in-flight 登记必须先于事务提交：DB running 可见时本进程执行记录已存在，孤儿侦测无误判窗口
@@ -268,13 +275,29 @@ func executeTimeout() time.Duration {
 // executeClaimedTask 调用注册表里同一个 Execute 并落终态；panic、方法下线、序列化故障或 Execute 超时归 system_error。
 func executeClaimedTask(ctx context.Context, task *ability_task_model.AsyncTask) {
 	defer unmarkTaskInFlight(task.TaskID)
-	// Cancellation and optional Execute timeout both reach the existing CLI process-group runner.
+	// Cancellation, optional Execute timeout, and optional lifecycle deadline all reach the existing CLI process-group runner.
 	var runCtx context.Context
 	var cancel context.CancelFunc
 	if timeout := executeTimeout(); timeout > 0 {
 		runCtx, cancel = context.WithTimeout(ctx, timeout)
 	} else {
 		runCtx, cancel = context.WithCancel(ctx)
+	}
+	lifecycleTimeout := policy_config.CurrentTaskLifecycleTimeout()
+	if lifecycleTimeout > 0 {
+		deadline := task.CreatedAt.UTC().Add(lifecycleTimeout)
+		if !time.Now().UTC().Before(deadline) {
+			cancel()
+			finishTask(context.WithoutCancel(ctx), task.TaskID, ProcessStatusSystemError, "", 0, "task lifecycle timed out")
+			return
+		}
+		var lifeCancel context.CancelFunc
+		runCtx, lifeCancel = context.WithDeadline(runCtx, deadline)
+		innerCancel := cancel
+		cancel = func() {
+			lifeCancel()
+			innerCancel()
+		}
 	}
 	defer cancel()
 	inFlightTasksMutex.Lock()
@@ -318,7 +341,11 @@ func executeClaimedTask(ctx context.Context, task *ability_task_model.AsyncTask)
 	// A job that already succeeded is kept as success even if the timer fires in the same window.
 	if execErr != nil || marshalErr != nil {
 		if errors.Is(taskCtx.Err(), context.DeadlineExceeded) {
-			finishTask(context.WithoutCancel(taskCtx), task.TaskID, ProcessStatusSystemError, resultJSON, 0, "task execution timed out")
+			message := "task execution timed out"
+			if lifecycleTimeout > 0 && !time.Now().UTC().Before(task.CreatedAt.UTC().Add(lifecycleTimeout)) {
+				message = "task lifecycle timed out"
+			}
+			finishTask(context.WithoutCancel(taskCtx), task.TaskID, ProcessStatusSystemError, resultJSON, 0, message)
 			return
 		}
 		if taskCtx.Err() != nil {
@@ -371,13 +398,26 @@ func finishTask(ctx context.Context, taskID string, processStatus string, result
 	if current.CancelRequested {
 		processStatus, errorCode, errorMessage = ProcessStatusCancelled, 0, "task execution cancelled"
 	}
+	// 先标记写回进行中：若随后的终态更新失败或进程在写回窗口崩溃，不得把该任务当孤儿重跑。
+	pending := db.Model(&ability_task_model.AsyncTask{}).
+		Where("task_id = ? AND run_status = ?", taskID, RunStatusRunning).
+		Update("writeback_pending", true)
+	if pending.Error != nil {
+		gtbox_log.LogErrorf("async task finish mark failed: task_id=%s: %v", taskID, pending.Error)
+		return
+	}
+	if pending.RowsAffected != 1 {
+		gtbox_log.LogWarnf("async task finish skipped, row not in running state: task_id=%s", taskID)
+		return
+	}
 	now := time.Now().UTC()
 	updates := map[string]interface{}{
-		"run_status":     RunStatusDone,
-		"process_status": processStatus,
-		"completed_at":   &now,
-		"error_code":     errorCode,
-		"error_message":  errorMessage,
+		"run_status":        RunStatusDone,
+		"process_status":    processStatus,
+		"completed_at":      &now,
+		"error_code":        errorCode,
+		"error_message":     errorMessage,
+		"writeback_pending": false,
 	}
 	if processStatus == ProcessStatusSuccess {
 		updates["progress"] = 100.0
@@ -413,24 +453,127 @@ func RequeueOrphanedTasks(ctx context.Context) error {
 	if inFlight := inFlightTaskIDs(); len(inFlight) > 0 {
 		query = query.Where("task_id NOT IN ?", inFlight)
 	}
-	now := time.Now().UTC()
-	cancelled := query.Session(&gorm.Session{}).Where("cancel_requested = ?", true).Updates(map[string]interface{}{
-		"run_status": RunStatusDone, "process_status": ProcessStatusCancelled, "completed_at": &now,
-	})
-	if cancelled.Error != nil {
-		return cancelled.Error
+
+	var orphans []ability_task_model.AsyncTask
+	if findErr := query.Find(&orphans).Error; findErr != nil {
+		return findErr
 	}
-	result := query.Where("cancel_requested = ?", false).Updates(map[string]interface{}{
-		"run_status": RunStatusQueued,
-		"started_at": nil,
-	})
-	if result.Error != nil {
-		return result.Error
+	if len(orphans) == 0 {
+		return nil
 	}
-	if result.RowsAffected > 0 {
-		gtbox_log.LogInfof("async task requeue: %d orphaned task(s) back to queued", result.RowsAffected)
+
+	requeued := 0
+	for _, orphan := range orphans {
+		if orphan.CancelRequested {
+			now := time.Now().UTC()
+			if updErr := db.Model(&ability_task_model.AsyncTask{}).
+				Where("task_id = ? AND run_status = ?", orphan.TaskID, RunStatusRunning).
+				Updates(map[string]interface{}{
+					"run_status":        RunStatusDone,
+					"process_status":    ProcessStatusCancelled,
+					"completed_at":      &now,
+					"error_message":     "task execution cancelled",
+					"writeback_pending": false,
+				}).Error; updErr != nil {
+				return updErr
+			}
+			continue
+		}
+		if orphan.WritebackPending {
+			now := time.Now().UTC()
+			if updErr := db.Model(&ability_task_model.AsyncTask{}).
+				Where("task_id = ? AND run_status = ? AND writeback_pending = ?", orphan.TaskID, RunStatusRunning, true).
+				Updates(map[string]interface{}{
+					"run_status":        RunStatusDone,
+					"process_status":    ProcessStatusSystemError,
+					"completed_at":      &now,
+					"error_message":     "execution result writeback was incomplete; not rerun",
+					"writeback_pending": false,
+				}).Error; updErr != nil {
+				return updErr
+			}
+			gtbox_log.LogWarnf("async task writeback uncertain, not rerun: task_id=%s", orphan.TaskID)
+			continue
+		}
+		if timeout := policy_config.CurrentTaskLifecycleTimeout(); timeout > 0 && !orphan.CreatedAt.UTC().Add(timeout).After(time.Now().UTC()) {
+			now := time.Now().UTC()
+			if updErr := db.Model(&ability_task_model.AsyncTask{}).
+				Where("task_id = ? AND run_status = ?", orphan.TaskID, RunStatusRunning).
+				Updates(map[string]interface{}{
+					"run_status":     RunStatusDone,
+					"process_status": ProcessStatusSystemError,
+					"completed_at":   &now,
+					"error_message":  "task lifecycle timed out",
+				}).Error; updErr != nil {
+				return updErr
+			}
+			continue
+		}
+		if policy_config.TaskExecuteRetryLimitEnforced() && orphan.ExecutionCount > policy_config.CurrentTaskExecuteRetryLimitCount() {
+			now := time.Now().UTC()
+			if updErr := db.Model(&ability_task_model.AsyncTask{}).
+				Where("task_id = ? AND run_status = ?", orphan.TaskID, RunStatusRunning).
+				Updates(map[string]interface{}{
+					"run_status":     RunStatusDone,
+					"process_status": ProcessStatusSystemError,
+					"completed_at":   &now,
+					"error_message":  "task execute retry limit reached",
+				}).Error; updErr != nil {
+				return updErr
+			}
+			gtbox_log.LogWarnf("async task retry limit reached, not rerun: task_id=%s execution_count=%d", orphan.TaskID, orphan.ExecutionCount)
+			continue
+		}
+		result := db.Model(&ability_task_model.AsyncTask{}).
+			Where("task_id = ? AND run_status = ? AND writeback_pending = ? AND cancel_requested = ?", orphan.TaskID, RunStatusRunning, false, false).
+			Updates(map[string]interface{}{
+				"run_status": RunStatusQueued,
+				"started_at": nil,
+			})
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected > 0 {
+			requeued++
+		}
+	}
+	if requeued > 0 {
+		gtbox_log.LogInfof("async task requeue: %d orphaned task(s) back to queued", requeued)
 	}
 	return nil
+}
+
+// ExpireTimedOutTasks 把已超过整体生命周期（从 created_at 起算）的排队任务落 system_error。
+// task_lifecycle_timeout_seconds=0 时为 no-op，不启用任何默认期限。
+func ExpireTimedOutTasks(ctx context.Context) error {
+	timeout := policy_config.CurrentTaskLifecycleTimeout()
+	if timeout <= 0 {
+		return nil
+	}
+	taskLifecycleMutex.Lock()
+	defer taskLifecycleMutex.Unlock()
+	db, err := storage.GormDB(ctx)
+	if err != nil {
+		return err
+	}
+	return expireTimedOutQueuedTasks(ctx, db, timeout)
+}
+
+func expireTimedOutQueuedTasks(_ context.Context, db *gorm.DB, timeout time.Duration) error {
+	if timeout <= 0 {
+		return nil
+	}
+	now := time.Now().UTC()
+	deadline := now.Add(-timeout)
+	result := db.Model(&ability_task_model.AsyncTask{}).
+		Where("run_status = ? AND created_at <= ?", RunStatusQueued, deadline).
+		Updates(map[string]interface{}{
+			"run_status":     RunStatusDone,
+			"process_status": ProcessStatusSystemError,
+			"completed_at":   &now,
+			"error_message":  "task lifecycle timed out",
+		})
+	return result.Error
 }
 
 // UpdateProgress 供异步业务 Execute 上报量化进度；仅活跃（非 done）任务可更新。

@@ -25,7 +25,7 @@ flowchart LR
     Start["PolicyServicesStart<br>（main 装配后拉起，即刻返回）"] --> Loop["大循环每轮"]
     Loop --> Cap["读取上限：NumCPU × workers_scaller"]
     Cap --> Fill["扣除在跑长任务，按空闲名额<br>异步派发单次 Worker（SKIP LOCKED 认领）"]
-    Fill --> Maint["异步派发维护事项：孤儿 running 恢复、<br>验证码过期清理（各自防重入，互不阻塞）"]
+    Fill --> Maint["异步派发维护事项：整体超时清理、孤儿 running 恢复、<br>验证码过期清理（各自防重入，互不阻塞）"]
     Maint --> Sleep["间隔 policy_duration"]
     Sleep --> Loop
 ```
@@ -40,12 +40,20 @@ Worker 不常驻、不空转：每个 Worker 只原子认领一条 `queued` 任�
 
 ```yaml
 policy_cfg:
+  max_workers: 1
   policy_duration: "10s"
   workers_scaller: 5
+  task_lifecycle_timeout_seconds: 0
+  task_execute_retry_limit_enabled: false
+  task_execute_retry_limit_count: 0
 ```
 
+- `max_workers`：可选绝对并发上限，正数生效；单 GPU 建议 `1`。
 - `policy_duration`：两轮派发的间隔，缺省或非法时回落 `10s`。
 - `workers_scaller`：CPU 并发倍率，缺省或非法时回落 `1`。例如 2 CPU 配置 `5` 时最多同时执行 10 条异步任务。
+- `task_lifecycle_timeout_seconds`：任务整体生命周期超时（秒），从受理时的 `created_at` 起算。`0`（默认）关闭；正整数才启用。不会把未拍板的期限写成三天并启用。不为内部步骤另设短超时；`cli_cfg.execute_timeout_seconds` 仍保持 `0`。
+- `task_execute_retry_limit_enabled`：是否启用执行重试次数限制，必须是 `true`/`false`，默认 `false`（不截断历史孤儿恢复）。
+- `task_execute_retry_limit_count`：首次执行之外允许的重试次数，仅在上一开关为 `true` 时生效；`0` 表示不重试，不是无限。
 
 装配纪律：
 
@@ -75,3 +83,5 @@ policy_cfg:
 - [ ] ⬜ TODO — done 任务归档/清理进大循环清单（保留窗口待拍板）。
 
 2026-11-14：`policy_cfg.max_workers` 为可选绝对并发上限（正数生效），单 GPU 建议 1。正常停机取消在途 Execute 并等进程组清理。仅支持一个 daemon 管理一个队列库。
+
+2026-11-16：从 project_template_go `32b5c5a` 显式移植默认关闭的整体超时与有限重试；既有 `max_workers`、取消请求与 `cli_cfg.execute_timeout_seconds` 行为保持不变。

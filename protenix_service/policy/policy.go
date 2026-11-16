@@ -35,6 +35,9 @@ func PolicyServicesStart() func() {
 				dispatchQueuedTasks(ctx, &pending)
 
 				runOnceAsync(&requeueRunning, &pending, func() {
+					if err := ability_task.ExpireTimedOutTasks(ctx); err != nil {
+						gtbox_log.LogErrorf("policy maintenance [async_task_timeout] failed: %v", err)
+					}
 					if err := ability_task.RequeueOrphanedTasks(ctx); err != nil {
 						gtbox_log.LogErrorf("policy maintenance [async_task_requeue] failed: %v", err)
 					}

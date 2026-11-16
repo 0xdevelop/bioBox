@@ -53,7 +53,7 @@ flowchart LR
 | 业务级 | `process_status` | 空（进行中）/ `success` / `failed` / `cancelled` / `system_error` | Worker 落结局、cancel 落取消 |
 | 业务级 | `progress` | 0–100（`progress_message` 为伴随文案） | 业务 Execute 经 `UpdateProgress` |
 
-两层值域零交集；`run_status=done ⟺ process_status 非空`。程序性故障（方法下线、输入/结果序列化失败、Execute panic、`cli_cfg.execute_timeout_seconds` 到期取消进程组）落 `system_error`（超时时 `error_message` 为 `task execution timed out`），不新增 `process_status` 枚举；用户 `task.cancel` 仍落 `cancelled`。`Execute` 返回业务错误落 `failed`——排障时一眼分清系统坏了还是业务没通过。**部分成功**不设枚举，由业务在 result 中自描述；**自动重试**不做，重试 = 重新发起新任务。
+两层值域零交集；`run_status=done ⟺ process_status 非空`。程序性故障（方法下线、输入/结果序列化失败、Execute panic、`cli_cfg.execute_timeout_seconds` 到期取消进程组、启用后的整体生命周期超时、写回不确定或重试次数用尽）落 `system_error`（单次 Execute 超时时 `error_message` 为 `task execution timed out`；整体生命周期超时时为 `task lifecycle timed out`），不新增 `process_status` 枚举；用户 `task.cancel` 仍落 `cancelled`。`Execute` 返回业务错误落 `failed`——排障时一眼分清系统坏了还是业务没通过。**部分成功**不设枚举，由业务在 result 中自描述。默认不启用执行重试次数限制，孤儿恢复仍会把崩溃后的 `running` 任务拉回 `queued` 再跑（依赖业务 `Execute` 幂等）。当 `policy_cfg.task_execute_retry_limit_enabled` 为 `true` 时，按 `task_execute_retry_limit_count` 截断：该数为首次执行之外允许的重试次数，`0` 表示不重试，不得解释为无限。调用方断线后应通过 `task.get` / `task.list` 查询已有任务，不要盲目重新提交。
 
 状态流转：
 
@@ -137,14 +137,17 @@ stateDiagram-v2
 
 # 4. 数据与并发纪律
 
-- **认领**：SQLite 单条条件 `UPDATE … WHERE id=(SELECT … queued … LIMIT 1) AND run_status=queued RETURNING *`，返回行才执行；其他行锁引擎保留事务 SKIP LOCKED（本轮未验）。8 Worker/24 任务实测每条 Execute 一次。
+- **认领**：SQLite 单条条件 `UPDATE … WHERE id=(SELECT … queued … LIMIT 1) AND run_status=queued RETURNING *`，置 `running` 并 `execution_count + 1`，返回行才执行；其他行锁引擎保留事务 SKIP LOCKED（本轮未验）。8 Worker/24 任务实测每条 Execute 一次。
 - **Worker 并发**：由 Policy 按 `runtime.NumCPU() × policy_cfg.workers_scaller` 计算全局上限，可用 `max_workers` 正数加绝对上限（取较小值）；每个 Worker 只认领并执行一条任务，完成后 goroutine 自然释放。
 - **排队区**：受理层不设人为的每用户在途数量上限；主关系库 任务记录承载排队，资源故障按正常数据库错误返回。
 - **选库与退出**：Task 使用 `storage.GormDB(ctx)` 主库；停机停止派发并取消在途 Execute，等进程组清理后关闭库。SQLite 单连接池，短生命周期锁串行认领/恢复/取消/终态转换，调度仍只有 Policy。
 - 普通状态查询读已提交快照不加锁；并发状态变更一律条件原子更新或行锁事务。共享瓶颈是全局 DB 连接池（Worker 与请求线程共用），池容量属部署参数。
 - **任务身份快照**：Worker 把 `AsyncTaskInfo{TaskID, UserID}` 注入 context，业务 `Execute` 经 `AsyncTaskInfoFromContext` 读取——与门禁在线身份语义分离，异步执行不要求受理时的 session 仍存活。
 - **执行单元**：Policy 每轮只填充当前空闲名额，长任务持续占用其名额，下一轮不会重复扩容。
-- **未尽之事自愈（取代一次性启动恢复）**：`policy` 维护大循环每轮调 `RequeueOrphanedTasks`——DB `running` 且不在本进程 in-flight 执行集合的孤儿任务重置回 `queued` 拉起来继续。重启后第一轮即捞回全部死进程遗留；运行中意外孤儿同样自愈。防误拉：认领与恢复共用短生命周期锁，认领在释放锁前登记 in-flight，终态后移除。**异步 `Execute` 必须幂等或自查重**——重跑兜底依赖此契约，责任归业务函数。
+- **未尽之事自愈（取代一次性启动恢复）**：`policy` 维护大循环每轮调 `ExpireTimedOutTasks` 与 `RequeueOrphanedTasks`。默认（重试限制关闭）下，DB `running` 且不在本进程 in-flight 执行集合的孤儿任务重置回 `queued` 拉起来继续；`cancel_requested` 的孤儿仍落 `cancelled`。重启后第一轮即捞回全部死进程遗留；运行中意外孤儿同样自愈。防误拉：认领与恢复共用短生命周期锁，认领在释放锁前登记 in-flight，终态后移除。**异步 `Execute` 必须幂等或自查重**——重跑兜底依赖此契约，责任归业务函数。
+- **整体超时**：`policy_cfg.task_lifecycle_timeout_seconds` 为单位为秒的整数，从 `AcceptAsyncTask` 写入的 `created_at` 起算到当前时刻。`0`（默认）表示关闭，不因耗时终止任务，也不会暗含三天或其他默认期限。正整数启用后，到期的排队任务落 `done + system_error`（`error_message=task lifecycle timed out`）；执行中任务把同一截止时间交给 `Execute` 的 context，到期同样落 `system_error`。不为内部步骤另设短超时；既有 `cli_cfg.execute_timeout_seconds` 仍默认 `0`，语义不变。
+- **不确定写回**：`Execute` 结束后若终态写回失败或崩溃在写回窗口，任务标记 `writeback_pending`，恢复时落 `system_error`（`execution result writeback was incomplete; not rerun`），不得当作孤儿重跑。
+- **客户端断线**：请求连接断开不等于任务失败。任务在受理写入后即独立于调用连接；重连只查询已有 `task_id`，不盲目重新提交。
 - **单实例边界**：不做分布式认领/租约；多实例部署是将来的独立命题。
 - **载荷**：`input_payload`/`result_payload` 明文 JSON 存储；**敏感值（密码、token、密钥等）不得进入异步方法的 arguments 与结果**（门禁参数 `jwt_token` 已在受理前被 APIExecuter 移除）。持久化加密待真实敏感任务出现时另立契约。
 
@@ -177,6 +180,7 @@ stateDiagram-v2
 - [ ] 🟡 DONE — `AcceptAsyncTask` 受理（持久化排队 + 身份快照）。
 - [ ] 🟡 DONE — Policy 按 CPU 倍率填充执行名额（SQLite 原子认领、绝对上限、临时 Worker、panic 归 system_error）。
 - [ ] 🟡 DONE — 未尽之事自愈：`RequeueOrphanedTasks` 经 `policy` 维护大循环每轮侦测（in-flight 防误拉）。
+- [ ] 🟡 DONE — 从模板显式移植默认关闭的整体超时与可选重试次数限制；写回不确定不重跑；断线不改变已持久化任务。保留 `cancel_requested` 与 `cli_cfg.execute_timeout_seconds`。
 - [ ] 🟡 DONE — `task.get` / `task.list` / `task.cancel` 带所有权校验接入统一调用链。
 - [x] ✅ ACCEPTED — `task.artifacts` / `task.artifact`：属主列出并读取隔离作业目录产物；跨用户、无凭证、伪造 `ptxk_`、输入目录、扩展名黑名单与路径穿越均拒绝。证据为隔离 HTTP fixture 短脚本，不是官方 GPU 推理取件。
 - [x] ✅ ACCEPTED — Protenix v1 经真实 HTTP Bearer → SQLite → Policy → Execute → 原生小任务，产出 1 CIF；低采样烟测不是科学质量验收。
