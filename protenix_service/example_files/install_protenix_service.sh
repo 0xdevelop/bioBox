@@ -59,10 +59,14 @@ function runtime_uv_ok() {
     fi
 }
 
+# 整合模式：显式把运行时目录传给 install_<app>.sh（<APP>_PREFIX），覆盖调用者环境里的同名变量，
+# 不使用独立模式的默认目录 ~/.local/share/<app>
 function runtime_cmd() {
     local app=$1
     shift
-    bash "${SCRIPT_DIR}/runtime/${app}/install_${app}.sh" "$@"
+    local prefix_var
+    prefix_var="$(echo "${app}" | tr 'a-z' 'A-Z')_PREFIX"
+    env "${prefix_var}=${RUNTIME_DIR}/${app}" bash "${SCRIPT_DIR}/runtime/${app}/install_${app}.sh" "$@"
 }
 
 function runtime_installed() {

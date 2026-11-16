@@ -1,6 +1,7 @@
 # 三段式发版占位（release → Build → RemoveOldRelease）。本阶段不触发、不发版。
-# Build 产出每个 arch 一个 protenix_service_linux_<arch>_release_<version>.zip：
-# 服务二进制 + install_protenix_service.sh + systemd 单元 + conf/config.yaml + runtime/{protenix,pxdesign}。
+# Build 每个 arch 产出：独立单产品包 protenix_/pxdesign_linux_<arch>_release_<version>.zip，
+# 以及整合包 protenix_service_linux_<arch>_release_<version>.zip
+# （服务二进制 + install_protenix_service.sh + systemd 单元 + conf/config.yaml + runtime/{protenix,pxdesign}）。
 name: Release_Build
 
 on:

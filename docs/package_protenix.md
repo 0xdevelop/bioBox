@@ -1,33 +1,33 @@
 # Protenix 命令行工具
 
-在一台装了 NVIDIA GPU（如 GB10 / aarch64）的机器上，从结构输入做蛋白结构预测。本目录是 `protenix_service` 发布包里的 `runtime/protenix/`：与服务同一套，由包顶层的 `install_protenix_service.sh` 统一安装。
+在一台装了 NVIDIA GPU（如 GB10 / aarch64）的机器上，从结构输入做蛋白结构预测。本包是命令行工具，不是常驻服务。
+
+> 本包可独立使用（下文）。与 Go 服务 `protenix_service` 一起安装时，改用整合包 `protenix_service_linux_<arch>_release_v*.zip`：其中 `runtime/protenix/` 就是本包内容，由 root 跑 `install_protenix_service.sh` 显式装到 `/protenix_service/runtime/protenix`，与本包的独立安装目录互不影响。
 
 ## 前置条件
 
 - NVIDIA 驱动与 CUDA 13 工具链（有 `nvidia-smi`、`nvcc`，默认 `CUDA_HOME=/usr/local/cuda-13.0`）
 - [uv](https://github.com/astral-sh/uv)，且能解析 Python 3.14（`uv python list` 里有 3.14）
 - 能访问公网（装 pip 依赖、下载公开权重）
-- 不需要 Docker、conda；正式安装需要 root（装到 `/protenix_service/runtime/protenix`）
+- 不需要 sudo、Docker、conda
 
 ## 安装
 
-由发布包顶层的 `install_protenix_service.sh` 菜单 1（安装）/ 2（升级）调用本目录的 `install_protenix.sh`，不必单独执行：
-
 ```bash
-unzip protenix_service_linux_arm64_release_v*.zip
-cd protenix_service
-UV=/path/to/uv ./install_protenix_service.sh   # 以 root 执行，选 1
+unzip protenix_linux_arm64_release_v*.zip
+cd protenix
+./install_protenix.sh install
 ```
 
-安装目录固定为 `/protenix_service/runtime/protenix`。
-复用已有机器上的权重（跳过下载）：`WEIGHTS_REUSE_FROM=/已有/prefix/根`（作为环境变量传给 `install_protenix_service.sh`）。
+默认装到 `~/.local/share/protenix`。换目录：`PROTENIX_PREFIX=/your/dir ./install_protenix.sh install`。
+复用已有机器上的权重（跳过下载）：`WEIGHTS_REUSE_FROM=/已有/prefix/根 ./install_protenix.sh install`。
 
-安装完成后命令入口是 `/protenix_service/runtime/protenix/bin/protenix-run`。
+安装完成后命令入口是 `~/.local/share/protenix/bin/protenix-run`。
 
 ## 跑一次预测
 
 ```bash
-RUN=/protenix_service/runtime/protenix/bin/protenix-run
+RUN=~/.local/share/protenix/bin/protenix-run
 mkdir -p ~/px_job
 cp examples/input.json ~/px_job/input.json
 "$RUN" pred -i ~/px_job/input.json -o ~/px_job/output --use_msa false -s 101
@@ -38,16 +38,14 @@ cp examples/input.json ~/px_job/input.json
 
 ## 切换模型
 
-模型在 `/protenix_service/runtime/protenix/conf/protenix.env` 里的 `PROTENIX_MODEL`，默认 `protenix_base_default_v1.0.0`（公开权重）。
+模型在 `~/.local/share/protenix/conf/protenix.env` 里的 `PROTENIX_MODEL`，默认 `protenix_base_default_v1.0.0`（公开权重）。
 改成 `protenix-v2` 需要自备授权权重，放到 `conf` 里 `PROTENIX_ROOT_DIR` 指向的 `checkpoint/protenix-v2.pt`；没有就会直接报错，不会去下载。
 也可一次性覆盖：`"$RUN" pred -n <模型名> -i ... -o ...`。
 
 ## 升级 / 回退 / 卸载 / 查看状态
 
 ```bash
-# 正常用 install_protenix_service.sh 菜单 2 升级、菜单 4 回退、菜单 5 看状态、菜单 3 整体卸载。
-# 以下是在发布包 runtime/protenix/ 内单独操作本运行时（root）：
-# 升级（配置和权重都保留；失败不影响当前版本）
+# 升级：在新版本的解压目录里执行（配置和权重都保留；失败不影响当前版本）
 ./install_protenix.sh update
 # 回退到上一个版本
 ./install_protenix.sh rollback

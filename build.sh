@@ -4,8 +4,10 @@
 #   ./build.sh [--help]
 #   ./build.sh [all|pack|protenix|pxdesign] [release|test|debug] [linux_amd64|linux_arm64|both|*.yaml]
 # 默认 TARGET=all：双 arch 发布包 + prefix/protenix + prefix/pxdesign（两套独立 venv）。
-# 发布包：每个 arch 一个 protenix_service_linux_<arch>_<mode>_<version>.zip，解压后用 root 跑
-# install_protenix_service.sh，服务与 Protenix/PXDesign 运行时统一装到 /protenix_service。
+# 发布包（每个 arch）：
+#   独立单产品包 protenix_/pxdesign_linux_<arch>_<mode>_<version>.zip：install_<app>.sh，默认 ~/.local/share/<app>
+#   整合包 protenix_service_linux_<arch>_<mode>_<version>.zip：root 跑 install_protenix_service.sh，
+#   服务与 Protenix/PXDesign 运行时统一装到 /protenix_service。
 # 幂等：已就绪步骤跳过（FORCE_*=1 强制重做）。
 # PREFIX_ROOT：把双 prefix 装到 <PREFIX_ROOT>/{protenix,pxdesign}（默认 <repo>/prefix）。
 # WEIGHTS_REUSE_FROM：从已校验 prefix 根硬链接/拷贝权重（见 scripts/weights_reuse.sh）。
@@ -33,8 +35,10 @@ Usage:
 
 Targets (default: all):
   all       双 arch 发布包 + prefix/protenix + prefix/pxdesign
-  pack      只打发布包 build/upload_tmp_dir/protenix_service_linux_<arch>_<mode>_<version>.zip
-            （服务二进制 + install 脚本 + systemd 单元 + conf/config.yaml + runtime/{protenix,pxdesign}）
+  pack      只打发布包到 build/upload_tmp_dir/：
+            <app>_linux_<arch>_<mode>_<version>.zip（独立单产品包，protenix / pxdesign）
+            protenix_service_linux_<arch>_<mode>_<version>.zip（整合包：服务二进制 + install 脚本 +
+            systemd 单元 + conf/config.yaml + runtime/{protenix,pxdesign}）
   protenix  只安装/校验 prefix/protenix（uv + Python 3.14 + torch cu130）
   pxdesign  只安装/校验 prefix/pxdesign（独立 venv；复用 scripts/install_prefix_pxdesign.sh）
 
@@ -228,9 +232,10 @@ load_export() {
   fi
 }
 
-# 把一个运行时（protenix|pxdesign）的安装材料放进 <bundle>/runtime/<subdir>
+# 独立单产品包：<BUILD_MODE_ROOT>/<subdir> → <app>_linux_<arch>_<mode>_<version>.zip
+# （同一目录随后原样复制进整合包的 runtime/<subdir>）
 pack_one_product() {
-  local name="$1" runtime_root="$2"
+  local name="$1"
   local up
   up="$(echo "${name}" | tr 'a-z-' 'A-Z_')"
   local src_var="PRODUCT_${up}_SRC" sub_var="PRODUCT_${up}_BUILD_SUBDIR" env_var="PRODUCT_${up}_ENV"
@@ -240,7 +245,7 @@ pack_one_product() {
   local install_sh="${!inst_var}" prefix_install="${!pinst_var}"
   local policy="${!policy_var}" pinned_ref="${!pinned_var}" torch_hint="${!torch_var}"
 
-  local out_dir="${runtime_root}/${subdir}"
+  local out_dir="${BUILD_MODE_ROOT}/${subdir}"
   rm -rf "${out_dir}"
   mkdir -p "${out_dir}/bin" "${out_dir}/conf" "${out_dir}/scripts" "${out_dir}/deps" "${out_dir}/patches" "${out_dir}/src/${name}"
 
@@ -293,7 +298,11 @@ dirty=${commit_dirty}
 build_time=${build_time}
 PBINFO
 
-  echo "${TAG} staged runtime/${subdir} (src_sha=${src_sha:0:12})"
+  local zip_name="${name}_${GOOS_TARGET}_${GOARCH_TARGET}_${RUN_MODE}_${PROJECT_VERSION}.zip"
+  local zip_path="${project_path}/${UPLOAD_TMP_DIR}/${zip_name}"
+  rm -f "${zip_path}"
+  ( cd "${BUILD_MODE_ROOT}" && zip -qr "${zip_path}" "${subdir}" )
+  echo "${TAG} packed ${UPLOAD_TMP_DIR}/${zip_name} (src_sha=${src_sha:0:12})"
 }
 
 SERVICE_APP="protenix_service"
@@ -355,8 +364,13 @@ pack_service_bundle() {
   cp -f "${SERVICE_SRC}/example_files/install_${SERVICE_APP}.sh" "${bundle}/install_${SERVICE_APP}.sh"
   chmod a+x "${bundle}/install_${SERVICE_APP}.sh"
   cp -f "${SERVICE_SRC}/example_files/config_example.yaml" "${bundle}/conf/config.yaml"
+  # 运行时材料与独立单产品包同一份（pack_one_product 已生成）
   for product in ${PRODUCT_NAMES}; do
-    pack_one_product "${product}" "${bundle}/runtime"
+    local up sub_var subdir
+    up="$(echo "${product}" | tr 'a-z-' 'A-Z_')"
+    sub_var="PRODUCT_${up}_BUILD_SUBDIR"
+    subdir="${!sub_var}"
+    cp -a "${BUILD_MODE_ROOT}/${subdir}" "${bundle}/runtime/${subdir}"
   done
   cat > "${bundle}/BUILD_INFO.txt" <<SBINFO
 product=${SERVICE_APP}
@@ -399,6 +413,14 @@ pack_ready() {
     subdir="${!sub_var}"
     unzip -l "${zip_path}" "${s}/runtime/${subdir}/install_${product}.sh" >/dev/null 2>&1 || return 1
     unzip -l "${zip_path}" "${s}/runtime/${subdir}/src/${product}/setup.py" >/dev/null 2>&1 || return 1
+    # 独立单产品包
+    local pzip="${UPLOAD_TMP_DIR}/${product}_${GOOS_TARGET}_${GOARCH_TARGET}_${mode}_${PROJECT_VERSION}.zip" pbi
+    [[ -s "${pzip}" ]] || return 1
+    pbi="$(unzip -p "${pzip}" "${subdir}/BUILD_INFO.txt" 2>/dev/null || true)"
+    echo "${pbi}" | grep -qx "commit=${commit_hash}" || return 1
+    echo "${pbi}" | grep -qx "dirty=0" || return 1
+    unzip -l "${pzip}" "${subdir}/install_${product}.sh" >/dev/null 2>&1 || return 1
+    unzip -l "${pzip}" "${subdir}/src/${product}/setup.py" >/dev/null 2>&1 || return 1
   done
   return 0
 }
@@ -415,6 +437,9 @@ build_pack_one() {
   fi
   echo "${TAG} project=${PROJECT_NAME} version=${PROJECT_VERSION} mode=${RUN_MODE} target=${GOOS_TARGET}/${GOARCH_TARGET}"
   echo "${TAG} commit=${commit_for_info} build_time=${build_time}"
+  for product in ${PRODUCT_NAMES}; do
+    pack_one_product "${product}"
+  done
   pack_service_bundle
   if [[ "${commit_dirty}" == "1" ]]; then
     echo "${TAG} WARN: working tree dirty -> BUILD_INFO.commit=${commit_for_info}; commit then FORCE_PACK=1" >&2
@@ -436,7 +461,7 @@ build_pack() {
   for cfg in "${GO_CONFIGS[@]}"; do
     build_pack_one "${cfg}"
   done
-  ls -la build/upload_tmp_dir/"${SERVICE_APP}"_*_"${RUN_MODE_ARG}"_*.zip
+  ls -la build/upload_tmp_dir/*_"${RUN_MODE_ARG}"_*.zip
 }
 
 protenix_prefix_ready() {

@@ -2,8 +2,9 @@
 # install_<app>.sh 的共用逻辑：install / update / rollback / uninstall / status。
 # 调用方先设置：APP（protenix|pxdesign）、PKG（发布包解压目录）、CLI（上游命令名），再 source 本文件并调用 main "$@"。
 #
-# 运行时与 protenix_service 是同一套服务，安装目录固定为 /protenix_service/runtime/<app>
-# （与 install_protenix_service.sh 的 APP_DIR 同根，需 root；通常由该脚本的菜单调用）：
+# 安装目录（默认 ~/.local/share/<app>，用 <APP>_PREFIX 覆盖）。
+# 与 protenix_service 一起安装时，install_protenix_service.sh 会显式传入
+# <APP>_PREFIX=/protenix_service/runtime/<app>，不依赖调用者环境：
 #   bin/<app>-run          命令入口
 #   conf/<app>.env         运行配置（update 保留）
 #   data/                  权重与数据（update 保留；uninstall 默认保留，--purge 删除）
@@ -13,8 +14,9 @@
 #   .installed_by          安装标记；uninstall --purge 只删带此标记的目录
 set -euo pipefail
 
-SERVICE_ROOT="/protenix_service"
-PREFIX="${SERVICE_ROOT}/runtime/${APP}"
+APP_UPPER="$(echo "${APP}" | tr 'a-z' 'A-Z')"
+PREFIX_VAR="${APP_UPPER}_PREFIX"
+PREFIX="${!PREFIX_VAR:-${HOME}/.local/share/${APP}}"
 MARKER="${PREFIX}/.installed_by"
 TAG="[install_${APP}]"
 
@@ -152,7 +154,7 @@ cmd_update() {
   switch_link previous "releases/${cur}"
   switch_link current "releases/${id}"
   prune_releases
-  say "升级完成：${cur} -> ${id}（回退：install_protenix_service.sh 菜单 4，或在发布包内 $0 rollback）"
+  say "升级完成：${cur} -> ${id}（回退：$0 rollback）"
 }
 
 cmd_rollback() {
@@ -173,7 +175,7 @@ cmd_uninstall() {
   [[ -f "${MARKER}" ]] || die "${PREFIX} 下没有本工具的安装标记，不做删除"
   [[ "$(cat "${MARKER}")" == "${APP}" ]] || die "${MARKER} 不属于 ${APP}，不做删除"
   case "$(cd "${PREFIX}" && pwd)" in
-    /|"${HOME}"|"${SERVICE_ROOT}") die "拒绝删除 ${PREFIX}" ;;
+    /|"${HOME}") die "拒绝删除 ${PREFIX}" ;;
   esac
   if [[ ${purge} -eq 1 ]]; then
     rm -rf "${PREFIX}"
@@ -213,10 +215,10 @@ cmd_status() {
 usage() {
   cat <<USAGE
 用法：./install_${APP}.sh <命令>
-  install            首次安装到 ${PREFIX}（固定目录，需 root）
+  install            首次安装到 \$${PREFIX_VAR}（默认 ~/.local/share/${APP}）
   update             用当前发布包升级已有安装；失败不影响原版本
   rollback           回到上一版本
-  uninstall          只卸载该运行时的程序，保留配置和权重（整体卸载用 install_protenix_service.sh 菜单 3）
+  uninstall          卸载程序，保留配置和权重
   uninstall --purge  连同配置和权重一起删除
   status             查看安装状态
 USAGE

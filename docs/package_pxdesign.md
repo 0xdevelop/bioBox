@@ -1,34 +1,34 @@
 # PXDesign 命令行工具
 
-在一台装了 NVIDIA GPU（如 GB10 / aarch64）的机器上，对给定靶点做蛋白 binder 设计。本目录是 `protenix_service` 发布包里的 `runtime/pxdesign/`：与服务同一套，由包顶层的 `install_protenix_service.sh` 统一安装。
+在一台装了 NVIDIA GPU（如 GB10 / aarch64）的机器上，对给定靶点做蛋白 binder 设计。本包是命令行工具，不是常驻服务。
+
+> 本包可独立使用（下文）。与 Go 服务 `protenix_service` 一起安装时，改用整合包 `protenix_service_linux_<arch>_release_v*.zip`：其中 `runtime/pxdesign/` 就是本包内容，由 root 跑 `install_protenix_service.sh` 显式装到 `/protenix_service/runtime/pxdesign`，与本包的独立安装目录互不影响。
 
 ## 前置条件
 
 - NVIDIA 驱动与 CUDA 13 工具链（有 `nvidia-smi`、`nvcc`，默认 `CUDA_HOME=/usr/local/cuda-13.0`）
 - [uv](https://github.com/astral-sh/uv)，且能解析 Python 3.14
 - 能访问公网（装 pip 依赖、下载权重与 AF2/MPNN 等工具权重）
-- 不需要 Docker、conda；正式安装需要 root（装到 `/protenix_service/runtime/pxdesign`）
+- 不需要 sudo、Docker、conda
 
 ## 安装
 
-由发布包顶层的 `install_protenix_service.sh` 菜单 1（安装）/ 2（升级）调用本目录的 `install_pxdesign.sh`，不必单独执行：
-
 ```bash
-unzip protenix_service_linux_arm64_release_v*.zip
-cd protenix_service
-UV=/path/to/uv ./install_protenix_service.sh   # 以 root 执行，选 1
+unzip pxdesign_linux_arm64_release_v*.zip
+cd pxdesign
+./install_pxdesign.sh install
 ```
 
-安装目录固定为 `/protenix_service/runtime/pxdesign`。
-复用已有机器上的权重（跳过下载）：`WEIGHTS_REUSE_FROM=/已有/prefix/根`（作为环境变量传给 `install_protenix_service.sh`）。
+默认装到 `~/.local/share/pxdesign`。换目录：`PXDESIGN_PREFIX=/your/dir ./install_pxdesign.sh install`。
+复用已有机器上的权重（跳过下载）：`WEIGHTS_REUSE_FROM=/已有/prefix/根 ./install_pxdesign.sh install`。
 
 首次安装会下载约 4GB 权重（PXDesign、Protenix v0.5.0、AF2 两个参数文件、ProteinMPNN、CCD 缓存）。
-命令入口是 `/protenix_service/runtime/pxdesign/bin/pxdesign-run`。
+命令入口是 `~/.local/share/pxdesign/bin/pxdesign-run`。
 
 ## 跑一次设计
 
 ```bash
-RUN=/protenix_service/runtime/pxdesign/bin/pxdesign-run
+RUN=~/.local/share/pxdesign/bin/pxdesign-run
 mkdir -p ~/pxd_job
 cp -a examples ~/pxd_job/examples
 cd ~/pxd_job
@@ -41,7 +41,6 @@ cd ~/pxd_job
 ## 升级 / 回退 / 卸载 / 查看状态
 
 ```bash
-# 正常用 install_protenix_service.sh 菜单 2/4/5/3；以下是在发布包 runtime/pxdesign/ 内单独操作本运行时（root）
 ./install_pxdesign.sh update            # 在新版本解压目录里执行；配置和权重保留，失败不影响当前版本
 ./install_pxdesign.sh rollback          # 回退上一版本
 ./install_pxdesign.sh status            # 版本、提交、是否可运行

@@ -1,6 +1,7 @@
 # 最新状态：服务与原生运行时统一按模板 install 体系安装到 /protenix_service（2026-11-17 Asia/Shanghai UTC+8）
 
 - 正式安装只走发布包里的 `install_protenix_service.sh`（root，`APP_DIR=/protenix_service`，单元在 `/etc/systemd/system`，`User=root`，`WantedBy=multi-user.target`，保留 `KillMode=control-group`）。Protenix / PXDesign 运行时装在 `/protenix_service/runtime/{protenix,pxdesign}`，与服务同一个 zip、同一个 install 流程；`conf/config.yaml` 的 `cli_cfg` 指向 `/protenix_service/runtime/<app>/bin/<app>-run`。
+- 独立模式保留：单产品包 `protenix_*.zip` / `pxdesign_*.zip` 的 `install_<app>.sh` 仍默认装到 `~/.local/share/<app>`、可用 `<APP>_PREFIX` 覆盖；只有整合包由 `install_protenix_service.sh` 显式传入 `<APP>_PREFIX=/protenix_service/runtime/<app>`，两种模式互不干扰。
 - 本轮只改仓库，没有在本机安装：未写 `/protenix_service`、`/etc`，未启动或启用任何 systemd 单元，未用 sudo。install 脚本只在 `tmp/` 下的 bwrap 假根（`/protenix_service`、`/etc/systemd/system` 绑定到临时目录，systemctl 为记录桩，运行时 GPU/pip 安装步骤为桩）里验证，验完已删除。
 
 # 超时改为显式 enabled 开关；常驻部署已撤除（2026-11-17 Asia/Shanghai UTC+8）
