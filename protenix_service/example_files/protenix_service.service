@@ -1,18 +1,19 @@
 [Unit]
-Description=protenix_service (systemd user unit)
+Description=protenix_service service
 After=network-online.target
 Wants=network-online.target
 
 [Service]
 Type=simple
-# 重启前清理任务进程组，不能只杀 MAINPID
+User=root
+# 停止/重启时清理整个控制组（含 protenix-run / pxdesign-run 任务进程组），不能只杀 MAINPID
 KillMode=control-group
 Restart=on-failure
 RestartSec=5s
-ExecStart=/home/certa/workspace/protenix_build/protenix_service/protenix_service
+ExecStart=/protenix_service/protenix_service
 ExecStop=/bin/kill -TERM $MAINPID
-WorkingDirectory=/home/certa/workspace/protenix_build/protenix_service
+WorkingDirectory=/protenix_service
 LimitNOFILE=102400
 
 [Install]
-WantedBy=default.target
+WantedBy=multi-user.target

@@ -2,7 +2,8 @@
 # install_<app>.sh 的共用逻辑：install / update / rollback / uninstall / status。
 # 调用方先设置：APP（protenix|pxdesign）、PKG（发布包解压目录）、CLI（上游命令名），再 source 本文件并调用 main "$@"。
 #
-# 安装目录（默认 ~/.local/share/<app>，用 <APP>_PREFIX 覆盖）：
+# 运行时与 protenix_service 是同一套服务，安装目录固定为 /protenix_service/runtime/<app>
+# （与 install_protenix_service.sh 的 APP_DIR 同根，需 root；通常由该脚本的菜单调用）：
 #   bin/<app>-run          命令入口
 #   conf/<app>.env         运行配置（update 保留）
 #   data/                  权重与数据（update 保留；uninstall 默认保留，--purge 删除）
@@ -12,9 +13,8 @@
 #   .installed_by          安装标记；uninstall --purge 只删带此标记的目录
 set -euo pipefail
 
-APP_UPPER="$(echo "${APP}" | tr 'a-z' 'A-Z')"
-PREFIX_VAR="${APP_UPPER}_PREFIX"
-PREFIX="${!PREFIX_VAR:-${HOME}/.local/share/${APP}}"
+SERVICE_ROOT="/protenix_service"
+PREFIX="${SERVICE_ROOT}/runtime/${APP}"
 MARKER="${PREFIX}/.installed_by"
 TAG="[install_${APP}]"
 
@@ -136,6 +136,7 @@ cmd_update() {
   id="$(pkg_release_id)"
   cur="$(link_target_name "${PREFIX}/current")"
   if [[ "${id}" == "${cur}" ]] && verify_release "${PREFIX}/current"; then
+    write_conf_if_missing
     install_entry
     say "已是该版本 ${id}，无需升级"
     return 0
@@ -151,7 +152,7 @@ cmd_update() {
   switch_link previous "releases/${cur}"
   switch_link current "releases/${id}"
   prune_releases
-  say "升级完成：${cur} -> ${id}（回退：$0 rollback）"
+  say "升级完成：${cur} -> ${id}（回退：install_protenix_service.sh 菜单 4，或在发布包内 $0 rollback）"
 }
 
 cmd_rollback() {
@@ -172,14 +173,14 @@ cmd_uninstall() {
   [[ -f "${MARKER}" ]] || die "${PREFIX} 下没有本工具的安装标记，不做删除"
   [[ "$(cat "${MARKER}")" == "${APP}" ]] || die "${MARKER} 不属于 ${APP}，不做删除"
   case "$(cd "${PREFIX}" && pwd)" in
-    /|"${HOME}") die "拒绝删除 ${PREFIX}" ;;
+    /|"${HOME}"|"${SERVICE_ROOT}") die "拒绝删除 ${PREFIX}" ;;
   esac
   if [[ ${purge} -eq 1 ]]; then
     rm -rf "${PREFIX}"
     say "已彻底删除 ${PREFIX}（含配置与权重）"
     return 0
   fi
-  rm -rf "${PREFIX}/releases" "${PREFIX}/bin"
+  rm -rf "${PREFIX:?}/releases" "${PREFIX:?}/bin"
   rm -f "${PREFIX}/current" "${PREFIX}/previous"
   # 保留 ${MARKER}，以便之后仍可 uninstall --purge 清掉配置与权重
   say "已卸载程序。保留：${PREFIX}/conf（配置）和 ${PREFIX}/data（权重）"
@@ -212,10 +213,10 @@ cmd_status() {
 usage() {
   cat <<USAGE
 用法：./install_${APP}.sh <命令>
-  install            首次安装到 \$${PREFIX_VAR}（默认 ~/.local/share/${APP}）
+  install            首次安装到 ${PREFIX}（固定目录，需 root）
   update             用当前发布包升级已有安装；失败不影响原版本
   rollback           回到上一版本
-  uninstall          卸载程序，保留配置和权重
+  uninstall          只卸载该运行时的程序，保留配置和权重（整体卸载用 install_protenix_service.sh 菜单 3）
   uninstall --purge  连同配置和权重一起删除
   status             查看安装状态
 USAGE

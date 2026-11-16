@@ -1,12 +1,19 @@
-# 最新状态：超时改为显式 enabled 开关；常驻部署已撤除（2026-11-17 Asia/Shanghai UTC+8）
+# 最新状态：服务与原生运行时统一按模板 install 体系安装到 /protenix_service（2026-11-17 Asia/Shanghai UTC+8）
+
+- 正式安装只走发布包里的 `install_protenix_service.sh`（root，`APP_DIR=/protenix_service`，单元在 `/etc/systemd/system`，`User=root`，`WantedBy=multi-user.target`，保留 `KillMode=control-group`）。Protenix / PXDesign 运行时装在 `/protenix_service/runtime/{protenix,pxdesign}`，与服务同一个 zip、同一个 install 流程；`conf/config.yaml` 的 `cli_cfg` 指向 `/protenix_service/runtime/<app>/bin/<app>-run`。
+- 本轮只改仓库，没有在本机安装：未写 `/protenix_service`、`/etc`，未启动或启用任何 systemd 单元，未用 sudo。install 脚本只在 `tmp/` 下的 bwrap 假根（`/protenix_service`、`/etc/systemd/system` 绑定到临时目录，systemctl 为记录桩，运行时 GPU/pip 安装步骤为桩）里验证，验完已删除。
+
+# 超时改为显式 enabled 开关；常驻部署已撤除（2026-11-17 Asia/Shanghai UTC+8）
 
 - 按 project_template_go `8c0c5e1` 移植：新增 `policy_cfg.task_lifecycle_timeout_enabled` 与 `cli_cfg.execute_timeout_enabled`，均为 bool、默认 `false`，示例配置写成显式 `false`。`false` 时忽略对应 seconds；`true` 时 seconds 必须为正整数（秒），`0` 或负数在配置加载时报错，不再用 `0` 暗示关闭或无限。整体超时从 `created_at` 起算，单次 Execute 超时从本次开始执行起算。当前行为不变（两项都是 `false`）。
 - 本机 `example_files/config_local.yaml` 未改（sha256 仍为 `684b906075c72cd76806cafd645bb7da9c6ac6b235550b5e77eaf15f0e31bf6c`），它不含这些字段，按缺省 `false` 正常加载。
 - 下节的用户级常驻部署未经用户同意，已撤除：`protenix_service.service` 已 `disable --now`，单元文件已删除并 `daemon-reload`，`/home/certa/.local/share/protenix_service` 已删除，`18001–18006` 不再监听。后续如需临时调试服务，二进制与配置放在本仓库顶层（gitignore 覆盖），用完即停并删除。
 
-# 历史（已撤除）：可回滚的正式常驻服务部署与验收（2026-11-16 21:15–21:17 Asia/Shanghai UTC+8）
+# 已撤销的临时调试记录：用户级常驻部署（2026-11-16 21:15–21:17 Asia/Shanghai UTC+8）
 
-本节补上此前仍缺的「可回滚的正式常驻 systemd 部署与验收」。这是用户级（非 root、非 `/etc`）release 常驻单元，安装前缀在 `/home/certa/.local/share/protenix_service`，**不是**官方 v2 推理、不是经本单元新跑的 GPU 任务，也不是生产级或 HA 声明。
+> 本节是已撤销的临时调试记录，不是正式部署。该部署未经用户同意，已于 2026-11-17 撤除；正式安装只走 `install_protenix_service.sh`（装到 `/protenix_service`），见上节与 `README.md`。
+
+当时的记录（仅留档）：这是用户级（非 root、非 `/etc`）release 常驻单元，安装前缀在 `/home/certa/.local/share/protenix_service`，**不是**官方 v2 推理、不是经本单元新跑的 GPU 任务，也不是生产级或 HA 声明。
 
 - 从 `c9cf591` 以 `mRunMode=release` 编译，工作目录读取 `conf/config.yaml`，不改本机 `example_files/config_local.yaml`（sha256 仍为 `684b906075c72cd76806cafd645bb7da9c6ac6b235550b5e77eaf15f0e31bf6c`）。
 - 只绑定 `127.0.0.1`：JSON-RPC `18001`、MCP `18002`、WebSocket `18004`、gRPC `18005`、frontend `18006`。release 不加载 test_ui，`18003` 无监听。
@@ -471,9 +478,11 @@ bash tmp/handoff-followup/phase3-service/new_project_local.sh github.com/0xdevel
 - `protenix` / `pxdesign` 注册为受保护的 `Async: true` 方法。无 MySQL 时经 `APIExecuter` 受理失败，错误为 `storage_mysql is not enabled`（`tmp/handoff-followup/phase3-service/async-accept-error-print.log`）。任务不会写入 SQLite。
 - Execute 在参数合法时返回「尚未接线到原生 CLI」，缺必填或非法 `version`/`preset` 时返回 invalid arguments。本切片未调用 `protenix-run pred` / `pxdesign-run pipeline`。
 
-## systemd 与短时启停
+## systemd 与短时启停（已撤销的临时调试记录）
 
-- 用户单元：`protenix_service/example_files/protenix_service.service`（`Type=simple`，无 `User=root`，`WantedBy=default.target`，ExecStart/WorkingDirectory 指向本机工作副本）。
+> 以下用户级单元的短时启停是早期临时调试记录；单元文件现已恢复为模板的系统级写法（`/etc/systemd/system`、`User=root`、`WorkingDirectory=/protenix_service`），正式安装只走 `install_protenix_service.sh`。
+
+- 当时的用户单元：`protenix_service/example_files/protenix_service.service`（`Type=simple`，无 `User=root`，`WantedBy=default.target`，ExecStart/WorkingDirectory 指向本机工作副本）。
 - `systemd-analyze --user verify example_files/protenix_service.service` 退出码 0。
 - 验收时把单元临时放到 `~/.config/systemd/user/`，`systemctl --user start`（未 enable）。`systemctl --user is-enabled` 为 `disabled`。
 - 启动后 127.0.0.1 监听：JSON-RPC `18001`、MCP `18002`、test_ui `18003`、WebSocket `18004`、gRPC `18005`、frontend `18006`。证据：`listen-ports.txt`、`systemd-status-start.txt`。

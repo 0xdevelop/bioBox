@@ -4,6 +4,8 @@
 #   ./build.sh [--help]
 #   ./build.sh [all|pack|protenix|pxdesign] [release|test|debug] [linux_amd64|linux_arm64|both|*.yaml]
 # 默认 TARGET=all：双 arch 发布包 + prefix/protenix + prefix/pxdesign（两套独立 venv）。
+# 发布包：每个 arch 一个 protenix_service_linux_<arch>_<mode>_<version>.zip，解压后用 root 跑
+# install_protenix_service.sh，服务与 Protenix/PXDesign 运行时统一装到 /protenix_service。
 # 幂等：已就绪步骤跳过（FORCE_*=1 强制重做）。
 # PREFIX_ROOT：把双 prefix 装到 <PREFIX_ROOT>/{protenix,pxdesign}（默认 <repo>/prefix）。
 # WEIGHTS_REUSE_FROM：从已校验 prefix 根硬链接/拷贝权重（见 scripts/weights_reuse.sh）。
@@ -31,7 +33,8 @@ Usage:
 
 Targets (default: all):
   all       双 arch 发布包 + prefix/protenix + prefix/pxdesign
-  pack      只打发布包 build/upload_tmp_dir/<app>_linux_<arch>_<mode>_<version>.zip
+  pack      只打发布包 build/upload_tmp_dir/protenix_service_linux_<arch>_<mode>_<version>.zip
+            （服务二进制 + install 脚本 + systemd 单元 + conf/config.yaml + runtime/{protenix,pxdesign}）
   protenix  只安装/校验 prefix/protenix（uv + Python 3.14 + torch cu130）
   pxdesign  只安装/校验 prefix/pxdesign（独立 venv；复用 scripts/install_prefix_pxdesign.sh）
 
@@ -49,6 +52,9 @@ Notes:
   - 版本号来自 gen_pre_build_config_*.yaml（由 gen_pre_build_config.sh 生成）
   - BUILD_INFO：工作区相对 HEAD dirty 时 commit 带 -dirty 后缀，并写 dirty=1
   - 交付 zip 前应先提交再 FORCE_PACK=1 打包，使 BUILD_INFO.commit == HEAD
+  - 服务二进制用 cgo（SQLite）：目标 arch 与本机不同时需交叉编译器，
+    默认 x86_64-linux-gnu-gcc / aarch64-linux-gnu-gcc，可用 CC_linux_amd64 / CC_linux_arm64 指定
+  - 前端与 test_ui 由 protenix_service/gen_frontend.sh、gen_test_ui.sh 现场构建（需 bun）
 EOF
 }
 
@@ -222,8 +228,9 @@ load_export() {
   fi
 }
 
+# 把一个运行时（protenix|pxdesign）的安装材料放进 <bundle>/runtime/<subdir>
 pack_one_product() {
-  local name="$1"
+  local name="$1" runtime_root="$2"
   local up
   up="$(echo "${name}" | tr 'a-z-' 'A-Z_')"
   local src_var="PRODUCT_${up}_SRC" sub_var="PRODUCT_${up}_BUILD_SUBDIR" env_var="PRODUCT_${up}_ENV"
@@ -233,7 +240,7 @@ pack_one_product() {
   local install_sh="${!inst_var}" prefix_install="${!pinst_var}"
   local policy="${!policy_var}" pinned_ref="${!pinned_var}" torch_hint="${!torch_var}"
 
-  local out_dir="${BUILD_MODE_ROOT}/${subdir}"
+  local out_dir="${runtime_root}/${subdir}"
   rm -rf "${out_dir}"
   mkdir -p "${out_dir}/bin" "${out_dir}/conf" "${out_dir}/scripts" "${out_dir}/deps" "${out_dir}/patches" "${out_dir}/src/${name}"
 
@@ -286,29 +293,112 @@ dirty=${commit_dirty}
 build_time=${build_time}
 PBINFO
 
-  local zip_name="${name}_${GOOS_TARGET}_${GOARCH_TARGET}_${RUN_MODE}_${PROJECT_VERSION}.zip"
+  echo "${TAG} staged runtime/${subdir} (src_sha=${src_sha:0:12})"
+}
+
+SERVICE_APP="protenix_service"
+SERVICE_SRC="${project_path}/${SERVICE_APP}"
+SERVICE_WEB_READY=0
+
+# 前端与 test_ui 的 dist 不进仓，go:embed 需要现场构建（每次 build.sh 只构建一次）
+ensure_service_web() {
+  [[ "${SERVICE_WEB_READY}" == "1" ]] && return 0
+  ( cd "${SERVICE_SRC}" && ./gen_test_ui.sh && ./gen_frontend.sh )
+  SERVICE_WEB_READY=1
+}
+
+service_cc() {
+  local host
+  host="$(host_arch_selector)"
+  if [[ "${host}" == "${GOOS_TARGET}_${GOARCH_TARGET}" ]]; then
+    echo "${CC:-gcc}"
+    return 0
+  fi
+  local var="CC_${GOOS_TARGET}_${GOARCH_TARGET}" cc
+  case "${GOARCH_TARGET}" in
+    amd64) cc="${!var:-x86_64-linux-gnu-gcc}" ;;
+    arm64) cc="${!var:-aarch64-linux-gnu-gcc}" ;;
+    *) echo "${TAG} no cross compiler mapping for ${GOARCH_TARGET}" >&2; exit 1 ;;
+  esac
+  command -v "${cc}" >/dev/null 2>&1 \
+    || { echo "${TAG} cross compiler ${cc} not found for ${GOOS_TARGET}/${GOARCH_TARGET} (set ${var})" >&2; exit 1; }
+  echo "${cc}"
+}
+
+# 与 protenix_service/build.sh 相同的 ldflags；这里按目标 arch 交叉编译（SQLite 需 cgo）
+build_service_binary() {
+  local out="$1" cc go_version commit_time
+  ensure_service_web
+  cc="$(service_cc)"
+  go_version="$(go version | awk '{print $3}')"
+  commit_time="$(date -u -d "$(git show -s --format=%ci HEAD)" '+%Y-%m-%d_%H:%M:%S')"
+  local ld="-X main.mGitCommitHash=${commit_hash} -X main.mGitCommitTime=${commit_time} -X main.mGoVersion=${go_version} -X main.mPackageOS=Linux -X main.mPackageTime=${build_time} -X main.mRunMode=${RUN_MODE} -s -w"
+  echo "${TAG} build ${SERVICE_APP} ${GOOS_TARGET}/${GOARCH_TARGET} CC=${cc}"
+  ( cd "${SERVICE_SRC}" && CGO_ENABLED=1 GOOS="${GOOS_TARGET}" GOARCH="${GOARCH_TARGET}" CC="${cc}" \
+      go build -o "${out}" -trimpath -ldflags "${ld}" main.go )
+  chmod a+x "${out}"
+}
+
+# 一个 zip、一个 install 脚本：<bundle>/ 下为模板布局 + runtime/<app>
+pack_service_bundle() {
+  local bundle="${BUILD_MODE_ROOT}/${SERVICE_APP}"
+  [[ "${bundle}" == /* ]] || bundle="${project_path}/${bundle}"
+  rm -rf "${bundle}"
+  mkdir -p "${bundle}/conf" "${bundle}/runtime"
+  for f in "${SERVICE_SRC}/example_files/${SERVICE_APP}.service" \
+           "${SERVICE_SRC}/example_files/install_${SERVICE_APP}.sh" \
+           "${SERVICE_SRC}/example_files/config_example.yaml"; do
+    [[ -f "${f}" ]] || { echo "${TAG} missing ${f}" >&2; exit 1; }
+  done
+  build_service_binary "${bundle}/${SERVICE_APP}"
+  cp -f "${SERVICE_SRC}/example_files/${SERVICE_APP}.service" "${bundle}/"
+  cp -f "${SERVICE_SRC}/example_files/install_${SERVICE_APP}.sh" "${bundle}/install_${SERVICE_APP}.sh"
+  chmod a+x "${bundle}/install_${SERVICE_APP}.sh"
+  cp -f "${SERVICE_SRC}/example_files/config_example.yaml" "${bundle}/conf/config.yaml"
+  for product in ${PRODUCT_NAMES}; do
+    pack_one_product "${product}" "${bundle}/runtime"
+  done
+  cat > "${bundle}/BUILD_INFO.txt" <<SBINFO
+product=${SERVICE_APP}
+project=${PROJECT_NAME}
+version=${PROJECT_VERSION}
+run_mode=${RUN_MODE}
+goos=${GOOS_TARGET}
+goarch=${GOARCH_TARGET}
+runtimes=${PRODUCT_NAMES}
+install_dir=/${SERVICE_APP}
+commit=${commit_for_info}
+commit_head=${commit_hash}
+dirty=${commit_dirty}
+build_time=${build_time}
+SBINFO
+  local zip_name="${SERVICE_APP}_${GOOS_TARGET}_${GOARCH_TARGET}_${RUN_MODE}_${PROJECT_VERSION}.zip"
   local zip_path="${project_path}/${UPLOAD_TMP_DIR}/${zip_name}"
   rm -f "${zip_path}"
-  ( cd "${BUILD_MODE_ROOT}" && zip -qr "${zip_path}" "${subdir}" )
-  echo "${TAG} packed ${UPLOAD_TMP_DIR}/${zip_name} (src_sha=${src_sha:0:12})"
+  ( cd "${BUILD_MODE_ROOT}" && zip -qr "${zip_path}" "${SERVICE_APP}" )
+  echo "${TAG} packed ${UPLOAD_TMP_DIR}/${zip_name}"
 }
 
 pack_ready() {
   local mode="$1"
   [[ "${FORCE_PACK:-0}" == "1" ]] && return 1
   [[ "${commit_dirty}" == "1" ]] && return 1
+  local zip_path="${UPLOAD_TMP_DIR}/${SERVICE_APP}_${GOOS_TARGET}_${GOARCH_TARGET}_${mode}_${PROJECT_VERSION}.zip"
+  local s="${SERVICE_APP}" bi
+  [[ -s "${zip_path}" ]] || return 1
+  bi="$(unzip -p "${zip_path}" "${s}/BUILD_INFO.txt" 2>/dev/null || true)"
+  echo "${bi}" | grep -qx "commit=${commit_hash}" || return 1
+  echo "${bi}" | grep -qx "dirty=0" || return 1
+  for f in "${s}/${s}" "${s}/${s}.service" "${s}/install_${s}.sh" "${s}/conf/config.yaml"; do
+    unzip -l "${zip_path}" "${f}" >/dev/null 2>&1 || return 1
+  done
   for product in ${PRODUCT_NAMES}; do
-    local up sub_var subdir bi
+    local up sub_var subdir
     up="$(echo "${product}" | tr 'a-z-' 'A-Z_')"
     sub_var="PRODUCT_${up}_BUILD_SUBDIR"
     subdir="${!sub_var}"
-    local zip_path="${UPLOAD_TMP_DIR}/${product}_${GOOS_TARGET}_${GOARCH_TARGET}_${mode}_${PROJECT_VERSION}.zip"
-    [[ -s "${zip_path}" ]] || return 1
-    bi="$(unzip -p "${zip_path}" "${subdir}/BUILD_INFO.txt" 2>/dev/null || true)"
-    echo "${bi}" | grep -qx "commit=${commit_hash}" || return 1
-    echo "${bi}" | grep -qx "dirty=0" || return 1
-    unzip -l "${zip_path}" "${subdir}/install_${product}.sh" >/dev/null 2>&1 || return 1
-    unzip -l "${zip_path}" "${subdir}/src/${product}/setup.py" >/dev/null 2>&1 || return 1
+    unzip -l "${zip_path}" "${s}/runtime/${subdir}/install_${product}.sh" >/dev/null 2>&1 || return 1
+    unzip -l "${zip_path}" "${s}/runtime/${subdir}/src/${product}/setup.py" >/dev/null 2>&1 || return 1
   done
   return 0
 }
@@ -325,9 +415,7 @@ build_pack_one() {
   fi
   echo "${TAG} project=${PROJECT_NAME} version=${PROJECT_VERSION} mode=${RUN_MODE} target=${GOOS_TARGET}/${GOARCH_TARGET}"
   echo "${TAG} commit=${commit_for_info} build_time=${build_time}"
-  for product in ${PRODUCT_NAMES}; do
-    pack_one_product "${product}"
-  done
+  pack_service_bundle
   if [[ "${commit_dirty}" == "1" ]]; then
     echo "${TAG} WARN: working tree dirty -> BUILD_INFO.commit=${commit_for_info}; commit then FORCE_PACK=1" >&2
   fi
@@ -348,7 +436,7 @@ build_pack() {
   for cfg in "${GO_CONFIGS[@]}"; do
     build_pack_one "${cfg}"
   done
-  ls -la build/upload_tmp_dir/*_"${RUN_MODE_ARG}"_*.zip
+  ls -la build/upload_tmp_dir/"${SERVICE_APP}"_*_"${RUN_MODE_ARG}"_*.zip
 }
 
 protenix_prefix_ready() {

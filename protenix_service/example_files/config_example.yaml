@@ -86,19 +86,19 @@ auth_cfg: # Auth configurations
     access_token_ttl_seconds: 900
     refresh_token_ttl_seconds: 2592000
 
-cli_cfg: # 原生 CLI 接线（protenix-run / pxdesign-run）。binary 为空时 Execute 拒绝启动进程，不猜路径。
-  work_root: "./data/cli_jobs" # 每任务作业目录根路径；输入会拷贝到子目录，不改原文件
+cli_cfg: # 原生 CLI 接线（protenix-run / pxdesign-run）。路径指向 install_protenix_service.sh 安装的 /protenix_service/runtime 布局；binary 为空时 Execute 拒绝启动进程，不猜路径。
+  work_root: "/protenix_service/data/cli_jobs" # 每任务作业目录根路径；输入会拷贝到子目录，不改原文件
   cancel_grace_seconds: 10 # 向进程组发 SIGTERM 后、再发 SIGKILL 的等待秒数
   execute_timeout_enabled: false # 是否启用单次 Execute 超时；必须是 true/false。false 时忽略下面的 seconds，不限制单次 Execute 时长
   execute_timeout_seconds: 3600 # 单次 Execute 最长秒数（从本次开始执行起算）；仅在上一开关为 true 时生效且必须为正整数（0 或负数会被配置校验拒绝）。到期后取消进程组，任务记 system_error。此处只是示例值
   protenix:
-    binary: "" # v1 runtime 缺省使用的已安装 protenix-run 路径；为空且未在 version_runtimes.v1 给出非空路径时，version=v1（或缺省）拒绝启动
+    binary: "/protenix_service/runtime/protenix/bin/protenix-run" # v1 runtime 缺省使用的已安装 protenix-run 路径；为空且未在 version_runtimes.v1 给出非空路径时，version=v1（或缺省）拒绝启动
     extra_env: {}
     version_runtimes: # 按 arguments.version 选择独立 runtime；version 不进 CLI 参数或 URL
       v2:
         binary: "" # v2 必须单独配置的已安装路径。空字符串表示未配置；version=v2 不会回退到上级 binary。跑通 v2 还需要授权权重
         extra_env: {} # 显式空映射表示不附加额外变量；若省略该键则沿用上级 extra_env
   pxdesign:
-    binary: "" # 已安装的 pxdesign-run 路径
+    binary: "/protenix_service/runtime/pxdesign/bin/pxdesign-run" # 已安装的 pxdesign-run 路径
     extra_env: {}
 

@@ -31,38 +31,26 @@ go build -o protenix_service .
 
 ## 启动
 
+开发调试在本目录直接运行（debug 构建读 `example_files/config_local.yaml`，release 构建读 `./conf/config.yaml`）：
+
 ```bash
 ./protenix_service
 ```
 
-或使用用户级 systemd 单元（不要用系统级 root 单元）：
+## 安装（正式）
+
+服务与 Protenix / PXDesign 原生运行时是同一套服务，统一用父仓 `build.sh` 打出的一个 zip 安装到 `/protenix_service`：
 
 ```bash
-# 单元文件：example_files/protenix_service.service
-# Type=simple，ExecStart / WorkingDirectory 指向本目录的二进制
-systemd-analyze --user verify example_files/protenix_service.service
-systemctl --user start protenix_service.service
-# 停止：
-systemctl --user stop protenix_service.service
+# 父仓：FORCE_PACK=1 ./build.sh pack → build/upload_tmp_dir/protenix_service_linux_<arch>_release_<version>.zip
+unzip protenix_service_linux_arm64_release_v*.zip && cd protenix_service
+# 以 root 执行；root 的 PATH 里没有 uv 时用 UV 指定（sudo 时：sudo env UV=/path/to/uv ./install_protenix_service.sh）
+UV=/path/to/uv ./install_protenix_service.sh
 ```
 
-不要留下 enabled 且失败的常驻服务。
+菜单 1 安装/重装（旧二进制与配置备份为 `.bak_<时间戳>` 再覆盖），2 升级（换二进制并升级运行时），3 整体卸载（删除 `/protenix_service`），4 运行时回退上一版本，5 状态。单元 `example_files/protenix_service.service` 装到 `/etc/systemd/system`，`User=root`，`WorkingDirectory=/protenix_service`，`KillMode=control-group`（停止时连同任务进程组一起清理）。release 模式读 `/protenix_service/conf/config.yaml`，不加载 test_ui。
 
-本机已验收的可回滚正式常驻部署（2026-11-16）使用用户级单元和隔离前缀，不要改 `example_files/config_local.yaml`，也不要用系统级 root 安装脚本：
-
-```bash
-# 前缀：/home/certa/.local/share/protenix_service
-# release 二进制读取该目录下 conf/config.yaml（只绑定 127.0.0.1:18001/18002/18004/18005/18006）
-# 单元：~/.config/systemd/user/protenix_service.service
-systemctl --user status protenix_service.service
-# 回滚：
-systemctl --user disable --now protenix_service.service
-rm -f ~/.config/systemd/user/protenix_service.service
-systemctl --user daemon-reload
-# 可选：rm -rf /home/certa/.local/share/protenix_service
-```
-
-验收事实见父仓 `docs/acceptance_service.md`。release 模式不加载 test_ui。
+安装后目录：`protenix_service`（二进制）、`conf/config.yaml`、`data/`（SQLite 与 `cli_jobs/`）、`logs/`、`runtime/protenix/`、`runtime/pxdesign/`（各含 `bin/<app>-run`、`conf/<app>.env`、`data/` 权重、`releases/<版本>/venv`、`current`、`previous`）、`runtime/uv/`（uv 托管的 Python 与缓存）。完整说明见父仓 `README.md`。
 
 ## 功能入口
 

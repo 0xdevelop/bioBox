@@ -1,4 +1,6 @@
 # 三段式发版占位（release → Build → RemoveOldRelease）。本阶段不触发、不发版。
+# Build 产出每个 arch 一个 protenix_service_linux_<arch>_release_<version>.zip：
+# 服务二进制 + install_protenix_service.sh + systemd 单元 + conf/config.yaml + runtime/{protenix,pxdesign}。
 name: Release_Build
 
 on:
@@ -43,10 +45,23 @@ jobs:
         with:
           go-version: '>=1.25.0'
 
+      # protenix_service 的前端与 test_ui dist 不进仓，打包时现场构建
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      # 服务二进制用 cgo（SQLite），arm64 包需要交叉编译器
+      - name: Install cross compiler
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu
+
       - name: Build linux amd64 + arm64 packs
         shell: /usr/bin/bash -e {0}
         run: |
-          chmod a+x ./build.sh ./gen_pre_build_config.sh
+          chmod a+x ./build.sh ./gen_pre_build_config.sh \
+            ./protenix_service/gen_frontend.sh ./protenix_service/gen_test_ui.sh
           ./gen_pre_build_config.sh all
           bash ./build.sh release linux_amd64
           bash ./build.sh release linux_arm64

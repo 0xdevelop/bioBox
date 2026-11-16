@@ -21,17 +21,18 @@
 
 ## 交付物
 
-两个产物都是**命令行工具**（非常驻服务）。队列、并发、对外接口留给后续阶段。
+Protenix、PXDesign 两个命令行运行时与提供队列、并发和对外接口的 `protenix_service` 是**同一套服务**，打成一个发布包、一个 install 脚本。
 
-- `./build.sh pack` 产出 zip：安装脚本（`install_<app>.sh` + `scripts/install_common.sh` + `install_prefix_*`）、命令入口 `bin/<app>-run`、配置模板 `conf/<app>.env`、**git archive 的上游快照**（`src/<product>/` + `src/SRC_SHA`）、`deps/`、`patches/`、`weights_reuse.sh`、`examples/`、`README.md`、`BUILD_INFO.txt`
+- `./build.sh pack` 每个 arch 产出一个 `protenix_service_linux_<arch>_<mode>_<version>.zip`：顶层是服务二进制、`install_protenix_service.sh`、systemd 单元、`conf/config.yaml`、`BUILD_INFO.txt`；`runtime/<app>/` 下是运行时安装材料——安装脚本（`install_<app>.sh` + `scripts/install_common.sh` + `install_prefix_*`）、命令入口 `bin/<app>-run`、配置模板 `conf/<app>.env`、**git archive 的上游快照**（`src/<product>/` + `src/SRC_SHA`）、`deps/`、`patches/`、`weights_reuse.sh`、`examples/`、`README.md`、`BUILD_INFO.txt`
 - 包内安装只读包内路径；联网仅用于 pip 与权重
 - 仓库内 `./build.sh protenix|pxdesign` 通过 `scripts/repo_src_defaults.sh` 指向 submodule（该文件不打进 zip）
 
-## 安装布局（`install_<app>.sh`）
+## 安装布局（`install_protenix_service.sh` + 运行时 `install_<app>.sh`）
 
-- 安装目录默认 `~/.local/share/<app>`（`<APP>_PREFIX` 覆盖），不需要 sudo
+- 服务与两个运行时是同一套服务、同一个 zip：root 跑 `install_protenix_service.sh`（模板 install 体系，`APP_DIR=/protenix_service`），它调用包内 `runtime/<app>/install_<app>.sh`，运行时固定装到 `/protenix_service/runtime/<app>`，uv 托管的 Python 与缓存在 `/protenix_service/runtime/uv/`
+- Python 环境和权重不打进 zip：安装时用 uv/pip 现场建 venv，权重从上游官方地址下载（或 `WEIGHTS_REUSE_FROM` 复用），zip 只带源码快照、依赖覆盖、补丁和脚本
 - `releases/<版本>/` 每版一套 venv；`current` / `previous` 符号链接，`update` 先构建新版本、校验通过再原子切换，失败不动旧版本；`rollback` 切回 `previous`
-- `conf/`（配置）、`data/`（权重）在 `update` 时保留；`uninstall` 默认保留、`--purge` 才删
+- `conf/`（配置）、`data/`（权重）在 `update` 时保留；单个运行时 `install_<app>.sh uninstall` 默认保留、`--purge` 才删；`install_protenix_service.sh` 菜单 3 整体卸载会删除整个 `/protenix_service`（含权重）
 
 ## 验收分层
 
