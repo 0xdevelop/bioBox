@@ -1,3 +1,14 @@
+# 最新状态：可回滚的正式常驻服务部署与验收（2026-11-16 21:15–21:17 Asia/Shanghai UTC+8）
+
+本节补上此前仍缺的「可回滚的正式常驻 systemd 部署与验收」。这是用户级（非 root、非 `/etc`）release 常驻单元，安装前缀在 `/home/certa/.local/share/protenix_service`，**不是**官方 v2 推理、不是经本单元新跑的 GPU 任务，也不是生产级或 HA 声明。
+
+- 从 `c9cf591` 以 `mRunMode=release` 编译，工作目录读取 `conf/config.yaml`，不改本机 `example_files/config_local.yaml`（sha256 仍为 `684b906075c72cd76806cafd645bb7da9c6ac6b235550b5e77eaf15f0e31bf6c`）。
+- 只绑定 `127.0.0.1`：JSON-RPC `18001`、MCP `18002`、WebSocket `18004`、gRPC `18005`、frontend `18006`。release 不加载 test_ui，`18003` 无监听。
+- 主库 SQLite；未装 MySQL/Redis。`task_lifecycle_timeout_seconds=0`，`task_execute_retry_limit_enabled=false`，`cli_cfg.execute_timeout_seconds=0`。`cli_cfg` 的 protenix/pxdesign `binary` 留空，Execute 拒绝启动进程，避免常驻后误跑 GPU。
+- `auth_cfg.enabled=true`。Public `test` 成功；无凭证调用 `protenix` 为 `10004 permission denied`，未进入 Execute。邮件注册仍缺 Resend。
+- `systemd-analyze --user verify` 退出码 0；先 `start`（当时 `disabled`）再 `restart`（主进程 PID 更换后 Public `test` 仍成功），然后 `enable`。当前 `enabled` 且 `active`。用户 linger 原本已是 yes，未改 ComfyUI。
+- 回滚：`systemctl --user disable --now protenix_service.service`，删除 `~/.config/systemd/user/protenix_service.service` 后 `daemon-reload`；可选再删除安装前缀。原始记录：`tmp/handoff-followup/phase3-service/resident-systemd-20261116/`。
+
 # 最新状态：官方 PXDesign 经 HTTP 的受控 preview GPU 设计（2026-11-16 19:18–19:26 Asia/Shanghai UTC+8）
 
 本节补上此前仍缺的「官方 PXDesign 经 protenix_service HTTP 跑受控 preview 真 GPU 设计」。这是隔离 SQLite HTTP Bearer 夹具上的官方二进制 + 官方 `PDL1_quick_start.yaml` 证据，**不是** extended 长跑、官方 v2 推理、正式常驻 systemd 部署、模板 `policy/task` 通用超时重试，也不是科学质量或生产级声明。短脚本夹具不得冒充本轮官方推理。

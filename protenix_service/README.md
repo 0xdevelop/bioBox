@@ -48,6 +48,22 @@ systemctl --user stop protenix_service.service
 
 不要留下 enabled 且失败的常驻服务。
 
+本机已验收的可回滚正式常驻部署（2026-11-16）使用用户级单元和隔离前缀，不要改 `example_files/config_local.yaml`，也不要用系统级 root 安装脚本：
+
+```bash
+# 前缀：/home/certa/.local/share/protenix_service
+# release 二进制读取该目录下 conf/config.yaml（只绑定 127.0.0.1:18001/18002/18004/18005/18006）
+# 单元：~/.config/systemd/user/protenix_service.service
+systemctl --user status protenix_service.service
+# 回滚：
+systemctl --user disable --now protenix_service.service
+rm -f ~/.config/systemd/user/protenix_service.service
+systemctl --user daemon-reload
+# 可选：rm -rf /home/certa/.local/share/protenix_service
+```
+
+验收事实见父仓 `docs/acceptance_service.md`。release 模式不加载 test_ui。
+
 ## 功能入口
 
 所有协议共用一个业务调用入口 `tools/call`，用 `params.name` 选择方法，不要做成 `/v1/protenix` 这类路径。
