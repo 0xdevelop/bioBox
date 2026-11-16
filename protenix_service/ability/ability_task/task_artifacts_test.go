@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/0xdevelop/protenix_service/ability/ability_task/ability_task_model"
@@ -16,7 +17,7 @@ func TestCleanArtifactRelPath(t *testing.T) {
 		t.Fatalf("allowed path rejected: %q %t", allowed, ok)
 	}
 	for _, raw := range []string{
-		"", "../out.cif", "/tmp/a.cif", "output/../../etc/passwd", "input/secret.cif",
+		"", "../out.cif", "/tmp/a.cif", "output/../../etc/passwd", "input/secret.cif", "examples/5o45.cif",
 		"input", `output\pred.cif`, "output/pred.bin", "output/./../../etc/hosts",
 	} {
 		if _, ok := cleanArtifactRelPath(raw); ok {
@@ -50,6 +51,13 @@ func TestListAndReadTaskArtifactsConfined(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(inputDir, "source.cif"), []byte("secret-input\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	examples := filepath.Join(job, "examples")
+	if err := os.MkdirAll(examples, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(examples, "5o45.cif"), []byte("target-input\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.WriteFile(filepath.Join(output, "weights.bin"), []byte("nope"), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -81,6 +89,9 @@ func TestListAndReadTaskArtifactsConfined(t *testing.T) {
 	if _, ok := found["input/source.cif"]; ok {
 		t.Fatal("input file was listed")
 	}
+	if _, ok := found["examples/5o45.cif"]; ok {
+		t.Fatal("staged official input sidecar was listed as an artifact")
+	}
 	if _, ok := found["output/seed/weights.bin"]; ok {
 		t.Fatal("disallowed extension was listed")
 	}
@@ -98,6 +109,9 @@ func TestListAndReadTaskArtifactsConfined(t *testing.T) {
 	}
 	if _, err = readTaskArtifact(job, "input/source.cif"); err == nil {
 		t.Fatal("input read must fail")
+	}
+	if _, err = readTaskArtifact(job, "examples/5o45.cif"); err == nil {
+		t.Fatal("staged official input sidecar read must fail")
 	}
 	if _, err = readTaskArtifact(job, "../"+filepath.Base(outside)); err == nil {
 		t.Fatal("traversal read must fail")
@@ -155,4 +169,35 @@ func TestVerifyJobDirRejectsForeignPath(t *testing.T) {
 	if dir, err = confinedJobDir(failed); err != nil || filepath.Base(dir) != taskID {
 		t.Fatalf("done non-success without payload should still use work_root/task_id: %s %v", dir, err)
 	}
+}
+
+func TestListArtifactsOnOfficialPXDesignJobIfPresent(t *testing.T) {
+	job := os.Getenv("PXD_ACCEPT_JOB_DIR")
+	if job == "" {
+		t.Skip("set PXD_ACCEPT_JOB_DIR to list a completed official PXDesign job")
+	}
+	if _, err := os.Stat(job); err != nil {
+		t.Fatalf("PXD_ACCEPT_JOB_DIR is not accessible: %v", err)
+	}
+	listed, err := listTaskArtifacts(job)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var design string
+	for _, item := range listed {
+		if strings.HasPrefix(item.Path, "examples/") || strings.HasPrefix(item.Path, "input/") {
+			t.Fatalf("input sidecar was listed: %s", item.Path)
+		}
+		if strings.HasPrefix(item.Path, "output/") && strings.HasSuffix(strings.ToLower(item.Path), ".cif") && strings.Contains(item.Path, "design_outputs") {
+			design = item.Path
+		}
+	}
+	if design == "" {
+		t.Fatalf("official design cif was not listed: %+v", listed)
+	}
+	file, err := readTaskArtifact(job, design)
+	if err != nil || file.Kind != "cif" || file.Size < 1000 {
+		t.Fatalf("official design cif read failed: err=%v file=%+v", err, file)
+	}
+	t.Logf("official job artifacts listed design cif %s size=%d count=%d", design, file.Size, len(listed))
 }

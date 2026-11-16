@@ -81,6 +81,9 @@ func buildPXDesignSpec(ctx context.Context, input interface{}) (*cli_proc.Spec, 
 	if err != nil {
 		return nil, "", "", err
 	}
+	if err = cli_proc.StageRelativeSidecars(jobDir, inputPath, stagedInput); err != nil {
+		return nil, "", "", err
+	}
 	outDir := filepath.Join(jobDir, "output")
 	args := []string{"pipeline", "--input", stagedInput, "--dump_dir", outDir}
 	args, err = appendPXDesignOptionalFlags(args, params)

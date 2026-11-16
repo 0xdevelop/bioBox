@@ -138,3 +138,53 @@ func flagValue(argv []string, name string) string {
 	}
 	return ""
 }
+
+func TestBuildArgvStagesOfficialRelativeSidecars(t *testing.T) {
+	project := t.TempDir()
+	examples := filepath.Join(project, "examples")
+	if err := os.MkdirAll(filepath.Join(examples, "msa", "PDL1", "0"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(examples, "5o45.cif"), []byte("data_target\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(examples, "msa", "PDL1", "0", "pairing.a3m"), []byte(">msa\nA\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	src := filepath.Join(examples, "PDL1_quick_start.yaml")
+	original := []byte("target:\n  file: \"./examples/5o45.cif\"\n  chains:\n    A:\n      msa: \"./examples/msa/PDL1/0\"\nbinder_length: 80\n")
+	if err := os.WriteFile(src, original, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	work := t.TempDir()
+	previous := config.GlobalConfig
+	t.Cleanup(func() { config.GlobalConfig = previous })
+	config.GlobalConfig = &config.FileConfig{CliCfg: &config.CLIConfig{
+		WorkRoot:           filepath.Join(work, "jobs"),
+		CancelGraceSeconds: 1,
+		PXDesign:           &config.CLIBinaryConfig{Binary: dummyRun(t)},
+	}}
+	argv, err := BuildArgvForTest(context.Background(), map[string]interface{}{
+		"input":    src,
+		"dump_dir": "out",
+		"preset":   "preview",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	inputPath := flagValue(argv, "--input")
+	jobDir := filepath.Dir(filepath.Dir(inputPath))
+	if _, err = os.Stat(filepath.Join(jobDir, "examples", "5o45.cif")); err != nil {
+		t.Fatalf("expected staged cif under job dir: %v", err)
+	}
+	if _, err = os.Stat(filepath.Join(jobDir, "examples", "msa", "PDL1", "0", "pairing.a3m")); err != nil {
+		t.Fatalf("expected staged msa under job dir: %v", err)
+	}
+	copied, err := os.ReadFile(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(copied) != string(original) {
+		t.Fatal("original official yaml was modified")
+	}
+}

@@ -268,3 +268,100 @@ func waitForWrapperPID(t *testing.T, childPID int) int {
 	t.Fatalf("timed out resolving wrapper pid for child %d", childPID)
 	return 0
 }
+
+func TestStageRelativeSidecarsCopiesOfficialLayout(t *testing.T) {
+	project := t.TempDir()
+	examples := filepath.Join(project, "examples")
+	msa := filepath.Join(examples, "msa", "PDL1", "0")
+	if err := os.MkdirAll(msa, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cif := []byte("data_official_sidecar\n")
+	msaBody := []byte(">msa\nACDE\n")
+	if err := os.WriteFile(filepath.Join(examples, "5o45.cif"), cif, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(msa, "pairing.a3m"), msaBody, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	yamlBody := []byte("target:\n  file: \"./examples/5o45.cif\"\n  chains:\n    A:\n      crop: [\"1-116\"]\n      msa: \"./examples/msa/PDL1/0\"\nbinder_length: 80\n")
+	src := filepath.Join(examples, "PDL1_quick_start.yaml")
+	if err := os.WriteFile(src, yamlBody, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	srcInfo, err := os.Stat(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	work := t.TempDir()
+	jobDir, staged, err := StageInput(work, "task-sidecar", src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = StageRelativeSidecars(jobDir, src, staged); err != nil {
+		t.Fatal(err)
+	}
+	copiedYAML, err := os.ReadFile(staged)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(copiedYAML) != string(yamlBody) {
+		t.Fatalf("staged yaml was rewritten: %s", copiedYAML)
+	}
+	copiedCIF, err := os.ReadFile(filepath.Join(jobDir, "examples", "5o45.cif"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(copiedCIF) != string(cif) {
+		t.Fatalf("cif not staged: %s", copiedCIF)
+	}
+	copiedMSA, err := os.ReadFile(filepath.Join(jobDir, "examples", "msa", "PDL1", "0", "pairing.a3m"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(copiedMSA) != string(msaBody) {
+		t.Fatalf("msa not staged: %s", copiedMSA)
+	}
+	if err := os.WriteFile(filepath.Join(jobDir, "examples", "5o45.cif"), []byte("changed"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	originalCIF, err := os.ReadFile(filepath.Join(examples, "5o45.cif"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(originalCIF) != string(cif) {
+		t.Fatal("original cif was modified")
+	}
+	later, err := os.Stat(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if later.ModTime().Unix() != srcInfo.ModTime().Unix() {
+		t.Fatal("original yaml mtime changed")
+	}
+}
+
+func TestStageRelativeSidecarsRejectsTraversal(t *testing.T) {
+	root := t.TempDir()
+	project := filepath.Join(root, "proj")
+	if err := os.Mkdir(project, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	outside := filepath.Join(root, "secret.txt")
+	if err := os.WriteFile(outside, []byte("secret"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	src := filepath.Join(project, "task.yaml")
+	if err := os.WriteFile(src, []byte("file: \"./../secret.txt\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	work := t.TempDir()
+	jobDir, staged, err := StageInput(work, "task-traversal", src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = StageRelativeSidecars(jobDir, src, staged)
+	if err == nil || !strings.Contains(err.Error(), "outside the job directory") {
+		t.Fatalf("expected traversal rejection, got %v", err)
+	}
+}

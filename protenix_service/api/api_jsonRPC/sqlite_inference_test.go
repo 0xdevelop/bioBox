@@ -324,6 +324,124 @@ func TestSQLiteHTTPOfficialInference(t *testing.T) {
 	t.Logf("official HTTP inference: task=%s elapsed=%s CIF=%v out=%s (smoke settings, not scientific-quality prediction)", id, time.Since(start).Round(time.Millisecond), result["cif_count"], result["out_dir"])
 }
 
+// Opt in explicitly to one controlled official PXDesign preview; the ordinary suite never runs a model.
+func TestSQLiteHTTPOfficialPXDesignPreview(t *testing.T) {
+	binary := os.Getenv("PXD_ACCEPT_BINARY")
+	input := os.Getenv("PXD_ACCEPT_INPUT")
+	if binary == "" || input == "" {
+		t.Skip("set PXD_ACCEPT_BINARY and PXD_ACCEPT_INPUT for a bounded official PXDesign preview")
+	}
+	if _, err := os.Stat(binary); err != nil {
+		t.Fatalf("official pxdesign binary is not accessible: %v", err)
+	}
+	if _, err := os.Stat(input); err != nil {
+		t.Fatalf("official pxdesign input is not accessible: %v", err)
+	}
+	root := os.Getenv("PXD_ACCEPT_ROOT")
+	if root == "" {
+		root = t.TempDir()
+	} else {
+		root = filepath.Join(root, "run-"+time.Now().UTC().Format("20060102T150405.000")+"-"+strconv.Itoa(os.Getpid()))
+		if err := os.MkdirAll(root, 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	f := newQueueHTTPFixture(t, "", root)
+	config.GlobalConfig.CliCfg.PXDesign = &config.CLIBinaryConfig{Binary: binary, ExtraEnv: map[string]string{}}
+	config.GlobalConfig.CliCfg.ExecuteTimeoutSeconds = 0
+	policy_config.CurrentCfgPolicy.MaxWorkers = 1
+	stop := policy.PolicyServicesStart()
+	t.Cleanup(stop)
+
+	db, err := storage.GormDB(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = ability_user.Create(db, "other_pxd_fixture", "other-pxd-fixture@example.invalid", "disposable-fixture-password", time.Now().UTC()); err != nil {
+		t.Fatal(err)
+	}
+	otherLogin := f.call(t, "auth.login.email", map[string]interface{}{"login_method": "password", "email": "other-pxd-fixture@example.invalid", "password": "disposable-fixture-password"}, "", false)
+	otherIssued := f.call(t, "auth.api_key.issue", map[string]interface{}{"name": "other-pxd-fixture"}, otherLogin["jwt_token"].(string), false)
+	otherKey := otherIssued["api_key"].(string)
+
+	f.call(t, "pxdesign", map[string]interface{}{"input": input, "dump_dir": "out", "preset": "preview"}, "", true)
+	f.call(t, "pxdesign", map[string]interface{}{"input": input, "dump_dir": "out", "preset": "preview"}, "ptxk_invalid", true)
+
+	start := time.Now()
+	accepted := f.call(t, "pxdesign", map[string]interface{}{
+		"input":      input,
+		"dump_dir":   "preview_out",
+		"preset":     "preview",
+		"N_sample":   2,
+		"N_max_runs": 1,
+	}, f.key, false)
+	id, _ := accepted["task_id"].(string)
+	if id == "" || accepted["run_status"] != "queued" {
+		t.Fatal("official pxdesign preview was not durably accepted")
+	}
+	f.call(t, "task.get", map[string]interface{}{"task_id": id}, otherKey, true)
+	f.call(t, "task.artifacts", map[string]interface{}{"task_id": id}, otherKey, true)
+
+	deadline := time.Now().Add(20 * time.Minute)
+	var task map[string]interface{}
+	for time.Now().Before(deadline) {
+		task = f.task(t, id)
+		if task["run_status"] == "done" {
+			break
+		}
+		time.Sleep(time.Second)
+	}
+	elapsed := time.Since(start).Round(time.Millisecond)
+	if task["run_status"] != "done" {
+		t.Fatalf("official pxdesign preview did not finish within 20m: status=%v elapsed=%s", task["run_status"], elapsed)
+	}
+	if task["process_status"] != "success" {
+		t.Fatalf("official pxdesign preview status=%s error=%v elapsed=%s task=%s", task["process_status"], task["error_message"], elapsed, id)
+	}
+	result, ok := task["result"].(map[string]interface{})
+	if !ok || result["cif_count"].(float64) < 1 || result["has_err"] != false || result["exit_code"].(float64) != 0 {
+		t.Fatalf("invalid official pxdesign artifacts: %v elapsed=%s", result, elapsed)
+	}
+
+	artifacts := f.call(t, "task.artifacts", map[string]interface{}{"task_id": id}, f.key, false)
+	items, _ := artifacts["artifacts"].([]interface{})
+	var cifPath string
+	for _, raw := range items {
+		item, _ := raw.(map[string]interface{})
+		path, _ := item["path"].(string)
+		if strings.HasPrefix(path, "output/") && strings.HasSuffix(strings.ToLower(path), ".cif") {
+			cifPath = path
+			if strings.Contains(path, "design_outputs") || strings.Contains(path, "predictions/") {
+				break
+			}
+		}
+	}
+	if cifPath == "" {
+		t.Fatalf("official pxdesign artifacts omitted output cif: %v", artifacts)
+	}
+	if strings.HasPrefix(cifPath, "examples/") || strings.HasPrefix(cifPath, "input/") {
+		t.Fatalf("artifact path was staged input, not a design result: %s", cifPath)
+	}
+	file := f.call(t, "task.artifact", map[string]interface{}{"task_id": id, "path": cifPath}, f.key, false)
+	content, _ := file["content"].(string)
+	decoded, decErr := base64.StdEncoding.DecodeString(content)
+	inputBytes, err := os.ReadFile(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The official YAML sits beside 5o45.cif; the fetched design must not be that target file.
+	targetCIF, err := os.ReadFile(filepath.Join(filepath.Dir(input), "5o45.cif"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if file["kind"] != "cif" || file["encoding"] != "base64" || decErr != nil || len(decoded) == 0 || bytes.Equal(decoded, inputBytes) || bytes.Equal(decoded, targetCIF) {
+		t.Fatalf("official pxdesign design cif was not readable or matched the input target: path=%s kind=%v size=%d", cifPath, file["kind"], len(decoded))
+	}
+	f.call(t, "task.artifact", map[string]interface{}{"task_id": id, "path": cifPath}, otherKey, true)
+
+	t.Logf("official HTTP PXDesign preview: task=%s elapsed=%s CIF=%v path=%s bytes=%d (controlled preview N_sample=2 N_max_runs=1, not extended, not a scientific-quality claim)", id, elapsed, result["cif_count"], cifPath, len(decoded))
+}
+
 func TestSQLiteHTTPPxdesignShortScript(t *testing.T) {
 	root := t.TempDir()
 	script := writeQueueInput(t, root, "pxdesign-cli.sh", `#!/bin/sh

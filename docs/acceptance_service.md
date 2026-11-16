@@ -1,3 +1,14 @@
+# 最新状态：官方 PXDesign 经 HTTP 的受控 preview GPU 设计（2026-11-16 19:18–19:26 Asia/Shanghai UTC+8）
+
+本节补上此前仍缺的「官方 PXDesign 经 protenix_service HTTP 跑受控 preview 真 GPU 设计」。这是隔离 SQLite HTTP Bearer 夹具上的官方二进制 + 官方 `PDL1_quick_start.yaml` 证据，**不是** extended 长跑、官方 v2 推理、正式常驻 systemd 部署、模板 `policy/task` 通用超时重试，也不是科学质量或生产级声明。短脚本夹具不得冒充本轮官方推理。
+
+- 官方包装命令来自干净发布包 `pxdesign_linux_arm64_release_v0.0.1.zip`（commit `7d208afe5509`，dirty=0），安装到临时前缀 `/home/certa/pkg_accept_pxd_http/prefix`（约 37s），`WEIGHTS_REUSE_FROM` 硬链接复用仓库 `prefix/pxdesign` 权重，未改仓库 `prefix/` 或 `build_srcs`。入口：`/home/certa/pkg_accept_pxd_http/prefix/bin/pxdesign-run`，状态：可运行。未覆盖本机 `config_local.yaml`（sha256 仍为 `684b906075c72cd76806cafd645bb7da9c6ac6b235550b5e77eaf15f0e31bf6c`）。`execute_timeout_seconds` 保持 0。既有 ComfyUI（pid 3727191，队列空、利用率 0%）未结束。
+- 代码修复：官方 YAML 使用 `./examples/5o45.cif` 与 MSA 相对路径。`StageRelativeSidecars` 把这些资源拷到作业目录并保持原文路径，不改原文件。`task.artifacts` / `task.artifact` 只暴露 `output/` 与顶层 `run.log`，不再把暂存的 `examples/5o45.cif` 当成设计产物。
+- 第一次官方 HTTP 运行（19:20:21–19:21:55）：任务 `eb207db1-667d-4a18-88be-7e1895987656`，JSON-RPC 受理为 queued，Policy 认领后官方 `pxdesign-run pipeline --preset preview --N_sample 2 --N_max_runs 1` 在 GPU 上执行；墙钟 1m33.218s，`done/success`，输出 5 个 CIF、无 ERR，GPU 利用率峰值 96%、功耗峰值 50.25 W。属主隔离与缺凭证/伪造 `ptxk_` 拒绝已覆盖。当时取件仍可能先碰到暂存输入 `examples/5o45.cif`，不能当作设计产物已取回。
+- 修复后再跑（19:24 前后–19:26:14）：任务 `a5948988-9dbd-4ef8-9543-42588b4b79ed`，87.65s / 受理到完成 1m27.205s，`cif_count=4`、无 ERR。属主经 `task.artifacts` / `task.artifact` 取到 `output/design_outputs/PDL1_quick_start/orig_designed/rank_1.cif`（139419 字节，sha256 `af35fb5829c1306d23a78c79253e96c5e3b0e4eacbd9cbbb3689e1daa2504221`），内容不是输入靶标 5o45.cif。测试夹具关闭时 policy 有一条 `context canceled` 日志，是拆卸噪声，不是设计任务失败。`TestSQLiteHTTPOfficialPXDesignPreview` 两次均为 PASS。普通 `go test` 默认仍不跑模型。
+- 页面：用独立 headless Chrome + 已有 playwright-core，打开调试页并本地载入第一次官方任务的 `passing-AF2-IG-easy/rank_1.cif`（138779 字节，sha256 `a31b291bf7d2423f48cfa3915846890c5c7e0825311d09b5bf77be3447e6df33`）。舞台显示 1538 原子 / 196 残基编号 / 194 条 Cα 连线，无超距警告。这是官方 HTTP 作业的真实产物在调试页上的结构展示，不是 live 历史列表取件，也不是伪造折叠动画。截图：`tmp/handoff-followup/phase4-official-pxdesign-page-20261116/shots/`。
+- 原始记录：`tmp/handoff-followup/phase3-service/sqlite-http-official-pxdesign-20261116/` 与 `...-artifactfix/`（`tmp/` 不入库）。未宣称生产级或科学质量。
+
 # 最新状态：Linux Chrome Three.js / WebGL 交互验收（2026-11-16 19:06 Asia/Shanghai UTC+8）
 
 本节补上 `c90071d` 嵌入真实坐标 Three.js 舞台后，仍缺 Linux 真浏览器 WebGL 交互证据的缺口。这是短生命周期隔离夹具上的 Linux Google Chrome 点击证据，**不是**官方 PXDesign GPU 设计、官方 v2 推理、长期常驻部署或物理折叠回放，也不是 Playwright MCP / ego-browser。

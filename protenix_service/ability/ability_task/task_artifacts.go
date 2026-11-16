@@ -31,6 +31,8 @@ const (
 	artifactMaxWalkDepth    = 8
 	defaultArtifactMaxBytes = int64(32 << 20)
 	artifactInputDir        = "input"
+	artifactOutputDir       = "output"
+	artifactRunLog          = "run.log"
 )
 
 var artifactMaxBytes = defaultArtifactMaxBytes
@@ -55,7 +57,7 @@ type artifactInfo struct {
 }
 
 // TaskArtifacts 列出当前用户某条已完成任务在隔离作业目录内的可下载产物。
-// 只返回相对路径，不含服务器绝对路径；不暴露 input/ 下的原始输入。
+// 只返回相对路径，不含服务器绝对路径；仅暴露 output/ 与顶层 run.log，不暴露 input/ 或为官方 YAML 暂存的 examples/ 等输入侧车。
 func TaskArtifacts(ctx context.Context, input interface{}) (interface{}, error) {
 	task, err := loadOwnedTask(ctx, input, "task_id")
 	if err != nil {
@@ -226,13 +228,20 @@ func cleanArtifactRelPath(raw string) (string, bool) {
 			return "", false
 		}
 	}
-	if strings.HasPrefix(cleaned, artifactInputDir+"/") || cleaned == artifactInputDir {
+	if !allowedArtifactRel(cleaned) {
 		return "", false
 	}
 	if _, ok := artifactType(cleaned); !ok {
 		return "", false
 	}
 	return cleaned, true
+}
+
+func allowedArtifactRel(rel string) bool {
+	if rel == artifactRunLog {
+		return true
+	}
+	return rel == artifactOutputDir || strings.HasPrefix(rel, artifactOutputDir+"/")
 }
 
 func artifactType(rel string) (info struct {
@@ -268,7 +277,7 @@ func listTaskArtifacts(jobDir string) ([]artifactInfo, error) {
 			return nil
 		}
 		if d.IsDir() {
-			if relSlash == artifactInputDir || strings.HasPrefix(relSlash, artifactInputDir+"/") {
+			if relSlash != artifactOutputDir && !strings.HasPrefix(relSlash, artifactOutputDir+"/") {
 				return filepath.SkipDir
 			}
 			return nil
