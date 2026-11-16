@@ -82,7 +82,7 @@ JSON-RPC 示例（Public `test`）：
 http://127.0.0.1:<test_ui-port>/flow_debug.html
 ```
 
-填写服务 URL 和 `ptxk_` API key，按真实 `protenix` → `task.get` → `task.artifacts` → `task.artifact` 流程调试。提交、跟踪、取件和取消走页面上选择的协议（JSON-RPC / MCP / WebSocket / gRPC），功能名固定，版本和模型仍作为参数。探测在已填 key 时会对四种协议各调一次 `task.list`，不提交新任务。历史任务列表只展示所选协议 `task.list` 返回的属主记录，点击一行可跟踪该任务并取回真实产物；没有任务就空着，不编造历史。提交或跟踪另一任务时，舞台、产物表和任务流程枢纽会先撤下上一任务的结果，只显示当前 `task_id` 的状态与产物。进度只显示后端上报值，结构只从取回的产物解析（官方 Protenix CIF 按 mmCIF 列读取 `ATOM` 行）。舞台可拖拽旋转、滚轮缩放，悬停查看残基与原子坐标；入场只是呈现已解析坐标，不是计算进度。右侧流程轨道借鉴 show_yeah 的光纤与枢纽样式，但只点亮探测、受理、`task.get` 状态、取件和结构上舞台这些真实事件，光点不是推理计算进度。页面若在 test_ui 同源，可通过已有 `/api/proxy` 调用上述协议；gRPC 不能在浏览器里直连。通用 test_ui 控制台仍从运行期方法表列出全部方法，包括产物取件。短脚本隔离夹具上已有 Linux Chrome 点击证据（四种协议探测、按所选协议跟踪已有任务并取件、经 MCP 提交并跟踪到成功），以及 pxdesign 短脚本 HTTP 真任务证据。这不是长期服务上的生产前端，也不是官方 GPU 设计或 v2 runtime。
+填写服务 URL 和 `ptxk_` API key，选择协议后提交或跟踪任务，按属主读取真实产物。三维舞台由现有 TS/Bun → Go embed 构建链打包 Three.js；独立 HTML 仍保留 Canvas 兼容视图。支持切换结构文件、MODEL、链、主链示意/原子和配色，也可仅在浏览器内打开本地 CIF/PDB，不上传。操作、科学边界、原生轨迹能力和验收范围见 [三维结构展示](docs/structure_visualization.md)。
 
 
 HTTP/JSON-RPC `protenix`/`pxdesign` 经鉴权 → SQLite 持久受理 → Policy → 同一 Execute → 独立 CLI 进程组。`task.cancel` 对 queued 返回 `cancelled:true`；对 running 返回 `cancelling:true`，待进程组退出后 `task.get` 才显示 done/cancelled。正常停机也取消在途任务。`policy_cfg.max_workers: 1` 适合单 GPU；不要按 CPU 核数盲目启动大量推理。Protenix 成功还需 CIF/ERR 核验。已完成任务用 `task.artifacts` / `task.artifact` 按属主读取产物（相对路径，base64），不要把结果里的本机路径当成下载 URL。数据库重开恢复、systemd KillMode=control-group 下短脚本主进程 SIGKILL/清组/重启恢复均有实测；裸 SIGKILL、GPU 中断恢复和多实例 HA 未验收。

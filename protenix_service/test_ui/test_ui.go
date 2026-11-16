@@ -197,8 +197,7 @@ func loadWebFS() (fs.FS, error) {
 			return nil, fmt.Errorf("resolve test UI temp directory: %w", err)
 		}
 
-		command := exec.Command("bun", "run", "build")
-		command.Dir = webDir
+		command := exec.Command("bash", "gen_test_ui.sh")
 		command.Env = append(
 			os.Environ(),
 			"TMPDIR="+tempDir,

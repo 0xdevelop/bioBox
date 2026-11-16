@@ -16,8 +16,9 @@ mkdir -p "${bun_tmp_path}" "${bun_cache_path}"
 echo "build test_ui/web"
 (
     cd "${web_path}"
-    TMPDIR="${bun_tmp_path}" \
-    BUN_INSTALL_CACHE_DIR="${bun_cache_path}" \
-    XDG_CACHE_HOME="${bun_cache_path}" \
+    export TMPDIR="${bun_tmp_path}"
+    export BUN_INSTALL_CACHE_DIR="${bun_cache_path}"
+    export XDG_CACHE_HOME="${bun_cache_path}"
+    bun install --frozen-lockfile --ignore-scripts
     bun run build
 )

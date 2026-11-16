@@ -3,6 +3,7 @@ package test_ui
 import (
 	"encoding/json"
 	"io"
+	"io/fs"
 	"net/http"
 	"net/http/httptest"
 	"os/exec"
@@ -49,7 +50,7 @@ func TestFlowDebugPageAndCatalogIncludesArtifactMethods(t *testing.T) {
 		"不用动画伪造进度",
 		"/api/proxy",
 		"PARSE_CIF_BEGIN",
-		"结构入场只是把已解析的真实坐标呈现到画面上，不是计算进度",
+		"结构展示只使用产物坐标，旋转不是折叠过程",
 		"CA 连线只按残基序号，不是化学键验证",
 		"没有结构就不用随机点冒充计算",
 		"任务流协议",
@@ -97,6 +98,16 @@ func TestFlowDebugPageAndCatalogIncludesArtifactMethods(t *testing.T) {
 		"不会回退到 v1 binary",
 		"仍缺授权权重",
 		"cli_cfg.protenix.version_runtimes.v2",
+		"Three.js / WebGL",
+		"最终预测结构 / 不同样本，不是物理折叠过程",
+		"structure-model",
+		"structure-chain",
+		"backboneSegments",
+		"2.5–4.5 Å",
+		"request !== state.artifactRequest",
+		"prefers-reduced-motion",
+		"仅在浏览器内读取，不上传",
+		"state.three.dispose()",
 	} {
 		if !strings.Contains(body, needle) {
 			t.Fatalf("flow_debug.html missing %q", needle)
@@ -105,6 +116,8 @@ func TestFlowDebugPageAndCatalogIncludesArtifactMethods(t *testing.T) {
 	for _, banned := range []string{
 		"Math.random()",
 		"fakeProgress",
+		"const spread =",
+		"atom.x + Math.cos(ang) * spread",
 		"模拟进度百分比",
 		`await callJSONRPC("task.get"`,
 		`await callJSONRPC("task.artifacts"`,
@@ -164,5 +177,49 @@ func TestParseOfficialProtenixMMCIF(t *testing.T) {
 	}
 	if !strings.Contains(string(out), "parse_official_cif ok") {
 		t.Fatalf("unexpected parser output: %s", out)
+	}
+}
+
+func TestStructureSelectionAndStaleResponses(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Fatal("node is required for structure interaction regression")
+	}
+	_, thisFile, _, _ := runtime.Caller(0)
+	script := filepath.Join(filepath.Dir(thisFile), "testdata", "structure_interactions.mjs")
+	out, err := exec.Command(node, script).CombinedOutput()
+	if err != nil {
+		t.Fatalf("structure interaction regression: %v\n%s", err, out)
+	}
+}
+
+func TestEmbeddedThreeStageIsBundledForRelease(t *testing.T) {
+	webFS, err := fs.Sub(embeddedWeb, "web/dist")
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(http.FileServer(http.FS(webFS)))
+	defer server.Close()
+	response, err := http.Get(server.URL + "/structure_stage.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	body, err := io.ReadAll(response.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if response.StatusCode != http.StatusOK || !strings.Contains(response.Header.Get("Content-Type"), "javascript") {
+		t.Fatalf("stage bundle HTTP %d, type %s", response.StatusCode, response.Header.Get("Content-Type"))
+	}
+	for _, needle := range []string{"createStructureStage", "WebGL", "原始产物坐标"} {
+		if !strings.Contains(string(body), needle) {
+			t.Fatalf("embedded stage missing %s", needle)
+		}
+	}
+	for _, needle := range []string{"https://cdn", "unpkg.com", `from"three"`, `from "three"`} {
+		if strings.Contains(string(body), needle) {
+			t.Fatalf("stage must bundle runtime imports, found %s", needle)
+		}
 	}
 }

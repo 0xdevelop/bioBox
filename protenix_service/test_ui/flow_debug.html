@@ -61,6 +61,13 @@
     tr.history-row:hover { background: rgba(94,234,212,.08); }
     tr.history-row.current { outline: 1px solid rgba(94,234,212,.35); background: rgba(94,234,212,.06); }
     #history-rows td:last-child, #history-rows th:last-child { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .three-stage { position: relative; height: 560px; border: 1px solid rgba(94,234,212,.3); border-radius: 12px; overflow: hidden; background: #030a0e; }
+    .three-stage canvas { display: block; width: 100%; height: 100%; touch-action: none; }
+    .three-hud, .three-tooltip { position: absolute; left: 18px; right: 18px; pointer-events: none; color: #a3d7c5; font: 11px/1.8 ui-monospace, monospace; text-shadow: 0 1px 5px #000; }
+    .three-hud { top: 15px; letter-spacing: .08em; }
+    .three-tooltip { bottom: 18px; color: #ffe8ab; }
+    [hidden] { display: none !important; }
+    @media (max-width: 640px) { .three-stage { height: 410px; } }
     a { color: var(--accent-2); }
   </style>
 </head>
@@ -179,11 +186,33 @@
           <thead><tr><th>相对路径</th><th>类型</th><th>大小</th><th></th></tr></thead>
           <tbody id="artifact-rows"><tr><td colspan="4" class="note">提交或跟踪已完成任务后列出（含失败/取消/系统错误），不含 input/</td></tr></tbody>
         </table>
-        <div class="stage-wrap">
+        <p class="note warn">最终预测结构 / 不同样本，不是物理折叠过程；sample 编号与 MODEL 编号都不是时间轴。</p>
+        <div class="row">
+          <div><label for="structure-renderer">渲染器</label><select id="structure-renderer"><option value="three">Three.js / WebGL 三维舞台</option><option value="canvas">兼容 Canvas（独立 HTML 可用）</option></select></div>
+          <div><label for="structure-file">或打开本地 CIF/PDB（仅在浏览器内读取，不上传）</label><input id="structure-file" type="file" accept=".cif,.pdb"></div>
+        </div>
+        <p class="note" id="three-status" aria-live="polite">三维舞台正在加载；失败时保留兼容视图。</p>
+        <button id="three-retry" type="button" hidden>重试三维舞台</button>
+        <label for="structure-select">结构产物（保持服务原始路径；不按文件名推断时间顺序）</label>
+        <select id="structure-select" disabled><option value="">尚未取件</option></select>
+        <div class="row">
+          <div><label for="structure-model">文件内 MODEL（不同构象，非时间帧）</label><select id="structure-model" disabled></select></div>
+          <div><label for="structure-chain">链</label><select id="structure-chain" disabled></select></div>
+          <div><label for="structure-view">表示方式</label><select id="structure-view"><option value="atoms">原子 + Cα 主链示意</option><option value="trace">Cα 主链示意（非化学键）</option></select></div>
+          <div><label for="structure-color">着色</label><select id="structure-color"><option value="chain">按链</option><option value="element">按元素（C/N/O/S/P/H）</option></select></div>
+        </div>
+        <div class="actions">
+          <button id="structure-rotate" type="button" aria-pressed="true">暂停旋转</button>
+          <button id="structure-reset" type="button">重置视角</button>
+        </div>
+        <p class="note" id="structure-summary" aria-live="polite">尚未加载结构</p>
+        <div class="chips" id="structure-legend"></div>
+        <div id="three-stage" class="three-stage" hidden></div>
+        <div class="stage-wrap" id="canvas-stage">
           <canvas id="stage" width="900" height="720" aria-label="真实产物结构舞台"></canvas>
           <div class="stage-caption" id="stage-caption">尚未加载结构产物</div>
         </div>
-        <p class="note" id="cif-note">CIF 原子来自取回的真实文件；若文件没有原子记录，这里会如实显示，不会用随机点冒充。结构入场只是把已解析的真实坐标呈现到画面上，不是计算进度。悬停查看残基与原子名称，坐标仍来自产物，不是估算。</p>
+        <p class="note" id="cif-note">CIF 原子来自取回的真实文件；若文件没有原子记录，这里会如实显示，不会用随机点冒充。结构展示只使用产物坐标，旋转不是折叠过程。悬停查看残基与原子名称，坐标仍来自产物，不是估算。</p>
         <pre class="log" id="log"></pre>
       </section>
     </div>
@@ -207,7 +236,7 @@
       dragging: false,
       lastX: 0,
       lastY: 0,
-      autoRot: true,
+      autoRot: !matchMedia("(prefers-reduced-motion: reduce)").matches,
       hoverAtom: null,
       hitAtoms: [],
       flowHubs: {},
@@ -215,15 +244,20 @@
       cifCount: null,
       stageTaskId: "",
       stagePath: "",
+      structurePaths: [],
+      artifactRequest: 0,
+      three: null,
+      threeLoading: false,
+      pageActive: true,
     };
 
     function maskSecret(text) {
       return String(text ?? "").replace(/ptxk_[A-Za-z0-9._-]+/g, "ptxk_***");
     }
     function log(message, payload) {
-      const time = new Date().toLocaleTimeString("zh-CN", { hour12: false, timeZone: "Asia/Singapore" });
+      const time = new Date().toLocaleTimeString("zh-CN", { hour12: false, timeZone: "Asia/Shanghai" });
       const extra = payload === undefined ? "" : " " + maskSecret(typeof payload === "string" ? payload : JSON.stringify(payload, null, 2));
-      $("log").textContent += `[${time} Asia/Singapore] ${maskSecret(message)}${extra}\n`;
+      $("log").textContent += `[${time} Asia/Shanghai] ${maskSecret(message)}${extra}\n`;
       $("log").scrollTop = $("log").scrollHeight;
     }
     function generateId() {
@@ -408,7 +442,7 @@
     }
     function addTimeline(text) {
       const item = document.createElement("li");
-      const time = new Date().toLocaleTimeString("zh-CN", { hour12: false, timeZone: "Asia/Singapore" });
+      const time = new Date().toLocaleTimeString("zh-CN", { hour12: false, timeZone: "Asia/Shanghai" });
       item.textContent = time + "  " + text;
       $("timeline").appendChild(item);
     }
@@ -443,62 +477,129 @@
     }
 
     // PARSE_CIF_BEGIN
+    // Supports official row-oriented mmCIF output and fixed-width PDB.
+    // Only primary alt locations (blank/A/1) are shown; MODELs stay separate.
     function parseCIF(text) {
       const atoms = [];
       const lines = String(text).split(/\r?\n/);
-      let mmcif = false;
-      let headers = [];
-      const resetLoop = () => { mmcif = false; headers = []; };
-      const colOf = (idx, name) => {
-        const i = idx[name];
-        return i == null ? "" : i;
+      let headers = [], model = "1", segment = 0;
+      const clean = (v) => !v || v === "." || v === "?" ? "" : v;
+      const push = (a) => {
+        if ([a.x, a.y, a.z].every(Number.isFinite) && (!a.alt || a.alt === "A" || a.alt === "1") && a.occupancy !== 0) atoms.push(a);
       };
       for (const line of lines) {
-        const trimmed = line.trim();
-        if (trimmed === "loop_") { resetLoop(); continue; }
-        if (trimmed.startsWith("_atom_site.")) {
-          mmcif = true;
-          headers.push(trimmed);
+        const t = line.trim();
+        if (t === "loop_" || t.startsWith("#")) { headers = []; continue; }
+        if (t.startsWith("_atom_site.")) { headers.push(t.split(/\s+/)[0]); continue; }
+        if (headers.length && t && !t.startsWith("_")) {
+          const cols = (t.match(/'(?:[^']*)'|"(?:[^"]*)"|\S+/g) || []).map((v) => v.replace(/^(['"])(.*)\1$/, "$2"));
+          if (cols.length !== headers.length) continue;
+          const row = Object.fromEntries(headers.map((h, i) => [h.slice(11), clean(cols[i])]));
+          const seq = row.label_seq_id || row.auth_seq_id;
+          push({ x: Number(row.Cartn_x || NaN), y: Number(row.Cartn_y || NaN), z: Number(row.Cartn_z || NaN),
+            element: row.type_symbol || "C", name: row.label_atom_id || row.auth_atom_id || "",
+            seq: seq ? Number(seq) : null, chain: row.label_asym_id || row.auth_asym_id || "",
+            residue: row.label_comp_id || row.auth_comp_id || "", insertion: row.pdbx_PDB_ins_code || "",
+            model: row.pdbx_PDB_model_num || "1", alt: row.label_alt_id || "", segment: 0,
+            occupancy: row.occupancy ? Number(row.occupancy) : 1 });
           continue;
         }
-        if (mmcif && headers.length) {
-          if (!trimmed || trimmed.startsWith("#") || trimmed.startsWith("data_") || trimmed.startsWith("save_") || trimmed.startsWith("loop_") || (trimmed.startsWith("_") && !trimmed.startsWith("_atom_site."))) {
-            resetLoop();
-            // fall through in case this line starts a new section
-          } else {
-            const cols = trimmed.split(/\s+/);
-            if (cols.length >= headers.length) {
-              const idx = Object.fromEntries(headers.map((name, i) => [name, i]));
-              const x = parseFloat(cols[colOf(idx, "_atom_site.Cartn_x")]);
-              const y = parseFloat(cols[colOf(idx, "_atom_site.Cartn_y")]);
-              const z = parseFloat(cols[colOf(idx, "_atom_site.Cartn_z")]);
-              const element = cols[colOf(idx, "_atom_site.type_symbol")] || "C";
-              const name = cols[colOf(idx, "_atom_site.label_atom_id")] || "";
-              const seq = Number(cols[colOf(idx, "_atom_site.label_seq_id")]);
-              const chain = cols[colOf(idx, "_atom_site.label_asym_id")] || "";
-              if (Number.isFinite(x) && Number.isFinite(y) && Number.isFinite(z)) {
-                atoms.push({ x, y, z, element, name, seq: Number.isFinite(seq) ? seq : 0, chain });
-              }
-            }
-            continue;
-          }
-        }
-        if (line.startsWith("ATOM") || line.startsWith("HETATM")) {
-          const x = parseFloat(line.slice(30, 38));
-          const y = parseFloat(line.slice(38, 46));
-          const z = parseFloat(line.slice(46, 54));
-          const element = (line.slice(76, 78).trim() || line.slice(12, 16).trim()[0] || "C");
-          const name = line.slice(12, 16).trim();
-          const seq = Number(line.slice(22, 26));
-          const chain = line.slice(21, 22).trim();
-          if (Number.isFinite(x) && Number.isFinite(y) && Number.isFinite(z)) {
-            atoms.push({ x, y, z, element, name, seq: Number.isFinite(seq) ? seq : 0, chain });
-          }
-        }
+        if (t.startsWith("_")) { headers = []; continue; }
+        if (line.startsWith("MODEL ")) { model = line.slice(10, 14).trim() || "1"; segment = 0; continue; }
+        if (line.startsWith("TER")) { segment++; continue; }
+        if (!line.startsWith("ATOM  ") && !line.startsWith("HETATM")) continue;
+        push({ x: parseFloat(line.slice(30, 38)), y: parseFloat(line.slice(38, 46)), z: parseFloat(line.slice(46, 54)),
+          element: line.slice(76, 78).trim() || line.slice(12, 16).trim()[0] || "C",
+          name: line.slice(12, 16).trim(), seq: Number(line.slice(22, 26)), chain: line.slice(21, 22).trim(),
+          residue: line.slice(17, 20).trim(), insertion: line.slice(26, 27).trim(), model,
+          alt: line.slice(16, 17).trim(), segment, occupancy: parseFloat(line.slice(54, 60)) });
       }
       return atoms;
     }
+    function backboneSegments(atoms) {
+      const amino = new Set("ALA ARG ASN ASP CYS GLN GLU GLY HIS ILE LEU LYS MET PHE PRO SER THR TRP TYR VAL MSE".split(" "));
+      const ca = atoms.filter((a) => a.name === "CA" && a.element === "C" && amino.has(a.residue));
+      const links = [], seen = new Set();
+      let rejected = 0;
+      for (let i = 1; i < ca.length; i++) {
+        const a = ca[i - 1], b = ca[i];
+        if (a.model !== b.model || a.chain !== b.chain || a.segment !== b.segment || a.insertion || b.insertion || b.seq !== a.seq + 1) continue;
+        const key = [b.model, b.chain, b.segment, b.seq].join("|");
+        if (seen.has(key)) continue;
+        seen.add(key);
+        const distance = Math.hypot(b.x - a.x, b.y - a.y, b.z - a.z);
+        if (distance < 2.5 || distance > 4.5) { rejected++; continue; }
+        links.push([a, b]);
+      }
+      return { ca, links, rejected };
+    }
+    function centerAtoms(atoms) {
+      if (!atoms.length) return [];
+      const center = atoms.reduce((v, a) => [v[0] + a.x / atoms.length, v[1] + a.y / atoms.length, v[2] + a.z / atoms.length], [0, 0, 0]);
+      return atoms.map((a) => ({ ...a, x: a.x - center[0], y: a.y - center[1], z: a.z - center[2], ox: a.x, oy: a.y, oz: a.z }));
+    }
     // PARSE_CIF_END
+    const chainPalette = ["#5eead4", "#fbbf24", "#c4b5fd", "#fb7185", "#7dd3fc", "#bef264"];
+    function chainColor(chain) {
+      const chains = [...new Set(state.atoms.map((a) => a.chain))];
+      return chainPalette[Math.max(0, chains.indexOf(chain)) % chainPalette.length];
+    }
+    function atomColor(atom) {
+      return $("structure-color").value === "element" ? (elementColor[atom.element] || "#94a3b8") : chainColor(atom.chain);
+    }
+    function setOptions(id, values, label) {
+      const el = $(id);
+      el.replaceChildren();
+      values.forEach((value) => { const o = document.createElement("option"); o.value = value; o.textContent = label(value); el.appendChild(o); });
+      el.disabled = !values.length;
+    }
+    function syncThree() {
+      if (!state.three) return;
+      const atoms = stageAtoms(), backbone = backboneSegments(atoms);
+      const indexes = new Map(atoms.map((a, i) => [a, i]));
+      try {
+        state.three.update({ atoms, links: backbone.links.map(([a, b]) => [indexes.get(a), indexes.get(b)]), colors: atoms.map(atomColor), trace: $("structure-view").value === "trace", traceIndices: backbone.ca.map((a) => indexes.get(a)), label: (state.stageTaskId ? "TASK " + state.stageTaskId : "本地文件 / 来源未验证") + " / " + state.stagePath, rotating: state.autoRot });
+      } catch (err) { failThree(err.message); }
+    }
+    function failThree(message) {
+      if (state.three) { state.three.dispose(); state.three = null; }
+      $("structure-renderer").value = "canvas";
+      $("three-stage").hidden = true; $("canvas-stage").hidden = false;
+      $("three-status").textContent = "三维舞台不可用：" + message + "。已保留兼容视图，无模拟结构。";
+      $("three-retry").hidden = false;
+    }
+    async function loadThree() {
+      if (state.threeLoading || state.three) return;
+      state.threeLoading = true;
+      try {
+        // Bundled by the existing gen_test_ui.sh → Bun → Go embed chain. No CDN.
+        const module = await import("/structure_stage.js");
+        if (!state.pageActive) return;
+        state.three = module.createStructureStage($("three-stage"), failThree);
+        $("three-status").textContent = "Three.js 三维舞台已就绪 · 左键旋转 / 滚轮缩放 / 右键或方向键平移 · 环线和星点仅为视觉装饰。";
+        $("three-retry").hidden = true;
+        $("structure-renderer").value = "three";
+        $("three-stage").hidden = false; $("canvas-stage").hidden = true;
+        state.three.setVisible(true); syncThree();
+      } catch (err) { failThree(err.message || "模块加载失败"); }
+      finally { state.threeLoading = false; }
+    }
+    function updateStructureView(resetModels) {
+      state.hoverAtom = null;
+      state.hitAtoms = [];
+      if (resetModels) setOptions("structure-model", [...new Set(state.atoms.map((a) => a.model))], (v) => "MODEL " + v);
+      const inModel = state.atoms.filter((a) => a.model === $("structure-model").value);
+      const oldChain = $("structure-chain").value;
+      setOptions("structure-chain", ["*", ...new Set(inModel.map((a) => a.chain))], (v) => v === "*" ? "所有链" : (v || "（空链名）"));
+      if ([...$("structure-chain").options].some((o) => o.value === oldChain)) $("structure-chain").value = oldChain;
+      const atoms = stageAtoms(), backbone = backboneSegments(atoms);
+      const residues = new Set(atoms.filter((a) => a.seq != null).map((a) => [a.chain, a.segment, a.seq, a.insertion].join("|")));
+      $("structure-summary").textContent = state.stagePath ? (state.stagePath + " · MODEL " + $("structure-model").value + " · " + atoms.length + " 原子 · " + residues.size + " 残基编号 · Cα 连线 " + backbone.links.length + " 条" + (backbone.rejected ? " · 警告：" + backbone.rejected + " 处相邻 Cα 距离超出 2.5–4.5 Å，已断开；不能据此当作有效折叠" : "") + " · 原始坐标单位 Å，未做结构质量或化学键验证") : "尚未加载结构";
+      $("structure-legend").replaceChildren();
+      const values = $("structure-color").value === "chain" ? [...new Set(atoms.map((a) => a.chain))] : [...new Set(atoms.map((a) => a.element))];
+      syncThree();
+      values.forEach((v) => { const chip = document.createElement("span"); chip.className = "chip"; chip.style.color = $("structure-color").value === "chain" ? chainColor(v) : (elementColor[v] || "#94a3b8"); chip.textContent = $("structure-color").value === "chain" ? "链 " + (v || "（空）") : v; $("structure-legend").appendChild(chip); });
+    }
     const elementColor = { C: "#d7e3f4", N: "#7dd3fc", O: "#fb7185", S: "#fbbf24", P: "#f0abfc", H: "#94a3b8" };
 
     const FLOW_STEPS = [
@@ -537,6 +638,7 @@
       if (t >= 1) return text;
       const glyphs = "ABCDEFGHJKLMNPQRSTUVWXYZ0123456789";
       let out = "";
+      if (matchMedia("(prefers-reduced-motion: reduce)").matches) return text;
       const shown = Math.floor(text.length * Math.max(0, t));
       for (let i = 0; i < text.length; i++) {
         if (i < shown) out += text[i];
@@ -567,7 +669,7 @@
         ctx.stroke();
       }
       state.flowPackets = state.flowPackets.filter((pkt) => now - pkt.start < pkt.dur + 80);
-      state.flowPackets.forEach((pkt) => {
+      (matchMedia("(prefers-reduced-motion: reduce)").matches ? [] : state.flowPackets).forEach((pkt) => {
         const i0 = FLOW_STEPS.findIndex((step) => step.id === pkt.from);
         const i1 = FLOW_STEPS.findIndex((step) => step.id === pkt.to);
         if (i0 < 0 || i1 < 0) return;
@@ -598,7 +700,7 @@
         const age = lit ? Math.min(1, (now - lit.at) / 400) : 1;
         ctx.save();
         ctx.translate(p.x, p.y);
-        ctx.rotate(now * 0.00055 * (lit ? 1 : 0.2));
+        ctx.rotate(matchMedia("(prefers-reduced-motion: reduce)").matches ? 0 : now * 0.00055 * (lit ? 1 : 0.2));
         ctx.strokeStyle = color;
         ctx.lineWidth = lit ? 1.8 : 1;
         ctx.beginPath();
@@ -644,14 +746,14 @@
       const z1 = atom.x * sinY + atom.z * cosY;
       const y2 = atom.y * cosX - z1 * sinX;
       const z2 = atom.y * sinX + z1 * cosX;
-      return { x: x1, y: y2, z: z2, element: atom.element, name: atom.name || "", seq: atom.seq || 0, chain: atom.chain || "", ox: atom.ox ?? atom.x, oy: atom.oy ?? atom.y, oz: atom.oz ?? atom.z };
+      return { ...atom, x: x1, y: y2, z: z2, element: atom.element, name: atom.name || "", seq: atom.seq || 0, chain: atom.chain || "", ox: atom.ox ?? atom.x, oy: atom.oy ?? atom.y, oz: atom.oz ?? atom.z };
     }
     function drawBackdrop(ctx, canvas, now) {
       const w = canvas.width, h = canvas.height;
       ctx.fillStyle = "#05080f";
       ctx.fillRect(0, 0, w, h);
       const cx = w / 2, cy = h / 2;
-      const pulse = 0.5 + 0.5 * Math.sin(now * 0.00115);
+      const pulse = matchMedia("(prefers-reduced-motion: reduce)").matches ? 0.5 : 0.5 + 0.5 * Math.sin(now * 0.00115);
       const running = state.runStatus === "running";
       const glow = running ? "94,234,212" : "125,211,252";
       for (let i = 0; i < 6; i++) {
@@ -671,7 +773,7 @@
     function stageAtoms() {
       if (!state.atoms.length) return [];
       if (state.stageTaskId && state.stageTaskId !== state.taskId) return [];
-      return state.atoms;
+      return state.atoms.filter((a) => a.model === $("structure-model").value && ($("structure-chain").value === "*" || a.chain === $("structure-chain").value));
     }
     function drawAtoms() {
       const canvas = $("stage");
@@ -693,62 +795,42 @@
         state.hoverAtom = null;
         return;
       }
-      if (state.autoRot && !state.dragging) state.rotY += 0.006;
+      if (state.autoRot && !state.dragging && !matchMedia("(prefers-reduced-motion: reduce)").matches) state.rotY += 0.006;
       const cosY = Math.cos(state.rotY), sinY = Math.sin(state.rotY);
       const cosX = Math.cos(state.rotX), sinX = Math.sin(state.rotX);
       const cx = canvas.width / 2, cy = canvas.height / 2;
-      const arrive = state.arriveAt ? Math.max(0, Math.min(1, (now - state.arriveAt) / 1400)) : 1;
-      const ease = 1 - Math.pow(1 - arrive, 3);
+      // Coordinates are never exploded/interpolated: rotation changes only the camera.
+      const backbone = backboneSegments(atoms);
+      const visible = $("structure-view").value === "trace" ? backbone.ca : atoms;
+      const centered = centerAtoms(atoms);
       let maxR = 1;
-      const centered = atoms.map((atom, index) => {
-        const spread = (1 - ease) * (40 + unitHash(index, 1) * 80);
-        const ang = unitHash(index, 2) * Math.PI * 2;
-        const x = atom.x + Math.cos(ang) * spread;
-        const y = atom.y + (unitHash(index, 3) - 0.5) * spread;
-        const z = atom.z + Math.sin(ang) * spread;
-        const projected = projectAtom({ x, y, z, element: atom.element, name: atom.name, seq: atom.seq, chain: atom.chain, ox: atom.x, oy: atom.y, oz: atom.z }, cosY, sinY, cosX, sinX);
-        maxR = Math.max(maxR, Math.hypot(projected.x, projected.y, projected.z));
-        return projected;
-      });
+      centered.forEach((a) => { maxR = Math.max(maxR, Math.hypot(a.x, a.y, a.z)); });
       const scale = Math.min(canvas.width, canvas.height) * 0.38 * state.zoom / maxR;
-      const cas = centered.filter((atom) => atom.name === "CA").sort((a, b) => (a.chain || "").localeCompare(b.chain || "") || a.seq - b.seq);
-      ctx.lineWidth = 1.4;
-      for (let i = 1; i < cas.length; i++) {
-        if (cas[i].seq && cas[i - 1].seq && cas[i].seq === cas[i - 1].seq + 1 && (cas[i].chain || "") === (cas[i - 1].chain || "")) {
-          const tone = unitHash((cas[i].chain || "A").charCodeAt(0), 4);
-          const g = Math.round(180 + tone * 60);
-          ctx.strokeStyle = "rgba(94," + g + ",212," + (0.18 + 0.25 * ease) + ")";
-          ctx.beginPath();
-          ctx.moveTo(cx + cas[i - 1].x * scale, cy + cas[i - 1].y * scale);
-          ctx.lineTo(cx + cas[i].x * scale, cy + cas[i].y * scale);
-          ctx.stroke();
-        }
+      const projected = centered.map((a) => projectAtom(a, cosY, sinY, cosX, sinX));
+      const byAtom = new Map(atoms.map((a, i) => [a, projected[i]]));
+      ctx.lineWidth = $("structure-view").value === "trace" ? 3 : 1.4;
+      for (const [a, b] of backbone.links) {
+        const pa = byAtom.get(a), pb = byAtom.get(b);
+        ctx.strokeStyle = atomColor(b);
+        ctx.beginPath(); ctx.moveTo(cx + pa.x * scale, cy + pa.y * scale); ctx.lineTo(cx + pb.x * scale, cy + pb.y * scale); ctx.stroke();
       }
-      centered.slice().sort((a, b) => a.z - b.z).forEach((atom) => {
+      const points = visible.map((a) => byAtom.get(a)).sort((a, b) => a.z - b.z);
+      points.forEach((atom) => {
         const depth = (atom.z / maxR + 1) / 2;
         const r = 2.2 + depth * 3.6;
-        ctx.beginPath();
-        ctx.fillStyle = elementColor[atom.element] || "#5eead4";
-        ctx.globalAlpha = 0.35 + depth * 0.65;
-        ctx.shadowColor = ctx.fillStyle;
-        ctx.shadowBlur = 8 * depth;
-        ctx.arc(cx + atom.x * scale, cy + atom.y * scale, r, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.shadowBlur = 0;
-        ctx.globalAlpha = 1;
+        ctx.beginPath(); ctx.fillStyle = atomColor(atom); ctx.globalAlpha = 0.4 + depth * 0.6;
+        ctx.arc(cx + atom.x * scale, cy + atom.y * scale, r, 0, Math.PI * 2); ctx.fill(); ctx.globalAlpha = 1;
       });
-      state.hitAtoms = centered.slice().sort((a, b) => a.z - b.z).map((atom) => {
-        const depth = (atom.z / maxR + 1) / 2;
-        return { sx: cx + atom.x * scale, sy: cy + atom.y * scale, r: 2.2 + depth * 3.6, atom };
-      });
+      state.hitAtoms = points.map((atom) => ({ sx: cx + atom.x * scale, sy: cy + atom.y * scale, r: 2.2 + (atom.z / maxR + 1) * 1.8, atom }));
+      const cas = backbone.ca;
       const hover = state.hoverAtom;
       let caption = "真实原子 " + atoms.length + " 个（由产物坐标绘制"
         + (cas.length ? "；CA 连线只按残基序号，不是化学键验证" : "")
-        + (arrive < 1 ? "；入场是把已解析坐标放到画面上，不是计算进度" : "")
+        + "；最终结构，旋转不是折叠"
         + "）。拖拽旋转，滚轮缩放。悬停查看残基。";
       if (hover) {
-        caption = "残基 " + (hover.seq || "?") + (hover.chain ? ("/" + hover.chain) : "") + "  " + (hover.name || hover.element)
-          + "  " + hover.element + "  (" + hover.ox.toFixed(2) + ", " + hover.oy.toFixed(2) + ", " + hover.oz.toFixed(2) + ")，坐标来自产物。";
+        caption = (hover.residue || "残基") + " " + (hover.seq || "?") + (hover.chain ? ("/" + hover.chain) : "") + "  " + (hover.name || hover.element)
+          + "  " + hover.element + "  (" + hover.ox.toFixed(2) + ", " + hover.oy.toFixed(2) + ", " + hover.oz.toFixed(2) + ") Å，原始坐标来自产物。";
         const mark = state.hitAtoms.find((hit) => hit.atom === hover) || state.hitAtoms.find((hit) => hit.atom.name === hover.name && hit.atom.seq === hover.seq && hit.atom.chain === hover.chain);
         if (mark) {
           ctx.beginPath();
@@ -768,6 +850,7 @@
       canvas.addEventListener("pointerdown", (event) => {
         state.dragging = true;
         state.autoRot = false;
+        $("structure-rotate").setAttribute("aria-pressed", "false"); $("structure-rotate").textContent = "继续旋转";
         state.lastX = event.clientX;
         state.lastY = event.clientY;
         canvas.setPointerCapture(event.pointerId);
@@ -802,7 +885,11 @@
         state.zoom = Math.max(0.35, Math.min(4, next));
       }, { passive: false });
     }
-    function tick() { drawFlowRail(); drawAtoms(); requestAnimationFrame(tick); }
+    let animationFrame = 0;
+    function tick() {
+      if (!document.hidden) { drawFlowRail(); if (!$("canvas-stage").hidden) drawAtoms(); }
+      animationFrame = requestAnimationFrame(tick);
+    }
 
     function resetTaskView(taskId, keepHubIds) {
       if (state.pollTimer) {
@@ -816,6 +903,14 @@
       state.taskId = taskId || "";
       state.lastStatusKey = "";
       state.atoms = [];
+      state.artifactRequest++;
+      if (state.three) state.three.clear();
+      state.structurePaths = [];
+      setOptions("structure-select", [], (v) => v);
+      setOptions("structure-model", [], (v) => v);
+      setOptions("structure-chain", [], (v) => v);
+      $("structure-summary").textContent = "尚未加载结构";
+      $("structure-legend").replaceChildren();
       state.stageTaskId = "";
       state.stagePath = "";
       state.runStatus = "";
@@ -835,7 +930,7 @@
       $("artifact-rows").innerHTML = '<tr><td colspan="4" class="note">尚未取回当前任务产物</td></tr>';
       $("cif-note").textContent = state.taskId
         ? ("舞台已清空。当前跟踪 " + state.taskId + "，不会继续显示上一任务的原子。")
-        : "CIF 原子来自取回的真实文件；若文件没有原子记录，这里会如实显示，不会用随机点冒充。结构入场只是把已解析的真实坐标呈现到画面上，不是计算进度。悬停查看残基与原子名称，坐标仍来自产物，不是估算。";
+        : "CIF 原子来自取回的真实文件；若文件没有原子记录，这里会如实显示，不会用随机点冒充。结构展示只使用产物坐标，旋转不是折叠过程。悬停查看残基与原子名称，坐标仍来自产物，不是估算。";
       highlightHistory(state.taskId);
     }
     async function loadArtifacts(taskId, options) {
@@ -854,14 +949,16 @@
         markFlow("artifacts", "wait", "task.artifacts 空清单", state.flowHubs.done ? "done" : "");
         return;
       }
+      state.structurePaths = items.filter((item) => item.kind === "cif" || item.kind === "pdb" || /\.(cif|pdb)$/i.test(item.path || ""));
+      setOptions("structure-select", state.structurePaths.map((a) => a.path), (v) => "最终结果 / " + v);
       items.forEach((item) => {
         const tr = document.createElement("tr");
-        tr.innerHTML = `<td>${item.path}</td><td>${item.kind || ""}</td><td>${item.size || ""}</td>`;
+        [item.path, item.kind || "", item.size || ""].forEach((v) => { const cell = document.createElement("td"); cell.textContent = v; tr.appendChild(cell); });
         const td = document.createElement("td");
         const btn = document.createElement("button");
         btn.type = "button";
         btn.textContent = "读取";
-        btn.addEventListener("click", () => fetchArtifact(taskId, item.path, item.kind));
+        btn.addEventListener("click", () => fetchArtifact(taskId, item.path, item.kind).catch((err) => log("取件失败", err.message)));
         td.appendChild(btn);
         tr.appendChild(td);
         body.appendChild(tr);
@@ -872,8 +969,16 @@
       else if (opts.autoFetch === "prefer") await fetchArtifact(taskId, items[0].path, items[0].kind);
     }
     async function fetchArtifact(taskId, path, kind) {
+      if (taskId !== state.taskId) return;
+      const request = ++state.artifactRequest;
+      if (state.three) state.three.clear();
+      state.atoms = []; state.stagePath = ""; state.hoverAtom = null; state.hitAtoms = [];
+      setOptions("structure-model", [], (v) => v); setOptions("structure-chain", [], (v) => v);
+      $("structure-summary").textContent = "正在读取 " + path;
+      $("structure-legend").replaceChildren();
+      if (state.structurePaths.some((a) => a.path === path)) $("structure-select").value = path;
       const got = await callSelected("task.artifact", { task_id: taskId, path }, true);
-      if (taskId !== state.taskId) {
+      if (taskId !== state.taskId || request !== state.artifactRequest) {
         log("忽略过期产物 " + path, { task_id: taskId, current: state.taskId });
         return;
       }
@@ -885,11 +990,12 @@
         state.atoms = parseCIF(bytes);
         state.stageTaskId = taskId;
         state.stagePath = path;
-        state.arriveAt = performance.now();
-        state.autoRot = true;
+        state.autoRot = !matchMedia("(prefers-reduced-motion: reduce)").matches;
+        $("structure-rotate").setAttribute("aria-pressed", String(state.autoRot)); $("structure-rotate").textContent = state.autoRot ? "暂停旋转" : "继续旋转";
+        updateStructureView(true);
         markFlow("structure", state.atoms.length ? "ok" : "wait", state.atoms.length ? "task.artifact" : "无原子", state.flowHubs.artifacts ? "artifacts" : "");
         $("cif-note").textContent = state.atoms.length
-          ? ("已从 " + path + " 解析 " + state.atoms.length + " 个原子，属于 task_id=" + taskId + "。这是服务返回的文件，不是随机结构。入场动画只移动这些真实坐标。悬停查看残基。")
+          ? ("已从 " + path + " 解析 " + state.atoms.length + " 个原子，属于 task_id=" + taskId + "。这是服务返回的文件，不是随机结构。仅展示最终结果，不把不同样本连成折叠动画；坐标不做插值。悬停查看残基。")
           : (path + " 没有 ATOM/_atom_site 坐标，已如实显示为空，未用随机点填充。");
       } else {
         $("cif-note").textContent = path + " 不是结构文件。预览：\n" + bytes.slice(0, 400);
@@ -998,6 +1104,7 @@
         try {
           const result = await callSelected("task.get", { task_id: taskId }, true);
           const task = result.task || result;
+          if (taskId !== state.taskId) return;
           renderStatus(task);
           if (task.run_status === "done") {
             clearInterval(state.pollTimer);
@@ -1128,7 +1235,40 @@
       } catch (_) {}
       $("host-note").innerHTML = "未检测到 test_ui 代理。请把本页放到服务的 <code>/flow_debug.html</code> 打开，或接受浏览器可能拦截跨源 JSON-RPC。gRPC 只能经 test_ui 代理。";
     }
+    $("structure-select").addEventListener("change", () => {
+      const item = state.structurePaths.find((a) => a.path === $("structure-select").value);
+      if (item) fetchArtifact(state.taskId, item.path, item.kind).catch((err) => { $("structure-summary").textContent = "读取失败：" + err.message; log("取件失败", err.message); });
+    });
+    ["structure-model", "structure-chain", "structure-view", "structure-color"].forEach((id) => $(id).addEventListener("change", () => updateStructureView(false)));
+    $("structure-rotate").addEventListener("click", () => { state.autoRot = !state.autoRot; $("structure-rotate").setAttribute("aria-pressed", String(state.autoRot)); $("structure-rotate").textContent = state.autoRot ? "暂停旋转" : "继续旋转"; if (state.three) state.three.pause(!state.autoRot); });
+    $("structure-reset").addEventListener("click", () => { state.rotY = 0.35; state.rotX = 0.28; state.zoom = 1; state.hoverAtom = null; if (state.three) state.three.reset(); });
+    $("structure-renderer").addEventListener("change", () => {
+      const three = $("structure-renderer").value === "three";
+      if (three && !state.three) { loadThree(); return; }
+      $("three-stage").hidden = !three; $("canvas-stage").hidden = three;
+      if (state.three) state.three.setVisible(three);
+    });
+    $("three-retry").addEventListener("click", loadThree);
+    $("three-stage").addEventListener("structure-interaction", () => { state.autoRot = false; $("structure-rotate").setAttribute("aria-pressed", "false"); $("structure-rotate").textContent = "继续旋转"; });
+    $("structure-file").addEventListener("change", async () => {
+      const file = $("structure-file").files[0];
+      if (!file) return;
+      if (file.size > 16 * 1024 * 1024) { $("structure-summary").textContent = "本地文件上限 16 MiB，请选择较小结构"; return; }
+      resetTaskView("");
+      const request = state.artifactRequest;
+      try {
+        const text = await file.text();
+        if (request !== state.artifactRequest) return;
+        state.atoms = parseCIF(text); state.stagePath = file.name;
+        updateStructureView(true);
+        $("cif-note").textContent = "本地文件 " + file.name + "，仅在浏览器读取，未上传。来源未验证，不能称为服务预测或真实折叠轨迹。只显示 primary alt 位置（空/A/1）；未做结构质量验证。";
+      } catch (err) { $("structure-summary").textContent = "本地文件读取失败：" + err.message; }
+    });
+    window.addEventListener("pagehide", () => { state.pageActive = false; cancelAnimationFrame(animationFrame); if (state.pollTimer) clearInterval(state.pollTimer); if (state.three) { state.three.dispose(); state.three = null; } });
+    window.addEventListener("pageshow", (event) => { if (event.persisted) { state.pageActive = true; tick(); loadThree(); } });
+    $("structure-rotate").setAttribute("aria-pressed", String(state.autoRot)); $("structure-rotate").textContent = state.autoRot ? "暂停旋转" : "继续旋转";
     bindStage();
+    loadThree();
     boot();
     tick();
   })();

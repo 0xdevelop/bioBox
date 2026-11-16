@@ -11,6 +11,7 @@ const result = await Bun.build({
   entrypoints: [
     join(projectDir, "src", "index.ts"),
     join(projectDir, "src", "docs_api.ts"),
+    join(projectDir, "src", "structure_stage.ts"),
   ],
   outdir: outputDir,
   target: "browser",

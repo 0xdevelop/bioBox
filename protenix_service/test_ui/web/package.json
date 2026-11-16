@@ -4,5 +4,12 @@
   "type": "module",
   "scripts": {
     "build": "bun run scripts/build.ts"
+  },
+  "dependencies": {
+    "three": "0.187.0"
+  },
+  "devDependencies": {
+    "@types/three": "0.187.0",
+    "typescript": "7.0.2"
   }
 }
