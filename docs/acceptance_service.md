@@ -1,3 +1,16 @@
+# 最新状态：Linux Chrome Three.js / WebGL 交互验收（2026-11-16 19:06 Asia/Shanghai UTC+8）
+
+本节补上 `c90071d` 嵌入真实坐标 Three.js 舞台后，仍缺 Linux 真浏览器 WebGL 交互证据的缺口。这是短生命周期隔离夹具上的 Linux Google Chrome 点击证据，**不是**官方 PXDesign GPU 设计、官方 v2 推理、长期常驻部署或物理折叠回放，也不是 Playwright MCP / ego-browser。
+
+- 浏览器层：`ego-browser` 仍不在 PATH；未改 `~/.cursor/mcp.json`，也未安装 Playwright MCP。按已授权路径，使用本机已有的 `playwright-core` 1.65.1 驱动已安装的 Google Chrome 157.0.8103.38（headless、独立上下文，`executablePath=/usr/bin/google-chrome-stable`，`--use-gl=angle --use-angle=swiftshader`）。不使用用户 Chrome 配置目录，不抢占桌面会话。实测 WebGL2 上下文可用，调试渲染器为 ANGLE / SwiftShader（Vulkan 1.3.0）。
+- 第一次点击（19:03）失败：同源 hold 夹具只挂了 `/flow_debug.html` 与代理，没有提供 `/structure_stage.js`，页面回退兼容 Canvas，提示 `Failed to fetch dynamically imported module`。该截图保留在 `tmp/handoff-followup/phase4-threejs-browser-20261116/shots/99-failure.png`，不能当作 Three.js 通过。本轮把与正式 test_ui 相同的静态资源处理挂到 live protocol 夹具；`GET /structure_stage.js` 为 HTTP 200、`text/javascript`、584892 字节，且含 `createStructureStage`。
+- 第二次点击（19:05:44–19:06:13，`result.json` `ok=true`）：同源启动后三维舞台就绪；八个协议探测芯片全部成功。经 JSON-RPC 历史点开短脚本成功任务 `6e28f679-9419-4a2a-9146-cee78cb9ab91`，取回 `output/pred.cif`（17899 字节，官方 20 残基烟测 CIF，sha256 `19ce6300c6e452f512d120117376d6b22c58f768d83ad1483451c6d6f859f3ac`），Three.js 舞台绘制 168 个真实原子、0 条 Cα 连线，并显示「19 处相邻 Cα 距离超出 2.5–4.5 Å，已断开；不能据此当作有效折叠」。HUD 标明「最终结构，非物理折叠」。`data-draw-calls=7`，`data-geometries=7`，`data-frame-ms=33.40`。
+- 悬停显示「链 A / SER 16 / C (C) · 2.953, -2.474, 0.529 Å · 原始产物坐标」，与该烟测 CIF 中 SER 16 的 `C` 原子坐标一致。左键拖拽旋转后画面改变（与旋转前舞台截图 RMS 6.250），自动旋转按钮变为「继续旋转」；滚轮缩放画面改变（RMS 5.496）；重置视角与 Cα 主链示意切换仍留在 Three.js 舞台。窗口缩放后画布仍为现场 WebGL（978×558，draw_calls=8）。
+- 本地打开官方示例（仅浏览器内解析，不上传，不能称为服务预测）：`2lwu.cif` 有 20 个 MODEL，从 MODEL 1 切换到 MODEL 2（均为 211 原子 / 14 条 Cα 连线，画面 RMS 4.798）；`7pzb.pdb` 4698 原子 / 6 条链，从全部链切换到链 A（1775 原子 / 226 条 Cα 连线，画面 RMS 18.909），并切换为按元素着色。
+- 捕获到的 `127.0.0.1` 响应 15 个，全部 HTTP 200，其中包括作为 script 加载的 `/structure_stage.js`。无 page error。控制台仅有密码框未包在 form 中的 verbose 提示。签发的 `ptxk_` 文件权限 0600，验毕删除，未写入 `result.json`。
+- 已测：`go test ./test_ui` 与 `go build` 退出码 0。原始记录：`tmp/handoff-followup/phase4-threejs-browser-20261116/`（SUMMARY.txt、result.json、shots/；不含密钥）。夹具为隔离 SQLite + 短脚本复制烟测 CIF；未跑 GPU 推理，未 enable 服务单元，未装 MySQL/Redis，`execute_timeout_seconds` 保持 0，未改 `build_srcs`、三仓、show_yeah，也未把旧 Canvas 截图当作本轮证据。
+- 本轮未测 `prefers-reduced-motion`、强制 WebGL 上下文丢失、官方 PXDesign GPU 设计、未授权 v2 权重与推理，也未做正式常驻部署。仍无中间构象回放。
+
 # 最新状态：纠正调试页与 README 过时的 v2 runtime 提示（2026-11-15 14:00 Asia/Singapore UTC+8）
 
 本节补上上一轮已落地 `cli_cfg.protenix.version_runtimes` 后，调试页与 README 仍写「尚未完成独立 v1/v2 runtime 切换 / 实际调用仍是单一配置 binary」的过时表述。这是面向使用者的文案与页面测试对齐，**不是**官方 v2 推理、授权权重验收、官方 PXDesign GPU 设计、长期服务、Linux Chrome 再点击或生产级声明。

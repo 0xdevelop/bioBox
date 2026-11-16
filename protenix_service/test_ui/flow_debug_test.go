@@ -3,7 +3,6 @@ package test_ui
 import (
 	"encoding/json"
 	"io"
-	"io/fs"
 	"net/http"
 	"net/http/httptest"
 	"os/exec"
@@ -194,11 +193,13 @@ func TestStructureSelectionAndStaleResponses(t *testing.T) {
 }
 
 func TestEmbeddedThreeStageIsBundledForRelease(t *testing.T) {
-	webFS, err := fs.Sub(embeddedWeb, "web/dist")
+	webFS, err := embeddedTestUIStatic()
 	if err != nil {
 		t.Fatal(err)
 	}
-	server := httptest.NewServer(http.FileServer(http.FS(webFS)))
+	mux := http.NewServeMux()
+	attachTestUIStatic(mux, webFS)
+	server := httptest.NewServer(mux)
 	defer server.Close()
 	response, err := http.Get(server.URL + "/structure_stage.js")
 	if err != nil {

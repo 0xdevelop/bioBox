@@ -142,20 +142,7 @@ func LoadTestWeb() {
 		mux.HandleFunc("GET /docs_api", func(writer http.ResponseWriter, request *http.Request) {
 			handleAPIDocPage(writer, request, webFS)
 		})
-
-		// dist 内存在的静态资源正常服务；其余路径与 API 侧一致返回 Home 中性空响应，
-		// 不输出 FileServer 默认的 "404 page not found" 反馈。
-		fileServer := http.FileServer(http.FS(webFS))
-		mux.Handle("/", http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-			name := strings.TrimPrefix(path.Clean(request.URL.Path), "/")
-			if name != "" {
-				if _, err := fs.Stat(webFS, name); err != nil {
-					api_common.HomeHandler(writer, request)
-					return
-				}
-			}
-			fileServer.ServeHTTP(writer, request)
-		}))
+		attachTestUIStatic(mux, webFS)
 
 		server := &http.Server{
 			Handler:           mux,
@@ -217,6 +204,30 @@ func loadWebFS() (fs.FS, error) {
 	}
 
 	return fs.Sub(embeddedWeb, "web/dist")
+}
+
+// embeddedTestUIStatic returns the bundled test_ui web/dist tree that is
+// embedded into the binary, including structure_stage.js.
+func embeddedTestUIStatic() (fs.FS, error) {
+	return fs.Sub(embeddedWeb, "web/dist")
+}
+
+// attachTestUIStatic serves files that exist in webFS, including the bundled
+// Three.js stage at /structure_stage.js. Unknown paths use the same neutral
+// Home handler as the rest of the API surface, instead of FileServer's
+// default "404 page not found" body.
+func attachTestUIStatic(mux *http.ServeMux, webFS fs.FS) {
+	fileServer := http.FileServer(http.FS(webFS))
+	mux.Handle("/", http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		name := strings.TrimPrefix(path.Clean(request.URL.Path), "/")
+		if name != "" {
+			if _, err := fs.Stat(webFS, name); err != nil {
+				api_common.HomeHandler(writer, request)
+				return
+			}
+		}
+		fileServer.ServeHTTP(writer, request)
+	}))
 }
 
 func listen(bindAddress string, port int) (net.Listener, error) {

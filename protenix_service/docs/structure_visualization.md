@@ -41,6 +41,7 @@
 - [x] ✅ ACCEPTED — 解析/拓扑测试覆盖零坐标、quoted atom name、altloc、零 occupancy、MODEL/链/TER/插入码/缺口与远距断线、非蛋白 calcium 排除、原始坐标保留；VM DOM 测试覆盖不同样本迟到响应、换任务清空、读取失败、MODEL/链切换及 Three 数据交接。VM DOM 不是真浏览器证据。
 - [x] ✅ ACCEPTED — 本机只读解析现有上游示例：7pzb PDB 4698 原子/6 链/451 条 Cα 连线；2lwu CIF 20 个 MODEL、首个 MODEL 211 原子/14 条连线；5o45 CIF 2559 原子/4 链/131 条连线。示例不是新增 Protenix/PXDesign 推理。
 - [x] ✅ ACCEPTED — Three.js 显示变换单测、严格 TypeScript 检查、Bun 构建、Go 测试与编译通过；HTTP 测试验证离仓 embed 的 JS 内容、MIME 与无外部运行时依赖。
-- [ ] 🟡 DONE — WebGL/OrbitControls、悬停拾取、真实设备绘制帧时间/renderer.info、重试/上下文丢失、连续导入资源释放、reduced-motion、四协议页面全链路尚待本轮真浏览器实测；不能引用旧 Canvas 截图宣称 Three.js 通过。
+- [x] ✅ ACCEPTED — 2026-11-16 19:06 Asia/Shanghai，Linux Google Chrome 157 真浏览器 WebGL2 验收已通过：同源调试页加载嵌入的 `/structure_stage.js`，对官方烟测 CIF 绘制 168 个真实原子，显示 19 处相邻 Cα 超距警告，悬停坐标与文件一致，左键旋转 / 滚轮缩放 / MODEL 与链切换 / 窗口缩放均在 Three.js 舞台上完成。证据在 `docs/acceptance_service.md` 与 `tmp/handoff-followup/phase4-threejs-browser-20261116/`。不能引用 2026-11-15 的旧 Canvas 截图。SwiftShader 是该次 headless 会话的实际 WebGL 后端，不是 NVIDIA 推理。
+- [ ] 🟡 DONE — `prefers-reduced-motion`、强制 WebGL 上下文丢失后的重试、以及连续导入后的 geometry 泄漏计数，本轮点击尚未单独覆盖。
 
-Three 舞台 DOM 的 `data-draw-calls`、`data-geometries`、`data-frame-ms` 提供运行时观测（非性能承诺）。浏览器验收应分别检查实际结构画面、拖拽/缩放/暂停/切模型、窗口缩放、加载失败与回退、重复导入后的 geometry 计数，以及控制台与资源请求。
+Three 舞台 DOM 的 `data-draw-calls`、`data-geometries`、`data-frame-ms` 提供运行时观测（非性能承诺）。本次验收记录了烟测结构的 draw_calls/geometries/frame_ms，以及旋转、缩放、切模型/链后的实际画面差异；加载失败回退在修正夹具静态资源之前的第一次点击中出现，修正后第二次点击不再回退。

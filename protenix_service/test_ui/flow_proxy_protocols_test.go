@@ -230,6 +230,11 @@ func newLiveProtocolFixture(t *testing.T, binary, root string) *liveProtocolFixt
 	mux.HandleFunc("POST /api/proxy", handleProxy)
 	mux.HandleFunc("GET /flow_debug.html", handleFlowDebugPage)
 	mux.HandleFunc("GET /api/config", handleConfig)
+	webFS, err := embeddedTestUIStatic()
+	if err != nil {
+		t.Fatal(err)
+	}
+	attachTestUIStatic(mux, webFS)
 	proxy := httptest.NewServer(mux)
 	t.Cleanup(proxy.Close)
 
@@ -248,6 +253,22 @@ func newLiveProtocolFixture(t *testing.T, binary, root string) *liveProtocolFixt
 	defer page.Body.Close()
 	if page.StatusCode != http.StatusOK {
 		t.Fatalf("flow_debug.html HTTP %d", page.StatusCode)
+	}
+
+	stage, err := http.Get(proxy.URL + "/structure_stage.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stage.Body.Close()
+	stageBody, err := io.ReadAll(stage.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stage.StatusCode != http.StatusOK || !strings.Contains(stage.Header.Get("Content-Type"), "javascript") {
+		t.Fatalf("structure_stage.js HTTP %d, type %s", stage.StatusCode, stage.Header.Get("Content-Type"))
+	}
+	if !strings.Contains(string(stageBody), "createStructureStage") {
+		t.Fatal("same-origin fixture did not serve the bundled Three.js stage")
 	}
 
 	login := fixture.callJSONRPCDirect(t, "auth.login.email", map[string]interface{}{
