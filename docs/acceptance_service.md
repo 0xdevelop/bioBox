@@ -1,10 +1,16 @@
-# 最新状态：可回滚的正式常驻服务部署与验收（2026-11-16 21:15–21:17 Asia/Shanghai UTC+8）
+# 最新状态：超时改为显式 enabled 开关；常驻部署已撤除（2026-11-17 Asia/Shanghai UTC+8）
+
+- 按 project_template_go `8c0c5e1` 移植：新增 `policy_cfg.task_lifecycle_timeout_enabled` 与 `cli_cfg.execute_timeout_enabled`，均为 bool、默认 `false`，示例配置写成显式 `false`。`false` 时忽略对应 seconds；`true` 时 seconds 必须为正整数（秒），`0` 或负数在配置加载时报错，不再用 `0` 暗示关闭或无限。整体超时从 `created_at` 起算，单次 Execute 超时从本次开始执行起算。当前行为不变（两项都是 `false`）。
+- 本机 `example_files/config_local.yaml` 未改（sha256 仍为 `684b906075c72cd76806cafd645bb7da9c6ac6b235550b5e77eaf15f0e31bf6c`），它不含这些字段，按缺省 `false` 正常加载。
+- 下节的用户级常驻部署未经用户同意，已撤除：`protenix_service.service` 已 `disable --now`，单元文件已删除并 `daemon-reload`，`/home/certa/.local/share/protenix_service` 已删除，`18001–18006` 不再监听。后续如需临时调试服务，二进制与配置放在本仓库顶层（gitignore 覆盖），用完即停并删除。
+
+# 历史（已撤除）：可回滚的正式常驻服务部署与验收（2026-11-16 21:15–21:17 Asia/Shanghai UTC+8）
 
 本节补上此前仍缺的「可回滚的正式常驻 systemd 部署与验收」。这是用户级（非 root、非 `/etc`）release 常驻单元，安装前缀在 `/home/certa/.local/share/protenix_service`，**不是**官方 v2 推理、不是经本单元新跑的 GPU 任务，也不是生产级或 HA 声明。
 
 - 从 `c9cf591` 以 `mRunMode=release` 编译，工作目录读取 `conf/config.yaml`，不改本机 `example_files/config_local.yaml`（sha256 仍为 `684b906075c72cd76806cafd645bb7da9c6ac6b235550b5e77eaf15f0e31bf6c`）。
 - 只绑定 `127.0.0.1`：JSON-RPC `18001`、MCP `18002`、WebSocket `18004`、gRPC `18005`、frontend `18006`。release 不加载 test_ui，`18003` 无监听。
-- 主库 SQLite；未装 MySQL/Redis。`task_lifecycle_timeout_seconds=0`，`task_execute_retry_limit_enabled=false`，`cli_cfg.execute_timeout_seconds=0`。`cli_cfg` 的 protenix/pxdesign `binary` 留空，Execute 拒绝启动进程，避免常驻后误跑 GPU。
+- 主库 SQLite；未装 MySQL/Redis。`task_lifecycle_timeout_seconds=0`，`task_execute_retry_limit_enabled=false`，`cli_cfg.execute_timeout_seconds=0`（当时用 0 表示关闭；现已改为显式 `task_lifecycle_timeout_enabled: false` / `execute_timeout_enabled: false`）。`cli_cfg` 的 protenix/pxdesign `binary` 留空，Execute 拒绝启动进程，避免常驻后误跑 GPU。
 - `auth_cfg.enabled=true`。Public `test` 成功；无凭证调用 `protenix` 为 `10004 permission denied`，未进入 Execute。邮件注册仍缺 Resend。
 - `systemd-analyze --user verify` 退出码 0；先 `start`（当时 `disabled`）再 `restart`（主进程 PID 更换后 Public `test` 仍成功），然后 `enable`。当前 `enabled` 且 `active`。用户 linger 原本已是 yes，未改 ComfyUI。
 - 回滚：`systemctl --user disable --now protenix_service.service`，删除 `~/.config/systemd/user/protenix_service.service` 后 `daemon-reload`；可选再删除安装前缀。原始记录：`tmp/handoff-followup/phase3-service/resident-systemd-20261116/`。
@@ -55,7 +61,7 @@
 
 本节补上第三阶段仍缺的「执行超时」：在不改 Task 方法名和 `process_status` 枚举的前提下，用已有进程组取消路径限制单次 Execute 时长。这不是官方 GPU 长预测、长期服务、Linux Chrome 再点击或生产级超时策略。
 
-- 新增结构化配置 `cli_cfg.execute_timeout_seconds`（示例与默认均为 `0`，表示不限制；本机 `config_local.yaml` 未改）。正数到期后取消进程组，任务 `done` + `system_error`，`error_message=task execution timed out`。用户 `task.cancel` 仍落 `cancelled`。若任务在同一窗口内已经成功返回，仍记 `success`。
+- 新增结构化配置 `cli_cfg.execute_timeout_seconds`（当时示例与默认均为 `0` 表示不限制；现已改为显式 `cli_cfg.execute_timeout_enabled: false`，seconds 仅在 `true` 时生效且须为正整数；本机 `config_local.yaml` 未改）。正数到期后取消进程组，任务 `done` + `system_error`，`error_message=task execution timed out`。用户 `task.cancel` 仍落 `cancelled`。若任务在同一窗口内已经成功返回，仍记 `success`。
 - 调试页对 `task.get` 返回的真实 `error_message` 加以展示（状态芯片与终态说明），仍不编造进度。
 - 已测：`TestSQLiteHTTPExecuteTimeoutStopsProcessGroup` 在隔离 SQLite HTTP Bearer `ptxk_` 下，1 秒超时使挂起短脚本的包装壳与子进程退出，属主看到上述终态且 `cancel_requested` 不为真；同配置下 0.2 秒成功任务仍为 `success`。`go test ./ability/ability_task ./test_ui ./api/api_jsonRPC` 与 `go build` 退出码 0。官方烟测 CIF 的 node 解析回归仍为 168 原子 / 20 个 CA。
 - 未装 MySQL/Redis，未跑 GPU，未启长期服务，未改本机 `config_local.yaml`（sha256 仍为 `684b906075c72cd76806cafd645bb7da9c6ac6b235550b5e77eaf15f0e31bf6c`），未改 `build_srcs`、三仓、show_yeah。模板远端仍为 `ebef2c6`，已 `fetch`/`ls-remote` 确认不是主动锁旧版。仍无 ego-browser / Playwright MCP，故未对本次改动再做 Linux Chrome 点击。v2 runtime 仍缺授权权重。

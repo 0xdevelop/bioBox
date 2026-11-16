@@ -265,11 +265,7 @@ func executeTimeout() time.Duration {
 	if config.GlobalConfig == nil || config.GlobalConfig.CliCfg == nil {
 		return 0
 	}
-	seconds := config.GlobalConfig.CliCfg.ExecuteTimeoutSeconds
-	if seconds <= 0 {
-		return 0
-	}
-	return time.Duration(seconds) * time.Second
+	return config.GlobalConfig.CliCfg.CurrentExecuteTimeout()
 }
 
 // executeClaimedTask 调用注册表里同一个 Execute 并落终态；panic、方法下线、序列化故障或 Execute 超时归 system_error。
@@ -544,7 +540,7 @@ func RequeueOrphanedTasks(ctx context.Context) error {
 }
 
 // ExpireTimedOutTasks 把已超过整体生命周期（从 created_at 起算）的排队任务落 system_error。
-// task_lifecycle_timeout_seconds=0 时为 no-op，不启用任何默认期限。
+// task_lifecycle_timeout_enabled=false 时为 no-op（忽略 seconds），不启用任何默认期限。
 func ExpireTimedOutTasks(ctx context.Context) error {
 	timeout := policy_config.CurrentTaskLifecycleTimeout()
 	if timeout <= 0 {

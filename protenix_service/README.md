@@ -23,8 +23,8 @@ go build -o protenix_service .
 - 本机运行（不要提交）：把示例复制为 `example_files/config_local.yaml` 后按需修改
 - Debug 启动读取 `./example_files/config_local.yaml`；工作目录必须是本目录
 - 存储默认只开 SQLite（`storage_cfg.primary: sqlite`，mysql/postgres/redis 为 `enabled: false`）。Auth/User 走主库 SQLite。
-- Async/Task 使用 `storage.GormDB` 主库，SQLite 原子认领与持久状态。仅单 daemon 负责一个队列库；本机孤儿恢复不是 HA 租约。`policy_cfg.task_lifecycle_timeout_seconds` 与 `task_execute_retry_limit_enabled` 默认关闭（`0` / `false`）；启用后次数字段表示首次之外允许重试次数，`0` 表示不重试。
-- 原生 CLI 路径写在 `cli_cfg`（见示例配置），不要在代码或 URL 里写死。`cli_cfg.protenix.binary` / `cli_cfg.pxdesign.binary` 为空时，`Execute` 拒绝启动进程。作业输入会拷贝到 `cli_cfg.work_root/<task_id>/input/`，输出写到同任务的 `output/`，不修改原输入文件。`version` 仍只作方法参数，不作为 CLI 开关。`cli_cfg.execute_timeout_seconds` 为正数时，单次 Execute 到期会取消进程组，任务记 `system_error`（`error_message=task execution timed out`）；`0` 表示不限制。
+- Async/Task 使用 `storage.GormDB` 主库，SQLite 原子认领与持久状态。仅单 daemon 负责一个队列库；本机孤儿恢复不是 HA 租约。整体超时、单次 Execute 超时与重试次数限制都用显式开关控制，示例配置写成 `policy_cfg.task_lifecycle_timeout_enabled: false`、`cli_cfg.execute_timeout_enabled: false`、`policy_cfg.task_execute_retry_limit_enabled: false`。开关为 `true` 时对应 `*_timeout_seconds` 必须是正整数（秒），`0` 或负数在配置加载时直接报错；开关为 `false` 时忽略 seconds。重试次数字段表示首次之外允许重试次数，`0` 表示不重试。
+- 原生 CLI 路径写在 `cli_cfg`（见示例配置），不要在代码或 URL 里写死。`cli_cfg.protenix.binary` / `cli_cfg.pxdesign.binary` 为空时，`Execute` 拒绝启动进程。作业输入会拷贝到 `cli_cfg.work_root/<task_id>/input/`，输出写到同任务的 `output/`，不修改原输入文件。`version` 仍只作方法参数，不作为 CLI 开关。单次 Execute 超时由 `cli_cfg.execute_timeout_enabled` 控制（bool，默认 `false`，示例显式写 `false`；`false` 时忽略 seconds、不限制时长）。为 `true` 时 `cli_cfg.execute_timeout_seconds` 必须是正整数（秒，从本次开始执行起算），`0` 或负数在配置加载时报错；到期会取消进程组，任务记 `system_error`（`error_message=task execution timed out`）。
 - `example_files/config_local.yaml` 与 `data/` 已加入忽略规则，不要提交密钥或 SQLite 数据文件。
 
 默认端口（示例配置）：JSON-RPC `13001`、MCP `13002`、test_ui `13003`、WebSocket `13004`、gRPC `13005`、frontend `13006`。test_ui 与 frontend 默认只绑定 `127.0.0.1`。本机验收如需避开占用，可在 `config_local.yaml` 改为 `18001`–`18006`。

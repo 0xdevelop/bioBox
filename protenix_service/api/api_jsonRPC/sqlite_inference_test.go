@@ -348,7 +348,7 @@ func TestSQLiteHTTPOfficialPXDesignPreview(t *testing.T) {
 	}
 	f := newQueueHTTPFixture(t, "", root)
 	config.GlobalConfig.CliCfg.PXDesign = &config.CLIBinaryConfig{Binary: binary, ExtraEnv: map[string]string{}}
-	config.GlobalConfig.CliCfg.ExecuteTimeoutSeconds = 0
+	config.GlobalConfig.CliCfg.ExecuteTimeoutEnabled = false
 	policy_config.CurrentCfgPolicy.MaxWorkers = 1
 	stop := policy.PolicyServicesStart()
 	t.Cleanup(stop)
@@ -525,6 +525,7 @@ esac
 		t.Fatal(err)
 	}
 	f := newQueueHTTPFixture(t, script, root)
+	config.GlobalConfig.CliCfg.ExecuteTimeoutEnabled = true
 	config.GlobalConfig.CliCfg.ExecuteTimeoutSeconds = 1
 	stop := policy.PolicyServicesStart()
 	t.Cleanup(stop)

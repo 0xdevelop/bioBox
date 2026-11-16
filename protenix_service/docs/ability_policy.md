@@ -43,7 +43,8 @@ policy_cfg:
   max_workers: 1
   policy_duration: "10s"
   workers_scaller: 5
-  task_lifecycle_timeout_seconds: 0
+  task_lifecycle_timeout_enabled: false
+  task_lifecycle_timeout_seconds: 3600
   task_execute_retry_limit_enabled: false
   task_execute_retry_limit_count: 0
 ```
@@ -51,7 +52,8 @@ policy_cfg:
 - `max_workers`：可选绝对并发上限，正数生效；单 GPU 建议 `1`。
 - `policy_duration`：两轮派发的间隔，缺省或非法时回落 `10s`。
 - `workers_scaller`：CPU 并发倍率，缺省或非法时回落 `1`。例如 2 CPU 配置 `5` 时最多同时执行 10 条异步任务。
-- `task_lifecycle_timeout_seconds`：任务整体生命周期超时（秒），从受理时的 `created_at` 起算。`0`（默认）关闭；正整数才启用。不会把未拍板的期限写成三天并启用。不为内部步骤另设短超时；`cli_cfg.execute_timeout_seconds` 仍保持 `0`。
+- `task_lifecycle_timeout_enabled`：是否启用任务整体生命周期超时，必须显式写 `true`/`false`，默认 `false`。为 `false` 时不论 `task_lifecycle_timeout_seconds` 填什么都不生效，不因耗时终止任务，也不暗含三天或其他默认期限。
+- `task_lifecycle_timeout_seconds`：整体超时时长，整数，单位秒，从受理时写入的 `created_at` 起算。仅在上一开关为 `true` 时生效，此时必须是正整数；填 `0` 或负数时配置加载直接报错，不解释为关闭或无限。示例中的 `3600` 只是示例值，不是默认期限。不为内部步骤另设短超时；单次 Execute 超时另由 `cli_cfg.execute_timeout_enabled`（默认 `false`）控制。
 - `task_execute_retry_limit_enabled`：是否启用执行重试次数限制，必须是 `true`/`false`，默认 `false`（不截断历史孤儿恢复）。
 - `task_execute_retry_limit_count`：首次执行之外允许的重试次数，仅在上一开关为 `true` 时生效；`0` 表示不重试，不是无限。
 
@@ -85,3 +87,5 @@ policy_cfg:
 2026-11-14：`policy_cfg.max_workers` 为可选绝对并发上限（正数生效），单 GPU 建议 1。正常停机取消在途 Execute 并等进程组清理。仅支持一个 daemon 管理一个队列库。
 
 2026-11-16：从 project_template_go `32b5c5a` 显式移植默认关闭的整体超时与有限重试；既有 `max_workers`、取消请求与 `cli_cfg.execute_timeout_seconds` 行为保持不变。
+
+2026-11-17：按 project_template_go `8c0c5e1` 改为显式开关：新增 `policy_cfg.task_lifecycle_timeout_enabled` 与 `cli_cfg.execute_timeout_enabled`（均为 bool，默认 `false`）。不再用 `0` 暗示关闭；开关为 `true` 时 seconds 必须为正整数，否则配置加载报错。当前行为不变（两项都是 `false`）。
