@@ -117,6 +117,10 @@ UV=/path/to/uv ./install_protenix_service.sh
 
 服务通过 `conf/config.yaml` 的 `cli_cfg` 调用 `/protenix_service/runtime/<app>/bin/<app>-run`。`protenix` 的 v2 需要授权权重，`cli_cfg.protenix.version_runtimes.v2.binary` 默认为空（未配置时直接拒绝，不回退 v1）。
 
+## 任务查询与只读步进
+
+服务支持运行中查看当前业务阶段、只读回看历史步骤，并把业务状态数组与引擎调度诊断分开。页面启用条件、API 查询、关联排障及取消/恢复边界见[任务操作说明](docs/task_operations.md)；release 不加载调试页。
+
 ## 从源码构建发布包
 
 ```bash
