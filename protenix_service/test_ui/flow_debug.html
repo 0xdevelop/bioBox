@@ -188,11 +188,21 @@
         <div class="chips" id="conn-chips"><span class="chip" id="conn-state">连接：尚未查询</span></div>
         <p class="note" id="resume-note" hidden></p>
         <div class="actions" id="resume-actions" hidden><button id="btn-resume" type="button">恢复跟踪上次 task_id（只查询 task.get，不重新提交）</button></div>
-        <table class="stage-table" aria-label="任务阶段（只显示服务返回值）">
-          <thead><tr><th>阶段</th><th>服务返回的状态</th><th>服务时间戳（Asia/Shanghai）</th><th>原始字段值</th></tr></thead>
-          <tbody id="flow-stage-rows"><tr class="pending"><td colspan="4" class="note">尚未提交或跟踪任务</td></tr></tbody>
+        <h3>业务步进 · 服务端只读回看</h3>
+        <p class="note" id="current-business-step">当前业务步骤：—</p>
+        <table class="stage-table" aria-label="业务阶段（服务端持久步骤）">
+          <thead><tr><th>轮次 / 步骤</th><th>业务状态字符串枚举数组</th><th>服务时间（Asia/Shanghai）</th><th>程序态 / 消息</th></tr></thead>
+          <tbody id="flow-stage-rows"><tr class="pending"><td colspan="4">—</td></tr></tbody>
         </table>
-        <p class="note">阶段表只填 <code>tools/call</code> 受理响应、<code>task.get</code> 的 <code>run_status</code> / <code>process_status</code> / <code>created_at</code> / <code>started_at</code> / <code>completed_at</code> / <code>error_*</code> 和 <code>task.artifact</code> 的 <code>size</code> / <code>sha256</code>。服务没返回的格子保持“—”，不用浏览器时间顶替；耗时只由服务时间戳相减（秒级）。</p>
+        <div class="actions"><button id="btn-current-step" type="button">回到本轮当前业务步骤（只读）</button></div>
+        <p class="note">点击任意业务步骤回看；只渲染 <code>task.get.steps</code> 中 <code>step_kind=business</code> 的记录，本轮当前业务步骤由服务 <code>current_business_step</code> 指明。不拼阶段、不补状态、不用浏览器时间顶替。<code>[]</code> 表示尚无业务状态，缺少字段显示“—”。这里只记录实际发生的输入准备、CLI 包装和产物检查，不声称推理内部进度；关闭阶段不等于业务成功。</p>
+        <pre id="step-readback" aria-label="选中业务步骤的服务原始记录">—</pre>
+        <details id="engine-diagnostics"><summary>引擎关联诊断（通用调度，与业务步进分开）</summary>
+          <p class="note" id="engine-current-step">—</p>
+          <table class="stage-table" aria-label="引擎调度阶段"><thead><tr><th>轮次 / 序号</th><th>引擎阶段 / 程序状态</th><th>服务时间（Asia/Shanghai）</th><th>消息</th></tr></thead><tbody id="engine-stage-rows"><tr><td colspan="4">—</td></tr></tbody></table>
+          <pre id="engine-task-fields">—</pre>
+          <p class="note">按 task_id → execution_count / attempt → step_seq 对照业务阶段与引擎阶段、错误和时间定位。恢复不删历史；仅使用既有取消和查询入口，不提供页面修改步骤或盲目重跑。</p>
+        </details>
         <pre class="failure-log" id="failure-log" hidden></pre>
         <ul class="timeline" id="timeline"></ul>
         <div class="flow-rail-wrap">
@@ -280,7 +290,8 @@
       ssRecords: null,
       lastSummary: null,
       acceptInfo: null,
-      observedRuns: [],
+      selectedStepSeq: null,
+      selectedStepTaskId: "",
       lastTask: null,
       lastProof: null,
       pollFailures: 0,
@@ -484,7 +495,6 @@
     }
     function renderStatus(task) {
       const run = task.run_status || "";
-      if (run && state.observedRuns[state.observedRuns.length - 1] !== run) state.observedRuns.push(run);
       state.lastTask = task;
       const process = task.process_status || "进行中";
       const progress = Number(task.progress ?? 0);
@@ -527,48 +537,55 @@
       const x = Date.parse(a || ""), y = Date.parse(b || "");
       return Number.isFinite(x) && Number.isFinite(y) ? Math.round((y - x) / 1000) : null;
     }
-    // Only values returned by the service are written here; empty cells stay "—".
+    // Business view and engine diagnostics are distinct projections of the SAME server snapshot.
+    // No status history is reconstructed from polls, acceptance responses or browser timestamps.
     function renderFlowStages() {
-      const body = $("flow-stage-rows");
-      body.replaceChildren();
-      if (!state.taskId) { body.innerHTML = '<tr class="pending"><td colspan="4" class="note">尚未提交或跟踪任务</td></tr>'; return; }
+      const body = $("flow-stage-rows"), engineBody = $("engine-stage-rows");
+      body.replaceChildren(); engineBody.replaceChildren();
       const t = state.lastTask && state.lastTask.task_id === state.taskId ? state.lastTask : null;
-      const acc = state.acceptInfo && state.acceptInfo.task_id === state.taskId ? state.acceptInfo : null;
-      const rows = [];
-      rows.push(["提交受理", acc || t ? "ok" : "pending",
-        acc ? ("受理响应 task_id=" + acc.task_id + " · run_status=" + (acc.run_status || "（响应未带）")) : "本页未提交；跟踪既有 task_id，只查询不重提",
-        t ? serverTime(t.created_at) : "—", t ? "created_at=" + (t.created_at || "") : "—"]);
-      rows.push(["排队", !t ? "pending" : (t.run_status === "queued" ? "wait" : "ok"),
-        !t ? "—" : ((state.observedRuns.includes("queued") ? "task.get 返回过 run_status=queued" : "本页轮询未观测到 queued")
-          + (t.started_at ? "；排队 " + serverSeconds(t.created_at, t.started_at) + " s（started_at−created_at）" : "")),
-        t ? serverTime(t.created_at) : "—", t ? "created_at=" + (t.created_at || "") : "—"]);
-      rows.push(["运行", !t ? "pending" : (t.run_status === "running" ? "wait" : (t.started_at ? "ok" : "pending")),
-        !t ? "—" : (t.started_at ? ((state.observedRuns.includes("running") ? "task.get 返回过 run_status=running" : "本页轮询未观测到 running")
-          + (t.completed_at ? "；运行 " + serverSeconds(t.started_at, t.completed_at) + " s（completed_at−started_at）" : "")) : "服务尚未返回 started_at"),
-        t ? serverTime(t.started_at) : "—", t && t.started_at ? "started_at=" + t.started_at : "—"]);
-      const done = !!t && t.run_status === "done";
-      rows.push(["终态", !done ? "pending" : (t.process_status === "success" ? "ok" : "err"),
-        !done ? (t ? "run_status=" + t.run_status + "（未到终态）" : "—")
-          : ("run_status=done · process_status=" + (t.process_status || "") + (t.error_code ? " · error_code=" + t.error_code : "") + (t.error_message ? " · error_message=" + t.error_message : "")),
-        done ? serverTime(t.completed_at) : "—", done && t.completed_at ? "completed_at=" + t.completed_at : "—"]);
-      const proof = state.lastProof && state.lastProof.taskId === state.taskId ? state.lastProof : null;
-      rows.push(["取件", !proof ? "pending" : (proof.match ? "ok" : "err"),
-        !proof ? "尚未调用 task.artifact" : ("task.artifact " + proof.path + " · size=" + proof.serverSize + " B · sha256 " + (proof.match ? "与浏览器复算一致" : "不一致或无法复算")),
-        "—（task.artifact 不返回时间戳）", proof ? "sha256=" + (proof.serverSha || "（服务未返回）") : "—"]);
-      for (const [name, kind, status, time, raw] of rows) {
+      const steps = t && Array.isArray(t.steps) ? t.steps : [];
+      const current = t && t.current_business_step ? t.current_business_step : null;
+      if (state.selectedStepTaskId !== state.taskId) { state.selectedStepTaskId = state.taskId; state.selectedStepSeq = null; }
+      const business = steps.filter((step) => step.step_kind === "business");
+      const engine = steps.filter((step) => step.step_kind === "engine");
+      const titles = { input_preparation: "输入准备", cli_execution: "CLI 执行包装", artifact_collection: "产物检查" };
+      const value = (v) => v === null || v === undefined ? "—" : String(v);
+      const title = (step) => titles[step.step] ? titles[step.step] + " (" + step.step + ")" : value(step.step);
+      const times = (step) => "开始 " + serverTime(step.started_at) + "\n更新 " + serverTime(step.updated_at) + "\n结束 " + serverTime(step.completed_at);
+      const addRow = (target, cells) => {
         const tr = document.createElement("tr");
-        tr.className = kind;
-        tr.dataset.stage = name;
-        [name, status, time, raw].forEach((v, i) => { const td = document.createElement("td"); td.textContent = v; if (i === 3) td.className = "mono"; tr.appendChild(td); });
-        body.appendChild(tr);
+        cells.forEach((v) => { const td = document.createElement("td"); td.textContent = v; td.style.whiteSpace = "pre-wrap"; tr.appendChild(td); });
+        target.appendChild(tr); return tr;
+      };
+      const empty = (target) => { const tr = document.createElement("tr"), td = document.createElement("td"); td.colSpan = 4; td.textContent = "—"; tr.appendChild(td); target.appendChild(tr); };
+      $("current-business-step").textContent = current
+        ? "本轮当前 / 最后业务步骤：轮次 " + value(current.attempt) + " · #" + value(current.step_seq) + " · " + title(current) + (current.completed_at ? "（已结束）" : "（开放中）")
+        : "当前业务步骤：—（服务未返回本轮业务步骤；不沿用上轮记录）";
+      for (const step of business) {
+        const isCurrent = !!current && current.step_seq === step.step_seq;
+        const tr = addRow(body, ["轮次 " + value(step.attempt) + " / #" + value(step.step_seq) + "\n" + title(step) + (isCurrent ? " · 本轮最后业务步骤" : ""), Array.isArray(step.business_statuses) ? JSON.stringify(step.business_statuses) : "—", times(step), "run_status=" + value(step.run_status) + "\n" + value(step.message)]);
+        tr.dataset.stepSeq = String(step.step_seq); tr.tabIndex = 0;
+        if (isCurrent && !step.completed_at) tr.className = "wait";
+        const select = () => { state.selectedStepSeq = step.step_seq; renderFlowStages(); };
+        tr.addEventListener("click", select);
+        tr.addEventListener("keydown", (event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); select(); } });
+        if (state.selectedStepSeq === step.step_seq) tr.setAttribute("aria-selected", "true");
       }
-      if (state.observedRuns.length) {
-        const tr = document.createElement("tr"); tr.className = "pending";
-        const td = document.createElement("td"); td.colSpan = 4;
-        td.textContent = "本页经 task.get 依次观测到的 run_status：" + state.observedRuns.join(" → ") + "（只记服务返回值）";
-        tr.appendChild(td); body.appendChild(tr);
-      }
+      if (!business.length) empty(body);
+      const selected = state.selectedStepSeq === null ? current : business.find((step) => step.step_seq === state.selectedStepSeq);
+      $("step-readback").textContent = selected ? JSON.stringify(selected, null, 2) : "—";
+      for (const step of engine) addRow(engineBody, ["轮次 " + value(step.attempt) + " / #" + value(step.step_seq), value(step.step) + "\nrun_status=" + value(step.run_status), times(step), value(step.message)]);
+      if (!engine.length) empty(engineBody);
+      const currentEngine = t && t.current_step;
+      $("engine-current-step").textContent = currentEngine
+        ? "服务 current_step：#" + value(currentEngine.step_seq) + " · " + value(currentEngine.step_kind) + "/" + value(currentEngine.step) + " · run_status=" + value(currentEngine.run_status)
+        : "服务 current_step：—";
+      const fields = {};
+      for (const key of ["task_id", "execution_count", "run_status", "process_status", "cancel_requested", "error_code", "error_message", "created_at", "started_at", "completed_at"]) fields[key] = t && t[key] !== undefined ? t[key] : "—";
+      $("engine-task-fields").textContent = JSON.stringify(fields, null, 2);
     }
+    $("btn-current-step").addEventListener("click", () => { state.selectedStepSeq = null; renderFlowStages(); });
+
     function setConn(kind, text) { const chip = $("conn-state"); chip.className = "chip " + (kind || ""); chip.textContent = text; chip.dataset.kind = kind || ""; }
     async function sha256Hex(bytes) {
       if (!(window.crypto && crypto.subtle)) return "";
@@ -1070,7 +1087,7 @@
       state.lastSummary = null;
       state.lastProof = null;
       state.lastTask = null;
-      state.observedRuns = [];
+      state.selectedStepSeq = null;
       state.pollFailures = 0;
       setConn("", state.taskId ? "连接：等待首次 task.get" : "连接：尚未查询");
       renderProof(null);

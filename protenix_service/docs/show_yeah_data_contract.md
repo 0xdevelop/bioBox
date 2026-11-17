@@ -36,3 +36,6 @@
 自包含调试页已放到 `test_ui/flow_debug.html`，经 test_ui 的 `/flow_debug.html` 打开，只填 URL 与 API key，并按上述方法加载真实产物。提交、跟踪、取件和取消使用页面选择的 JSON-RPC / MCP / WebSocket / gRPC，不是只走 JSON-RPC。页面按 mmCIF 列解析官方 Protenix CIF（即使数据行以 `ATOM` 开头），经典 PDB 仍可用；舞台只绘制这些真实坐标，入场排布不是计算进度，悬停显示产物中的残基与坐标。提交或跟踪另一任务时会先清空舞台与产物表，避免上一任务的原子被当成当前任务结果。非 success 终态也会列出真实产物（例如 `run.log`），不会把失败结果自动画成成功结构。流程轨道借鉴 show_yeah 的光纤、光点与枢纽准星，但只点亮探测、受理、`task.get` 状态、取件和结构上舞台这些真实事件，不把光点当成推理百分比。本页不是 Linux 真浏览器对此次视觉改动的再点击验收，也不能用随机进度或伪造 CIF 冒充计算。show_yeah 仍只作视觉效果参考，不在本仓改造。
 
 **版本边界**：已可用 `cli_cfg.protenix.version_runtimes` 按 `version` 选择独立 runtime；`v2` 不会回退到 v1 的 binary。官方 HTTP 烟测仍只验证 v1/base_default_v1.0.0。v2 仍缺授权权重，不可用参数标签或仅配置路径冒充 v2 成功。PXDesign 已有短脚本 HTTP 真任务证据，但不是官方 GPU 设计。
+
+
+业务步进的事实源是 Go task 层持久化的 `task.get.steps`（`step_kind=business`）与 `current_business_step`，不是浏览器轮询拼接的阶段表。页面可点击历史阶段只读回看，服务未返回的字段显示“—”；引擎通用调度记录单独位于关联诊断区。包装层只记录实际的输入准备、CLI 执行与产物检查，不代表推理内部进度。详细字段、轮次恢复与失败收尾见 [Task 契约](ability_task.md#41-引擎记录与业务步进只读回看)。

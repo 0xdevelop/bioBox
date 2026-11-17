@@ -24,6 +24,11 @@ const MethodPXDesign = "pxdesign"
 var errCLINotConfigured = errors.New("pxdesign CLI binary is not configured")
 
 func LoadAPIMethods() {
+	ability_task.RegisterBusinessSteps(MethodPXDesign,
+		ability_task.BusinessStepSpec{Step: StepInputPreparation, BusinessStatuses: []string{StatusArgumentsValidated, StatusInputStaged, StatusPreparationFailed}},
+		ability_task.BusinessStepSpec{Step: StepCLIExecution, BusinessStatuses: []string{StatusProcessExited, StatusProcessFailed, StatusProcessCancelled, StatusLaunchFailed}},
+		ability_task.BusinessStepSpec{Step: StepArtifactCollection, BusinessStatuses: []string{StatusInspected, StatusCIFFilesFound, StatusNoCIFFiles, StatusERRArtifactsFound, StatusInspectionFailed}},
+	)
 	api_supported_methods.AddMethod(&api_supported_methods.SupportedMethod{
 		Name:        MethodPXDesign,
 		Description: "提交 PXDesign 设计流水线任务（对应 CLI：pxdesign-run pipeline）。preset 走 arguments。异步队列使用配置的主关系库（支持 SQLite）。未配置 cli_cfg.pxdesign.binary 时 Execute 拒绝启动进程。",
@@ -48,21 +53,76 @@ func LoadAPIMethods() {
 }
 
 func Execute(ctx context.Context, input interface{}) (interface{}, error) {
+	if err := beginBusinessStep(ctx, StepInputPreparation, "校验参数、选择已配置 runtime 并暂存输入"); err != nil {
+		return nil, err
+	}
 	if err := validatePXDesignArgs(input); err != nil {
+		if reportErr := reportBusinessStatus(ctx, StatusPreparationFailed, "参数校验未通过"); reportErr != nil {
+			return nil, errors.Join(err, reportErr)
+		}
+		return nil, err
+	}
+	if err := reportBusinessStatus(ctx, StatusArgumentsValidated, "参数校验完成"); err != nil {
 		return nil, err
 	}
 	spec, jobDir, outDir, err := buildPXDesignSpec(ctx, input)
 	if err != nil {
-		return nil, err
+		return nil, errors.Join(err, reportBusinessStatus(ctx, StatusPreparationFailed, "runtime 选择或输入暂存失败"))
 	}
 	if err = os.MkdirAll(outDir, 0o755); err != nil {
+		return nil, errors.Join(err, reportBusinessStatus(ctx, StatusPreparationFailed, "输出目录准备失败"))
+	}
+	if err = reportBusinessStatus(ctx, StatusInputStaged, "输入已暂存到隔离作业目录"); err != nil {
+		return nil, err
+	}
+	if err = beginBusinessStep(ctx, StepCLIExecution, "进入 CLI 进程执行包装，不代表推理内部进度"); err != nil {
 		return nil, err
 	}
 	result, runErr := cli_proc.Run(ctx, *spec)
+	// Run 返回后再按实际进程结果上报；cancel 后也要把已发生的业务记录持久化。
+	evidenceCtx := context.WithoutCancel(ctx)
+	status := StatusLaunchFailed
+	if result != nil && result.PID > 0 {
+		switch {
+		case result.Cancelled:
+			status = StatusProcessCancelled
+		case runErr != nil:
+			status = StatusProcessFailed
+		default:
+			status = StatusProcessExited
+		}
+	}
+	if err = reportBusinessStatus(evidenceCtx, status, "CLI 调用已返回，具体退出码见任务结果"); err != nil {
+		return nil, errors.Join(runErr, err)
+	}
+	if err = beginBusinessStep(evidenceCtx, StepArtifactCollection, "检查作业目录产物；不推断内部折叠进度"); err != nil {
+		return nil, errors.Join(runErr, err)
+	}
 	payload := executionPayload(jobDir, outDir, result)
+	count, hasERR, inspectErr := cli_proc.InspectOutput(outDir)
+	if inspectErr != nil {
+		return payload, errors.Join(runErr, inspectErr, reportBusinessStatus(evidenceCtx, StatusInspectionFailed, "产物检查失败"))
+	}
+	if err = reportBusinessStatus(evidenceCtx, StatusInspected, "产物目录检查完成"); err != nil {
+		return payload, errors.Join(runErr, err)
+	}
+	cifStatus := StatusNoCIFFiles
+	if count > 0 {
+		cifStatus = StatusCIFFilesFound
+	}
+	if err = reportBusinessStatus(evidenceCtx, cifStatus, "仅检查产物存在性，不代表结构质量验收"); err != nil {
+		return payload, errors.Join(runErr, err)
+	}
+	if hasERR {
+		if err = reportBusinessStatus(evidenceCtx, StatusERRArtifactsFound, "发现 ERR 产物标记"); err != nil {
+			return payload, errors.Join(runErr, err)
+		}
+	}
 	if runErr != nil {
 		return payload, runErr
 	}
+	_ = count
+	_ = hasERR
 	return payload, nil
 }
 
