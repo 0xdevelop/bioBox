@@ -142,3 +142,7 @@ FORCE_PACK=1 ./build.sh pack        # 双 arch → build/upload_tmp_dir/ 下的�
 `protenix` 用最新上游；`pxdesign` 链依赖官方钉死的 Protenix v0.5.0+pxd。两者始终是独立 venv：独立模式各自安装；整合模式在 `/protenix_service/runtime/` 下由同一个 install 流程安装、升级、卸载。
 
 更多实现口径见 `docs/design.md`；机器验收记录见 `docs/acceptance_*.md`。
+
+## 验证码日志与可选邮件
+
+验证码实际生成后无条件写服务 INFO，邮件为独立可选能力，失败如实返回。配置、迁移、日志权限与排障边界见 [操作说明](docs/verification_delivery.md)。
