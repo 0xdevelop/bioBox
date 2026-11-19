@@ -146,3 +146,7 @@ FORCE_PACK=1 ./build.sh pack        # 双 arch → build/upload_tmp_dir/ 下的�
 ## 验证码日志与可选邮件
 
 验证码实际生成后无条件写服务 INFO，邮件为独立可选能力，失败如实返回。配置、迁移、日志权限与排障边界见 [操作说明](docs/verification_delivery.md)。
+
+## 当前产物验收与发版缺口
+
+当前 arm64 三包、release 服务与官方 v1/PXDesign HTTP/GPU 取件切片已实测；整合升级失败一致性、正式配置准备和 amd64 矩阵尚有缺口，不能宣称整系列可发版。见[验收矩阵与证据](docs/acceptance_product_matrix_20261119.md)。
