@@ -17,7 +17,7 @@
 
 `check_native_build.sh` 同时核对 Linux/uname、Go host 与 target、CGo 开启、本机 gcc 的 GNU target；不是只改 GOARCH。服务已有构建入口仍强制 CGO_ENABLED=1（SQLite），新门禁还检查 zip 内服务 ELF machine 与 Go build info 的 GOOS/GOARCH/CGO_ENABLED，不能用纯 Go 的假 SQLite 成品过门禁。
 
-runner 的打包依赖是原生 Go（根 go.mod）、gcc/build-essential、pkg-config、zip/unzip、bun；前端和 test_ui 的 embed 材料沿用原构建脚本，release 不因此启用调试页。CI 构建 GNU/glibc Linux 二进制，不承诺所有 Linux 发行版或 musl 兼容。
+runner 的打包依赖是原生 Go（protenix_service/go.mod，当前要求 1.26.10；根生成器的 1.25 约束可兼容，不依靠隐式下载切换）、gcc/build-essential、pkg-config、zip/unzip、bun；前端和 test_ui 的 embed 材料沿用原构建脚本，release 不因此启用调试页。CI 构建 GNU/glibc Linux 二进制，不承诺所有 Linux 发行版或 musl 兼容。
 
 独立包以及整合包的 runtime 是上游源码快照 + wrapper + install/deps/patches + 示例，不含预装 Python venv、Torch/CUDA 动态库或模型权重。原生 Actions 构建成功不等于目标机器依赖安装或 GPU 推理成功。安装仍需 NVIDIA 驱动/CUDA 13、uv/Python 3.14、原生构建依赖与可访问的 pip/权重来源；两产品 venv 保持独立。deps/protenix.txt、deps/pxdesign.txt 的依赖覆盖和实证目前主要来自 aarch64/GB10；本轮不把这些旧证据扩大为 amd64 冷安装、wheel 可用性或科学质量保证，也不为打包安装 MySQL/Redis。
 

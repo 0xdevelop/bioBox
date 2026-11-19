@@ -88,7 +88,11 @@ func run(args []string) error {
 		fmt.Println(v)
 		return nil
 	case "uploaded":
-		return uploaded(*dir, *remote, v)
+		err := uploaded(*dir, *remote, v)
+		if err == nil {
+			fmt.Println("[release-assets] all twelve uploaded asset names/sizes PASS (not a remote content re-download)")
+		}
+		return err
 	case "arch", "aggregate", "verify":
 		if !shaRE.MatchString(*commit) {
 			return errors.New("full lowercase source commit required")
@@ -597,7 +601,6 @@ func uploaded(d, remote, v string) error {
 	if !reflect.DeepEqual(got, want) {
 		return errors.New("uploaded release asset names/counts/sizes mismatch; keep draft")
 	}
-	fmt.Println("[release-assets] all twelve uploaded asset names/sizes PASS (not a remote content re-download)")
 	return nil
 }
 
@@ -910,6 +913,9 @@ func checkWorkflow() error {
 	}
 	for name, j := range wf.Jobs {
 		for _, s := range j.Steps {
+			if s.Uses == "actions/setup-go@v6" && s.With["go-version-file"] != "protenix_service/go.mod" {
+				return errors.New("CI must provision the actual service Go toolchain")
+			}
 			if s.Run != "" {
 				cmd := exec.Command("bash", "-n")
 				cmd.Stdin = strings.NewReader(s.Run)
