@@ -133,7 +133,7 @@ FORCE_PACK=1 ./build.sh pack        # 双 arch → build/upload_tmp_dir/ 下的�
 
 - 需要 Go、bun（现场构建前端与 test_ui）、zip。服务二进制用 cgo（SQLite），打非本机 arch 时需交叉编译器（默认 `x86_64-linux-gnu-gcc` / `aarch64-linux-gnu-gcc`，可用 `CC_linux_amd64` / `CC_linux_arm64` 指定）。
 - 发布包交付前先提交、再 `FORCE_PACK=1`，让 `BUILD_INFO.txt` 的 commit 对齐 HEAD。
-- 发版（打 tag、上传）走 `git_tag.sh` 与 `.github/workflows/release.yml`，`build.sh` 只负责构建。
+- 发版入口是 `git_tag.sh`；Actions 用 ubuntu-24.04（amd64）和 ubuntu-24.04-arm（arm64）原生构建，六包完整校验后才发布，`build.sh` 只负责构建。手动 dispatch 只构建；见[双架构链路与操作](docs/native_release.md)。
 
 `./build.sh` 子命令：`pack` 只打发布包（不跑 GPU/pip）；`protenix` / `pxdesign` 只在仓库内 `prefix/` 装/校验开发用运行时（uv + Python 3.14 + torch cu130，GPU 验证用，不是正式安装）；`all`（默认）先打包再装两个 prefix。幂等：已就绪的步骤跳过；`FORCE_PACK=1` / `FORCE_PROTENIX=1` / `FORCE_PXDESIGN=1` 强制重做。
 

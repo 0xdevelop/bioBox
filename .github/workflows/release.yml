@@ -1,7 +1,5 @@
-# 三段式发版占位（release → Build → RemoveOldRelease）。本阶段不触发、不发版。
-# Build 每个 arch 产出：独立单产品包 protenix_/pxdesign_linux_<arch>_release_<version>.zip，
-# 以及整合包 protenix_service_linux_<arch>_release_<version>.zip
-# （服务二进制 + install_protenix_service.sh + systemd 单元 + conf/config.yaml + runtime/{protenix,pxdesign}）。
+# git_tag.sh -> tag push -> native matrix -> complete asset gate -> draft -> publish.
+# workflow_dispatch is deliberately build-only; it cannot create a release or tag.
 name: Release_Build
 
 on:
@@ -10,72 +8,132 @@ on:
       - 'v*'
   workflow_dispatch:
 
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
-  release:
-    runs-on: ubuntu-latest
-    outputs:
-      UPLOAD_URL: ${{ steps.stepCreateRelease.outputs.upload_url }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v6
-
-      - name: Get latest tag
-        run: |
-          echo "LATEST_TAG=$(git tag | grep -v '^latest$' | sort -V | tail -n1)" >> $GITHUB_ENV
-
-      - name: Step GitHub release
-        id: stepCreateRelease
-        uses: ncipollo/release-action@v1
-        with:
-          skipIfReleaseExists: 'true'
-          tag: ${{ env.LATEST_TAG }}
-          name: ${{ env.LATEST_TAG }}
-          body: "protenix_build packaging release (placeholder)"
-
   Build:
-    runs-on: ubuntu-latest
-    needs: release
+    name: Native linux/${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
     steps:
-      - name: CheckOut
-        uses: actions/checkout@v6
+      - uses: actions/checkout@v6
         with:
           submodules: recursive
-
-      - name: Set up Go
-        uses: actions/setup-go@v6
+      - uses: actions/setup-go@v6
         with:
-          go-version: '>=1.25.0'
-
-      # protenix_service 的前端与 test_ui dist 不进仓，打包时现场构建
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
+          go-version-file: go.mod
+      - uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
-
-      # 服务二进制用 cgo（SQLite），arm64 包需要交叉编译器
-      - name: Install cross compiler
+      - name: Install native packaging dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y gcc-aarch64-linux-gnu
-
-      - name: Build linux amd64 + arm64 packs
-        shell: /usr/bin/bash -e {0}
+          sudo apt-get install -y build-essential pkg-config zip unzip
+      - name: Validate native host and release inputs
+        env:
+          TARGET_ARCH: ${{ matrix.arch }}
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
         run: |
-          chmod a+x ./build.sh ./gen_pre_build_config.sh \
-            ./protenix_service/gen_frontend.sh ./protenix_service/gen_test_ui.sh
-          ./gen_pre_build_config.sh all
-          bash ./build.sh release linux_amd64
-          bash ./build.sh release linux_arm64
-
-      - name: Upload binaries
-        uses: george012/upload_github_release_assets_action@latest
+          bash scripts/check_native_build.sh "$TARGET_ARCH"
+          if [[ "$REF_TYPE" == tag ]]; then
+            go run gen_release_assets.go version --tag="$REF_NAME"
+          else
+            go run gen_release_assets.go version
+          fi
+          go run gen_release_assets.go self-test
+      - name: Build three native packages (no prefix installation)
+        env:
+          TARGET_ARCH: ${{ matrix.arch }}
+          FORCE_PACK: '1'
+        run: |
+          bash ./gen_pre_build_config.sh all
+          bash ./build.sh pack release "linux_$TARGET_ARCH"
+          go run gen_release_assets.go arch --arch="$TARGET_ARCH" \
+            --commit="$GITHUB_SHA" --dir=build/upload_tmp_dir --out=tmp/arch-assets
+      - name: Upload this architecture only
+        uses: actions/upload-artifact@v7
         with:
-          path: ./build/upload_tmp_dir/*.zip
+          name: release-packages-linux-${{ matrix.arch }}
+          path: tmp/arch-assets/*
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 7
 
-  RemoveOldRelease:
-    runs-on: ubuntu-latest
+  Aggregate:
+    runs-on: ubuntu-24.04
     needs: Build
     steps:
-      - name: Placeholder prune
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: release-packages-linux-*
+          path: tmp/collected
+          merge-multiple: true
+      - name: Require both architectures and all six current packages
         run: |
-          echo "RemoveOldRelease placeholder — wire prune logic when enabling releases"
+          go run gen_release_assets.go aggregate --commit="$GITHUB_SHA" \
+            --dir=tmp/collected --out=tmp/release-assets
+          go run gen_release_assets.go verify --commit="$GITHUB_SHA" --dir=tmp/release-assets
+      - uses: actions/upload-artifact@v7
+        with:
+          name: release-packages-complete
+          path: tmp/release-assets/*
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 7
+
+  release:
+    # Manual dispatch NEVER publishes, even when a tag ref was selected.
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    needs: Aggregate
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - uses: actions/download-artifact@v8
+        with:
+          name: release-packages-complete
+          path: tmp/release-assets
+      - name: Recheck complete assets before any release write
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          go run gen_release_assets.go version --tag="$RELEASE_TAG"
+          go run gen_release_assets.go verify --commit="$GITHUB_SHA" --dir=tmp/release-assets
+      - name: Upload to a new draft, verify inventory, then publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          # Existing releases are not overwritten. A failed upload leaves only a draft.
+          gh release create "$RELEASE_TAG" tmp/release-assets/* --verify-tag --draft \
+            --title "$RELEASE_TAG" --notes "Native linux amd64 + arm64; three packages per architecture. See release-manifest.json and SHA256SUMS. Runtime dependencies and GPU weights are prepared by the package installers."
+          gh release view "$RELEASE_TAG" --json assets \
+            --jq '[.assets[] | {name: .name, size: .size}]' > tmp/uploaded-assets.json
+          go run gen_release_assets.go uploaded --dir=tmp/release-assets --remote=tmp/uploaded-assets.json
+          gh release edit "$RELEASE_TAG" --draft=false
