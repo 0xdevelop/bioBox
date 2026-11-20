@@ -73,6 +73,86 @@ function runtime_installed() {
     [[ -f "${RUNTIME_DIR}/$1/.installed_by" && -L "${RUNTIME_DIR}/$1/current" ]]
 }
 
+function runtime_current() {
+    local link="${RUNTIME_DIR}/$1/current"
+    if [[ -L "${link}" ]]; then
+        basename "$(readlink "${link}")"
+    fi
+}
+
+function snapshot_runtime_currents() {
+    local app
+    RUNTIME_SNAPSHOT_APPS=()
+    RUNTIME_SNAPSHOT_CURRENTS=()
+    for app in "${RUNTIME_APPS[@]}"; do
+        RUNTIME_SNAPSHOT_APPS+=("${app}")
+        RUNTIME_SNAPSHOT_CURRENTS+=("$(runtime_current "${app}")")
+    done
+}
+
+# Restore runtimes whose current changed in this invocation. Returns 0 only when
+# every current is back to the snapshot; a leftover mixed tree is a failed restore.
+function restore_updated_runtimes() {
+    local i app before now rc=0
+    for i in "${!RUNTIME_SNAPSHOT_APPS[@]}"; do
+        app="${RUNTIME_SNAPSHOT_APPS[$i]}"
+        before="${RUNTIME_SNAPSHOT_CURRENTS[$i]}"
+        now="$(runtime_current "${app}")"
+        if [[ "${now}" == "${before}" ]]; then
+            continue
+        fi
+        if [[ -n "${before}" && -L "${RUNTIME_DIR}/${app}/previous" ]]; then
+            if ! runtime_cmd "${app}" rollback; then
+                echo "${app}: rollback after failed update did not succeed"
+                rc=1
+            fi
+        elif [[ -z "${before}" ]] && runtime_installed "${app}"; then
+            if ! runtime_cmd "${app}" uninstall; then
+                echo "${app}: uninstall after failed install did not succeed"
+                rc=1
+            fi
+        else
+            echo "${app}: current changed during a failed service update and cannot be restored"
+            rc=1
+        fi
+        now="$(runtime_current "${app}")"
+        if [[ "${now}" != "${before}" ]]; then
+            echo "${app}: current is ${now:-none}, wanted ${before:-none}"
+            rc=1
+        fi
+    done
+    return ${rc}
+}
+
+# Port of the template helper: restore files replaced in this update.
+# Only start the previous service when the caller confirmed a complete restore.
+function restore_previous_update() {
+    local restart_old=$1
+    if [[ -n "${BINARY_BAK:-}" && -f "${BINARY_BAK}" ]]; then
+        mv -f "${BINARY_BAK}" "${APP_DIR}/${APP_NAME}"
+        BINARY_BAK=""
+    fi
+    if [[ -n "${UNIT_BAK:-}" && -f "${UNIT_BAK}" ]]; then
+        mv -f "${UNIT_BAK}" "${SYSTEMD_PATH}/${APP_NAME}.service"
+        UNIT_BAK=""
+        systemctl daemon-reload
+    fi
+    if [[ "${restart_old}" == "start" ]]; then
+        systemctl start "${APP_NAME}.service"
+    fi
+}
+
+function restart_previous_if_restored() {
+    local restore_rc=$1
+    shift
+    if [[ ${restore_rc} -eq 0 ]]; then
+        echo "$*; restarting previous service"
+        systemctl start "${APP_NAME}.service"
+    else
+        echo "$*; not starting ${APP_NAME} with a mixed runtime or binary"
+    fi
+}
+
 # 安装或升级全部运行时。$1=reinstall 时先把 conf/<app>.env 备份为 .bak_<时间戳> 再写入新模板（与 config.yaml 同语义）
 function install_runtimes() {
     local mode=$1 app env_file
@@ -104,15 +184,21 @@ function install() {
 
         TIMESTAMP=$(date +"%Y-%m-%d_%H-%M-%S")
 
-        # install runtimes first: 失败时不动二进制与配置
+        # install runtimes first: 失败时不动二进制与配置，并恢复本次已改动的运行时
         was_active=0
         if service_active; then
             was_active=1
             systemctl stop "${APP_NAME}.service"
         fi
+        snapshot_runtime_currents
         if ! install_runtimes reinstall; then
             echo "runtime installation failed; ${APP_NAME} binary/config unchanged"
-            [[ ${was_active} -eq 1 ]] && systemctl start "${APP_NAME}.service"
+            if restore_updated_runtimes && [[ ${was_active} -eq 1 ]]; then
+                echo "runtimes restored to the pre-install current; restarting previous service"
+                systemctl start "${APP_NAME}.service"
+            elif [[ ${was_active} -eq 1 ]]; then
+                echo "runtime restore incomplete; not starting ${APP_NAME} with mixed runtimes"
+            fi
             exit 1
         fi
 
@@ -151,27 +237,47 @@ function updateBinary() {
         runtime_pkg_ok || exit 1
         runtime_uv_ok || exit 1
         TIMESTAMP=$(date +"%Y-%m-%d_%H-%M-%S")
+        BINARY_BAK=""
+        UNIT_BAK=""
         systemctl stop "${APP_NAME}.service"
 
-        # update runtimes（保留 conf/<app>.env 与权重；新版本失败不动 current）
+        # update runtimes（保留 conf/<app>.env 与权重）。任一运行时失败则回退本次已切换的 current。
+        snapshot_runtime_currents
         if ! install_runtimes update; then
-            echo "runtime update failed; ${APP_NAME} binary unchanged, restarting old service"
-            systemctl start "${APP_NAME}.service"
+            if restore_updated_runtimes; then
+                restart_previous_if_restored 0 "runtime update failed; runtimes restored, ${APP_NAME} binary unchanged"
+            else
+                restart_previous_if_restored 1 "runtime update failed; runtime restore incomplete, ${APP_NAME} binary unchanged"
+            fi
             exit 1
         fi
 
         # update binary
         if [[ -f "${APP_DIR}/${APP_NAME}" ]]; then
-            mv "${APP_DIR}/${APP_NAME}" "${APP_DIR}/${APP_NAME}.bak_${TIMESTAMP}"
+            BINARY_BAK="${APP_DIR}/${APP_NAME}.bak_${TIMESTAMP}"
+            mv "${APP_DIR}/${APP_NAME}" "${BINARY_BAK}"
         fi
         cp -f "${SCRIPT_DIR}/${APP_NAME}" "${APP_DIR}/${APP_NAME}"
 
         # update systemd service
         service_file=${SCRIPT_DIR}/${APP_NAME}.service
         if [[ -f "${service_file}" ]]; then
+            if [[ -f "${SYSTEMD_PATH}/${APP_NAME}.service" ]]; then
+                UNIT_BAK="${SYSTEMD_PATH}/${APP_NAME}.service.bak_${TIMESTAMP}"
+                cp -f "${SYSTEMD_PATH}/${APP_NAME}.service" "${UNIT_BAK}"
+            fi
             cp -f "${service_file}" "${SYSTEMD_PATH}"
             systemctl daemon-reload
-            systemctl restart "${APP_NAME}.service"
+            if ! systemctl restart "${APP_NAME}.service"; then
+                echo "update start failed; restoring previous ${APP_NAME} binary, unit, and runtimes"
+                restore_previous_update ""
+                if restore_updated_runtimes; then
+                    restart_previous_if_restored 0 "previous binary, unit, and runtimes restored"
+                else
+                    restart_previous_if_restored 1 "binary/unit may be restored but runtime restore incomplete"
+                fi
+                exit 1
+            fi
         fi
     fi
 }
