@@ -147,6 +147,6 @@ FORCE_PACK=1 ./build.sh pack        # 双 arch → build/upload_tmp_dir/ 下的�
 
 验证码实际生成后无条件写服务 INFO，邮件为独立可选能力，失败如实返回。配置、迁移、日志权限与排障边界见 [操作说明](docs/verification_delivery.md)。
 
-## 当前产物验收与发版缺口
+## 当前发版与安装实测
 
-当前 arm64 三包、release 服务与官方 v1/PXDesign HTTP/GPU 取件切片已实测；整合升级失败一致性、正式配置准备和 amd64 矩阵尚有缺口，不能宣称整系列可发版。见[验收矩阵与证据](docs/acceptance_product_matrix_20261119.md)。
+v0.0.2 已按模板三段在 GitHub 发布双架构六包（公开 Release 与资产齐全）。正式安装到 `/protenix_service`、业务任务与官方卸载因目标机 sudo 需要密码而未执行。完整过程、命令、时间、链接与未覆盖项见[v0.0.2 发版与正式安装实测记录](docs/acceptance_release_v0.0.2_20261120.md)。此前矩阵记录仍见[验收矩阵与证据](docs/acceptance_product_matrix_20261119.md)。
