@@ -94,8 +94,8 @@ UV=/path/to/uv ./install_protenix_service.sh
 
 | 选项 | 行为 |
 | --- | --- |
-| 1 install | 安装或重装。先装/升级两个运行时（失败则不动二进制与配置）；再把旧二进制、`conf/config.yaml`、`runtime/<app>/conf/<app>.env` 备份为 `.bak_<时间戳>` 后覆盖；复制单元到 `/etc/systemd/system`，`enable` + `start` |
-| 2 update | 升级：停服务，升级两个运行时（保留 `<app>.env` 与权重；新版本构建失败时当前版本不动、旧服务重新启动）；只换二进制（旧的留 `.bak_<时间戳>`），不动 `conf/config.yaml`；更新单元后 `restart` |
+| 1 install | 安装或重装。先装/升级两个运行时（失败则不动二进制与配置，并恢复本次已改动的运行时）；再把旧二进制、`conf/config.yaml`、`runtime/<app>/conf/<app>.env` 备份为 `.bak_<时间戳>` 后覆盖；复制单元到 `/etc/systemd/system`，`enable` + `start` |
+| 2 update | 升级：停服务，升级两个运行时（保留 `<app>.env` 与权重）。任一运行时失败时回退本次已切换的 `current`；只有完整回退成功才启动原服务。二进制启动失败时同样恢复上一版二进制/unit 和运行时。不把混合 runtime 当成成功回退。只换二进制（旧的留 `.bak_<时间戳>`），不动 `conf/config.yaml` |
 | 3 uninstall | 整体卸载：`disable --now` 并删除单元，删除整个 `/protenix_service`（含运行时的 Python 环境与权重） |
 | 4 rollback runtime | 两个运行时各自切回上一版本（`previous`），前后停启服务；服务二进制回退用 `.bak_*` |
 | 5 status | 服务状态与两个运行时的版本、是否可运行 |
