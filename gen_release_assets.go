@@ -835,6 +835,10 @@ func selfTest() error {
 		return err
 	}
 	checks++
+	if err = checkGitTagEntry(); err != nil {
+		return err
+	}
+	checks++
 	for _, script := range []string{"git_tag.sh", "build.sh", "scripts/check_native_build.sh"} {
 		if e := exec.Command("bash", "-n", script).Run(); e != nil {
 			return fmt.Errorf("shell syntax: %s", script)
@@ -859,12 +863,8 @@ func checkWorkflow() error {
 		With map[string]string `yaml:"with"`
 	}
 	type job struct {
-		Needs       string `yaml:"needs"`
-		If          string `yaml:"if"`
-		RunsOn      string `yaml:"runs-on"`
-		Permissions struct {
-			Contents string `yaml:"contents"`
-		} `yaml:"permissions"`
+		Needs    string `yaml:"needs"`
+		RunsOn   string `yaml:"runs-on"`
 		Strategy struct {
 			FailFast bool `yaml:"fail-fast"`
 			Matrix   struct {
@@ -877,36 +877,37 @@ func checkWorkflow() error {
 		Steps []step `yaml:"steps"`
 	}
 	var wf struct {
-		On          map[string]yaml.Node `yaml:"on"`
-		Permissions struct {
-			Contents string `yaml:"contents"`
-		} `yaml:"permissions"`
-		Jobs map[string]job `yaml:"jobs"`
+		On   map[string]yaml.Node `yaml:"on"`
+		Jobs map[string]job       `yaml:"jobs"`
 	}
 	if err = yaml.Unmarshal(b, &wf); err != nil {
 		return err
 	}
+	release := wf.Jobs["release"]
+	native := wf.Jobs["build_native"]
 	build := wf.Jobs["Build"]
-	aggregate := wf.Jobs["Aggregate"]
-	publish := wf.Jobs["release"]
-	if len(wf.Jobs) != 3 || len(build.Strategy.Matrix.Include) != 2 || build.Strategy.FailFast || build.RunsOn != "${{ matrix.runner }}" {
-		return errors.New("workflow native matrix contract mismatch")
+	prune := wf.Jobs["RemoveOldRelease"]
+	if len(wf.Jobs) != 4 || release.Needs != "" || native.Needs != "release" || build.Needs != "build_native" || prune.Needs != "Build" {
+		return errors.New("workflow must keep release → Build → RemoveOldRelease, with native packaging inside Build")
+	}
+	if release.RunsOn != "ubuntu-latest" || build.RunsOn != "ubuntu-latest" || prune.RunsOn != "ubuntu-latest" {
+		return errors.New("template stage runners mismatch")
+	}
+	if native.RunsOn != "${{ matrix.runner }}" || native.Strategy.FailFast || len(native.Strategy.Matrix.Include) != 2 {
+		return errors.New("native matrix contract mismatch")
 	}
 	want := map[string]string{"amd64": "ubuntu-24.04", "arm64": "ubuntu-24.04-arm"}
-	for _, m := range build.Strategy.Matrix.Include {
+	for _, m := range native.Strategy.Matrix.Include {
 		if want[m.Arch] != m.Runner {
 			return errors.New("workflow runner mismatch")
 		}
 		delete(want, m.Arch)
 	}
-	if len(want) != 0 || aggregate.Needs != "Build" || publish.Needs != "Aggregate" || wf.Permissions.Contents != "read" || publish.Permissions.Contents != "write" {
-		return errors.New("workflow ordering/permission gate mismatch")
-	}
-	if publish.If != "github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')" {
-		return errors.New("dispatch must never publish")
+	if len(want) != 0 {
+		return errors.New("workflow runner mismatch")
 	}
 	if _, ok := wf.On["workflow_dispatch"]; !ok {
-		return errors.New("missing non-publishing dispatch")
+		return errors.New("missing workflow_dispatch")
 	}
 	if _, ok := wf.On["push"]; !ok {
 		return errors.New("missing tag trigger")
@@ -923,28 +924,207 @@ func checkWorkflow() error {
 					return fmt.Errorf("workflow run shell syntax in %s", name)
 				}
 			}
-			if name != "release" && strings.Contains(s.Run, "gh release") {
-				return errors.New("release write outside publish gate")
-			}
 		}
 	}
 	text := string(b)
-	for _, required := range []string{"bash ./build.sh pack release", "check_native_build.sh", "gen_release_assets.go aggregate", "gen_release_assets.go verify", "name: release-packages-linux-${{ matrix.arch }}", "pattern: release-packages-linux-*", "merge-multiple: true", "gh release create", "--verify-tag --draft", "gen_release_assets.go uploaded", "gh release edit", "--draft=false"} {
+	for _, required := range []string{
+		"mathieudutour/github-tag-action@v6.2",
+		"ncipollo/release-action@v1",
+		"bodyFile: changelog/${{ env.LATEST_TAG }}.md",
+		"bash ./build.sh pack release",
+		"check_native_build.sh",
+		"gen_release_assets.go aggregate",
+		"gen_release_assets.go verify",
+		"name: release-packages-linux-${{ matrix.arch }}",
+		"pattern: release-packages-linux-*",
+		"merge-multiple: true",
+		"george012/upload_github_release_assets_action@latest",
+		"gh release delete ${{ env.APP_OLD_VERSION }} -y",
+		"git push origin --delete ${{ env.APP_OLD_VERSION }}",
+	} {
 		if !strings.Contains(text, required) {
-			return errors.New("workflow packaging/aggregation/publication contract missing")
+			return errors.New("workflow template or necessary packaging contract missing")
 		}
 	}
-	if strings.Contains(text, "--clobber") || strings.Contains(text, "gcc-aarch64-linux-gnu") || strings.Contains(text, "LATEST_TAG") {
-		return errors.New("workflow must not cross-compile/select unrelated tag/overwrite release")
+	if strings.Contains(text, "--clobber") || strings.Contains(text, "gcc-aarch64-linux-gnu") || strings.Contains(text, "gh release create") || strings.Contains(text, "--draft") {
+		return errors.New("workflow must not reintroduce cross-compile or the previous draft-publish redesign")
 	}
-	create := strings.Index(text, "gh release create")
-	uploaded := strings.Index(text, "gen_release_assets.go uploaded")
-	edit := strings.Index(text, "gh release edit")
-	if !(create < uploaded && uploaded < edit) {
-		return errors.New("publish before uploaded inventory gate")
+	if strings.Contains(text, "bash ./build.sh test") || strings.Contains(text, "bash ./build.sh\n") {
+		return errors.New("Actions must not run default build.sh all or a second test-mode pack")
 	}
 	return nil
 }
+
+func checkGitTagEntry() error {
+	b, err := os.ReadFile("git_tag.sh")
+	if err != nil {
+		return err
+	}
+	text := string(b)
+	for _, required := range []string{
+		`if [ -z "$1" ]; then`,
+		`NEXT_VERSION="v${base}.${major}.${minor}"`,
+		`elif [ "$1" == "custom" ]; then`,
+		`git tag v${next_version_no}`,
+		`git tag -f latest v${next_version_no}`,
+		`for remote in $(git remote)`,
+		`git push --delete ${remote} latest`,
+		`git push ${remote} v${next_version_no}`,
+		`git tag -d v${pre_del_version_no}`,
+		`handle_input "$@"`,
+		`./protenix_service/gen_api_docs.sh "${NEXT_VERSION}"`,
+		`pre_build_config_template.yaml`,
+		`bash ./gen_pre_build_config.sh all`,
+	} {
+		if !strings.Contains(text, required) {
+			return errors.New("git_tag.sh lost a template or necessary path adaptation")
+		}
+	}
+	for _, forbidden := range []string{"--publish", "--check", "git tag -a"} {
+		if strings.Contains(text, forbidden) {
+			return errors.New("git_tag.sh must not keep the unauthorized flag/annotated-tag interface")
+		}
+	}
+	return checkGitTagNoArgFixture()
+}
+
+func checkGitTagNoArgFixture() error {
+	// Isolated git repository only. This does not tag or push the product checkout.
+	base, err := os.MkdirTemp("tmp", "git-tag-contract-")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(base)
+	root, err := filepath.Abs(base)
+	if err != nil {
+		return err
+	}
+	repo := filepath.Join(root, "work")
+	remote := filepath.Join(root, "remote.git")
+	for _, d := range []string{repo, filepath.Join(repo, "protenix_service", "config"), filepath.Join(repo, "protenix_service", "docs"), filepath.Join(repo, "bin")} {
+		if err = os.MkdirAll(d, 0755); err != nil {
+			return err
+		}
+	}
+	write := func(path, body string, mode os.FileMode) {
+		if err = os.WriteFile(filepath.Join(repo, path), []byte(body), mode); err != nil {
+			panic(err)
+		}
+	}
+	src, err := os.ReadFile("git_tag.sh")
+	if err != nil {
+		return err
+	}
+	if err = os.WriteFile(filepath.Join(repo, "git_tag.sh"), src, 0755); err != nil {
+		return err
+	}
+	write("pre_build_config_template.yaml", "project:\n  name: protenix_build\n  version: v0.0.1\n", 0644)
+	write("gen_pre_build_config_linux_amd64.yaml", "project:\n  version: v0.0.1\n", 0644)
+	write("gen_pre_build_config_linux_arm64.yaml", "project:\n  version: v0.0.1\n", 0644)
+	write("protenix_service/config/config.go", "package config\nconst (\n\tProjectVersion  = \"v0.0.1\"\n)\n", 0644)
+	write("gen_pre_build_config.sh", "#!/bin/bash\nset -e\nsed -i -e 's/^\\(  version: \\)v0.0.1$/\\1v0.0.2/' gen_pre_build_config_linux_amd64.yaml gen_pre_build_config_linux_arm64.yaml\n", 0755)
+	write("protenix_service/gen_api_docs.sh", "#!/bin/bash\nset -e\nprintf 'methods for %s\\n' \"$1\" > protenix_service/docs/api_methods.md\n", 0755)
+	write("bin/go", `#!/bin/bash
+set -euo pipefail
+if [[ "$1" != run || "$2" != gen_release_assets.go ]]; then
+  echo "unexpected go invocation: $*" >&2
+  exit 1
+fi
+shift 2
+case "$1" in
+  version)
+    current=$(sed -n 's/^  version: //p' pre_build_config_template.yaml | head -n1)
+    if [[ "${2:-}" == --tag=* ]]; then
+      tag="${2#--tag=}"
+      test "$current" = "$tag"
+      exit 0
+    fi
+    printf '%s\n' "$current"
+    ;;
+  *)
+    echo "unexpected gen_release_assets command: $*" >&2
+    exit 1
+    ;;
+esac
+`, 0755)
+	run := func(dir string, extraEnv []string, args ...string) ([]byte, error) {
+		cmd := exec.Command(args[0], args[1:]...)
+		cmd.Dir = dir
+		cmd.Env = append(append([]string{}, os.Environ()...), extraEnv...)
+		return cmd.CombinedOutput()
+	}
+	if _, err = run(root, nil, "git", "init", "--bare", remote); err != nil {
+		return err
+	}
+	setup := [][]string{
+		{"git", "init", "-b", "main", repo},
+		{"git", "-C", repo, "config", "user.name", "yerikokay"},
+		{"git", "-C", repo, "config", "user.email", "yerikokay@users.noreply.github.com"},
+		{"git", "-C", repo, "add", "."},
+		{"git", "-C", repo, "commit", "-m", "fixture base"},
+		{"git", "-C", repo, "tag", "v0.0.0"},
+		{"git", "-C", repo, "tag", "latest"},
+		{"git", "-C", repo, "remote", "add", "origin", remote},
+		{"git", "-C", repo, "push", "-u", "origin", "HEAD:main", "v0.0.0", "latest"},
+	}
+	for _, args := range setup {
+		if out, e := run("", nil, args...); e != nil {
+			return fmt.Errorf("fixture setup failed: %s: %s: %w", strings.Join(args, " "), out, e)
+		}
+	}
+	pathEnv := "PATH=" + filepath.Join(repo, "bin") + string(os.PathListSeparator) + os.Getenv("PATH")
+	out, err := run(repo, []string{pathEnv}, "bash", "./git_tag.sh", "--publish", "v0.0.1")
+	if err != nil {
+		return fmt.Errorf("unexpected failure on invalid flag: %s", out)
+	}
+	if !strings.Contains(string(out), "Invalid argument") {
+		return errors.New("unauthorized --publish flag must fall through to the template invalid-argument path")
+	}
+	if out, err = run(repo, nil, "git", "rev-parse", "HEAD"); err != nil {
+		return err
+	}
+	before := strings.TrimSpace(string(out))
+	if out, err = run(repo, []string{pathEnv}, "bash", "./git_tag.sh", "-get_pre_del_tag_name"); err != nil {
+		return fmt.Errorf("pre-delete name failed: %s", out)
+	}
+	if !strings.Contains(string(out), "0.0.0") {
+		return fmt.Errorf("pre-delete name mismatch: %s", out)
+	}
+	out, err = run(repo, []string{pathEnv}, "bash", "./git_tag.sh")
+	if err != nil {
+		return fmt.Errorf("no-arg git_tag.sh fixture failed: %s", out)
+	}
+	if !strings.Contains(string(out), "Complated") {
+		return fmt.Errorf("no-arg flow did not complete: %s", out)
+	}
+	checks := map[string][]string{
+		"service-version": {"grep", "-q", `ProjectVersion  = "v0.0.2"`, "protenix_service/config/config.go"},
+		"yaml-version":    {"grep", "-qx", "  version: v0.0.2", "pre_build_config_template.yaml", "gen_pre_build_config_linux_amd64.yaml", "gen_pre_build_config_linux_arm64.yaml"},
+		"lightweight-tag": {"bash", "-c", "test $(git cat-file -t v0.0.2) = commit"},
+		"latest-move":     {"bash", "-c", "test $(git rev-parse latest) = $(git rev-parse v0.0.2)"},
+		"old-local-tag":   {"bash", "-c", "! git show-ref --verify --quiet refs/tags/v0.0.0"},
+		"release-commit":  {"bash", "-c", "git log -1 --format=%s | grep -q '^Release:--: v0.0.2_'"},
+		"changelog":       {"test", "-s", "changelog/v0.0.2.md"},
+		"api-docs":        {"test", "-s", "protenix_service/docs/api_methods.md"},
+	}
+	for name, args := range checks {
+		if _, e := run(repo, nil, args...); e != nil {
+			return fmt.Errorf("no-arg result failed: %s", name)
+		}
+	}
+	if out, err = run(repo, nil, "git", "rev-parse", "HEAD"); err != nil {
+		return err
+	}
+	if strings.TrimSpace(string(out)) == before {
+		return errors.New("no-arg flow did not create the template release commit")
+	}
+	// Confirm the fixture remote received main and the version tag, and that latest was replaced.
+	if _, err = run(remote, nil, "git", "rev-parse", "refs/heads/main", "refs/tags/v0.0.2", "refs/tags/latest"); err != nil {
+		return errors.New("fixture remote did not receive the template main/tag/latest pushes")
+	}
+	return nil
+}
+
 func checkNativeFixtures(root string) error {
 	// Stub executables exercise preflight branches only; no install and no real compiler run.
 	dir := filepath.Join(root, "native-bin")

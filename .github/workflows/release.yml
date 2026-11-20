@@ -1,5 +1,6 @@
-# git_tag.sh -> tag push -> native matrix -> complete asset gate -> draft -> publish.
-# workflow_dispatch is deliberately build-only; it cannot create a release or tag.
+# Copied from project_template_go Release_Build (release → Build → RemoveOldRelease)
+# and incrementally adapted for this repository's three native linux packages.
+# This change is not published in this session; the workflow is not triggered here.
 name: Release_Build
 
 on:
@@ -8,21 +9,43 @@ on:
       - 'v*'
   workflow_dispatch:
 
-permissions:
-  contents: read
-
-defaults:
-  run:
-    shell: bash
-
-concurrency:
-  group: release-${{ github.ref }}
-  cancel-in-progress: false
-
 jobs:
-  Build:
+  release:
+    runs-on: ubuntu-latest
+    outputs:
+      UPLOAD_URL: ${{ steps.stepCreateRelease.outputs.upload_url }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Get latest tag
+        run: |
+          echo "LATEST_TAG=$(git tag | grep -v '^latest$' | sort -V | tail -n1)" >> $GITHUB_ENV
+
+      - name: Bump version and push tag
+        id: tag-version
+        uses: mathieudutour/github-tag-action@v6.2
+        with:
+          tag_prefix: ""
+          custom_tag: ${{ env.LATEST_TAG }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Step GitHub release
+        id: stepCreateRelease
+        uses: ncipollo/release-action@v1
+        with:
+          skipIfReleaseExists: 'true'
+          tag: ${{ env.LATEST_TAG }}
+          name: ${{ env.LATEST_TAG }}
+          bodyFile: changelog/${{ env.LATEST_TAG }}.md
+
+  # Necessary split of the template Build stage: this product ships three packages
+  # for linux/amd64 and linux/arm64, and the service binary requires CGo (SQLite).
+  # GOARCH-only cross compilation is not treated as a native runtime build.
+  build_native:
     name: Native linux/${{ matrix.arch }}
     runs-on: ${{ matrix.runner }}
+    needs: release
     strategy:
       fail-fast: false
       matrix:
@@ -32,19 +55,26 @@ jobs:
           - arch: arm64
             runner: ubuntu-24.04-arm
     steps:
-      - uses: actions/checkout@v6
+      - name: CheckOut
+        uses: actions/checkout@v6
         with:
           submodules: recursive
-      - uses: actions/setup-go@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
         with:
           go-version-file: protenix_service/go.mod
-      - uses: oven-sh/setup-bun@v2
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
+
       - name: Install native packaging dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential pkg-config zip unzip
+
       - name: Validate native host and release inputs
         env:
           TARGET_ARCH: ${{ matrix.arch }}
@@ -58,6 +88,7 @@ jobs:
             go run gen_release_assets.go version
           fi
           go run gen_release_assets.go self-test
+
       - name: Build three native packages (no prefix installation)
         env:
           TARGET_ARCH: ${{ matrix.arch }}
@@ -67,6 +98,7 @@ jobs:
           bash ./build.sh pack release "linux_$TARGET_ARCH"
           go run gen_release_assets.go arch --arch="$TARGET_ARCH" \
             --commit="$GITHUB_SHA" --dir=build/upload_tmp_dir --out=tmp/arch-assets
+
       - name: Upload this architecture only
         uses: actions/upload-artifact@v7
         with:
@@ -76,64 +108,100 @@ jobs:
           overwrite: true
           retention-days: 7
 
-  Aggregate:
-    runs-on: ubuntu-24.04
-    needs: Build
+  Build:
+    runs-on: ubuntu-latest
+    needs: build_native
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-go@v6
+      - name: CheckOut
+        uses: actions/checkout@v6
+
+      - name: Set APP_VERSION env
+        run: echo APP_VERSION=$(echo ${GITHUB_REF} | rev | cut -d'/' -f 1 | rev ) >> ${GITHUB_ENV}
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
         with:
           go-version-file: protenix_service/go.mod
-      - uses: actions/download-artifact@v8
+
+      - name: Collect and require the complete six-package inventory
+        uses: actions/download-artifact@v8
         with:
           pattern: release-packages-linux-*
           path: tmp/collected
           merge-multiple: true
-      - name: Require both architectures and all six current packages
+
+      - name: Verify both architectures and stage upload files
         run: |
           go run gen_release_assets.go aggregate --commit="$GITHUB_SHA" \
             --dir=tmp/collected --out=tmp/release-assets
           go run gen_release_assets.go verify --commit="$GITHUB_SHA" --dir=tmp/release-assets
-      - uses: actions/upload-artifact@v7
-        with:
-          name: release-packages-complete
-          path: tmp/release-assets/*
-          if-no-files-found: error
-          overwrite: true
-          retention-days: 7
+          mkdir -p build/upload_tmp_dir
+          cp -a tmp/release-assets/. build/upload_tmp_dir/
 
-  release:
-    # Manual dispatch NEVER publishes, even when a tag ref was selected.
-    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
-    needs: Aggregate
-    runs-on: ubuntu-24.04
-    permissions:
-      contents: write
+      - name: Upload binaries
+        id: upload_file_to_release
+        uses: george012/upload_github_release_assets_action@latest
+        with:
+          path: ./build/upload_tmp_dir/*
+
+  RemoveOldRelease:
+    # Kept as in the template, including deletion of the version-2 release and its tag.
+    # This session does not run git_tag.sh or this workflow, so those remote writes are not executed.
+    runs-on: ubuntu-latest
+    needs: Build
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-go@v6
-        with:
-          go-version-file: protenix_service/go.mod
-      - uses: actions/download-artifact@v8
-        with:
-          name: release-packages-complete
-          path: tmp/release-assets
-      - name: Recheck complete assets before any release write
-        env:
-          RELEASE_TAG: ${{ github.ref_name }}
+      - name: install github-cli
         run: |
-          go run gen_release_assets.go version --tag="$RELEASE_TAG"
-          go run gen_release_assets.go verify --commit="$GITHUB_SHA" --dir=tmp/release-assets
-      - name: Upload to a new draft, verify inventory, then publish
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-          RELEASE_TAG: ${{ github.ref_name }}
+          type -p curl >/dev/null || sudo apt install curl -y
+          curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg \
+          && sudo chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg \
+          && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null \
+          && sudo apt update \
+          && sudo apt install gh -y
+
+      - name: CheckOut
+        uses: actions/checkout@v4
+
+      - name: Set APP_VERSION env
         run: |
-          # Existing releases are not overwritten. A failed upload leaves only a draft.
-          gh release create "$RELEASE_TAG" tmp/release-assets/* --verify-tag --draft \
-            --title "$RELEASE_TAG" --notes "Native linux amd64 + arm64; three packages per architecture. See release-manifest.json and SHA256SUMS. Runtime dependencies and GPU weights are prepared by the package installers."
-          gh release view "$RELEASE_TAG" --json assets \
-            --jq '[.assets[] | {name: .name, size: .size}]' > tmp/uploaded-assets.json
-          go run gen_release_assets.go uploaded --dir=tmp/release-assets --remote=tmp/uploaded-assets.json
-          gh release edit "$RELEASE_TAG" --draft=false
+          APP_VERSION=$(echo ${GITHUB_REF} | rev | cut -d'/' -f 1 | rev ) \
+
+          function get_pre_del_tag {
+              local v_str=$1
+              baseStr=$(echo $v_str | cut -d'.' -f1)
+              base=${baseStr//v/}
+              major=$(echo $v_str | cut -d'.' -f2)
+              minor=$(echo $v_str | cut -d'.' -f3)
+
+              if ((minor>0)); then
+                  minor=$((minor-1))
+              else
+                  minor=999
+                  if ((major>0)); then
+                      major=$((major-1))
+                  else
+                      major=999
+                      if ((base>0)); then
+                          base=$((base-1))
+                      else
+                          echo "Error: Version cannot be decremented."
+                          exit 1
+                      fi
+                  fi
+              fi
+
+              pre_v_no="v${base}.${major}.${minor}"
+              echo $pre_v_no
+          }
+
+          APP_OLD_VERSION=$(get_pre_del_tag $(get_pre_del_tag $APP_VERSION))
+
+          echo "Old version to remove: ${APP_OLD_VERSION}"
+          echo APP_OLD_VERSION=${APP_OLD_VERSION} >> ${GITHUB_ENV}
+
+      - name: Remove Old Release
+        run: |
+          gh release delete ${{ env.APP_OLD_VERSION }} -y
+          git push origin --delete ${{ env.APP_OLD_VERSION }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
