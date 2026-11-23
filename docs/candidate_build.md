@@ -7,6 +7,7 @@
 当前已现场发现GitHub connector仅有工作流/运行/日志只读工具，没有dispatch工具；spark也没有gh CLI。没有读凭据或调用内部API。为不把能力缺口变成停工，同一workflow增加main push的正常官方事件入口：本轮正常commit+push就会自动运行候选；人工也可在GitHub Actions选择Release_Build→Run workflow，不传新参数。后续源码普通push同样持续验证，不需要再次请用户批准同一事项。
 
 - `release`与`RemoveOldRelease`、公开Release上传步骤都严格限定push版本tag；候选不经过它们。Build显式按native成功继续（always+!cancelled+needs结果），避免GitHub把已跳过release祖先错误传递成Build也跳过。
+- 每个native job对真实整合zip额外做rootless资源门禁smoke：只解压tmp副本、改副本配置根value，无TTY检查missing→download_disabled、prepare拒绝、缺venv时verify在上游Python前拒绝；不安装环境/不下载权重/不碰systemd或GPU。不能把该smoke当推理通过。
 - 继续两原生runner：ubuntu-24.04 amd64、ubuntu-24.04-arm arm64；各自内部构建/检查三包，独立包能力没有被裁掉。
 - 候选跨job只传各架构整合zip（内部transport artifacts `release-packages-linux-*`），不再传独立包/多份manifest/checksum；Build用原`gen_release_assets.go verify`校验服务ELF/CGo、commit及两套内嵌runtime材料。
 - 最终可下载artifact名 `candidate-<完整源SHA>`，**恰好**两整合zip + SHA256SUMS（两行）。原生中间transport各含一个zip，仅为job间搬运，不是额外交付附件。

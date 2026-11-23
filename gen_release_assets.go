@@ -979,6 +979,7 @@ func checkWorkflow() error {
 		"bodyFile: changelog/${{ env.LATEST_TAG }}.md",
 		"bash ./build.sh pack release",
 		"check_native_build.sh",
+		"bash scripts/check_bundle_resources.sh",
 		"gen_release_assets.go aggregate",
 		"gen_release_assets.go verify",
 		"name: release-packages-linux-${{ matrix.arch }}",

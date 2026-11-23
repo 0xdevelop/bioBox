@@ -103,6 +103,13 @@ jobs:
           go run gen_release_assets.go arch --arch="$TARGET_ARCH" \
             --commit="$GITHUB_SHA" --dir=build/upload_tmp_dir --out=tmp/arch-assets
 
+      - name: Rootless resource-gate smoke of the real native bundle
+        env:
+          TARGET_ARCH: ${{ matrix.arch }}
+        run: |
+          version=$(go run gen_release_assets.go version)
+          bash scripts/check_bundle_resources.sh "build/upload_tmp_dir/protenix_service_linux_${TARGET_ARCH}_release_${version}.zip"
+
       - name: Upload this architecture only
         uses: actions/upload-artifact@v7
         with:
