@@ -915,7 +915,7 @@ func checkWorkflow() error {
 	prune := wf.Jobs["RemoveOldRelease"]
 	tagOnly := "github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')"
 	candidateOnly := "github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main'"
-	if release.If != tagOnly || prune.If != tagOnly || !strings.Contains(native.If, "always()") || !strings.Contains(native.If, "github.ref == 'refs/heads/main'") {
+	if build.If != "always() && !cancelled() && needs.build_native.result == 'success'" || release.If != tagOnly || prune.If != tagOnly || !strings.Contains(native.If, "always()") || !strings.Contains(native.If, "github.ref == 'refs/heads/main'") {
 		return errors.New("candidate must bypass release/prune without bypassing native build")
 	}
 	foundCandidate := false

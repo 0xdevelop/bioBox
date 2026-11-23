@@ -13,6 +13,7 @@ with tempfile.TemporaryDirectory(dir=repo/"tmp",prefix="protected-test-") as d:
  for block in [local,remote]:
   p=subprocess.run(["/bin/bash","-c",'pre_del_version_no=0.0.2; '+block],cwd=repo,env=env,capture_output=True,text=True)
   assert p.returncode==0 and not log.read_text(),(p.returncode,p.stderr,log.read_text())
+ assert "if: always() && !cancelled() && needs.build_native.result == 'success'" in wf
  assert wf.count("if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')")>=4
  assert "name: candidate-${{ github.sha }}" in wf and 'bash scripts/stage_candidate_assets.sh "$GITHUB_SHA"' in wf
  print("v0.0.2 local/remote protected guard PASS; candidate/tag stage separation present")
