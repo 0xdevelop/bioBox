@@ -913,22 +913,25 @@ func checkWorkflow() error {
 	native := wf.Jobs["build_native"]
 	build := wf.Jobs["Build"]
 	prune := wf.Jobs["RemoveOldRelease"]
-	tagOnly := "github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')"
-	candidateOnly := "github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main'"
-	if build.If != "always() && !cancelled() && needs.build_native.result == 'success'" || release.If != tagOnly || prune.If != tagOnly || !strings.Contains(native.If, "always()") || !strings.Contains(native.If, "github.ref == 'refs/heads/main'") {
-		return errors.New("candidate must bypass release/prune without bypassing native build")
+	if release.If != "" || native.If != "" || build.If != "" || prune.If != "" {
+		return errors.New("workflow must not carry candidate conditional bypasses")
 	}
-	foundCandidate := false
+	foundNativeTransfer := false
+	for _, st := range native.Steps {
+		if st.Uses == "actions/upload-artifact@v7" && st.With["name"] == "release-packages-linux-${{ matrix.arch }}" {
+			foundNativeTransfer = st.If == "" && st.With["path"] == "tmp/arch-assets/*"
+		}
+	}
+	if !foundNativeTransfer {
+		return errors.New("internal native arch transfer must upload tmp/arch-assets/* unconditionally")
+	}
 	for _, st := range build.Steps {
-		if strings.HasPrefix(st.Uses, "george012/upload_github_release_assets_action@") && st.If != tagOnly {
-			return errors.New("candidate must not upload to a Release")
+		if strings.HasPrefix(st.Uses, "actions/upload-artifact") {
+			return errors.New("Build stage must publish Release assets, not upload candidate artifacts")
 		}
-		if st.Uses == "actions/upload-artifact@v7" && st.With["name"] == "candidate-${{ github.sha }}" {
-			foundCandidate = st.If == candidateOnly && st.With["path"] == "tmp/release-assets/*"
+		if strings.HasPrefix(st.Uses, "george012/upload_github_release_assets_action@") && st.If != "" {
+			return errors.New("Release asset upload must follow the template Build stage")
 		}
-	}
-	if !foundCandidate {
-		return errors.New("candidate public-three-file artifact contract missing")
 	}
 	if len(wf.Jobs) != 4 || release.Needs != "" || native.Needs != "release" || build.Needs != "build_native" || prune.Needs != "Build" {
 		return errors.New("workflow must keep release → Build → RemoveOldRelease, with native packaging inside Build")
@@ -952,8 +955,19 @@ func checkWorkflow() error {
 	if _, ok := wf.On["workflow_dispatch"]; !ok {
 		return errors.New("missing workflow_dispatch")
 	}
-	if _, ok := wf.On["push"]; !ok {
+	pushNode, ok := wf.On["push"]
+	if !ok {
 		return errors.New("missing tag trigger")
+	}
+	var pushCfg struct {
+		Tags     []string `yaml:"tags"`
+		Branches []string `yaml:"branches"`
+	}
+	if err = pushNode.Decode(&pushCfg); err != nil {
+		return err
+	}
+	if len(pushCfg.Tags) == 0 || len(pushCfg.Branches) != 0 {
+		return errors.New("workflow push trigger must match template tags-only (no branch candidate trigger)")
 	}
 	for name, j := range wf.Jobs {
 		for _, s := range j.Steps {
@@ -993,7 +1007,7 @@ func checkWorkflow() error {
 			return errors.New("workflow template or necessary packaging contract missing")
 		}
 	}
-	if strings.Contains(text, "--clobber") || strings.Contains(text, "gcc-aarch64-linux-gnu") || strings.Contains(text, "gh release create") || strings.Contains(text, "--draft") {
+	if strings.Contains(text, "--clobber") || strings.Contains(text, "gcc-aarch64-linux-gnu") || strings.Contains(text, "gh release create") || strings.Contains(text, "--draft") || strings.Contains(text, "candidate-") || strings.Contains(text, "stage_candidate_assets") || strings.Contains(text, "refs/heads/main") {
 		return errors.New("workflow must not reintroduce cross-compile or the previous draft-publish redesign")
 	}
 	if strings.Contains(text, "bash ./build.sh test") || strings.Contains(text, "bash ./build.sh\n") {

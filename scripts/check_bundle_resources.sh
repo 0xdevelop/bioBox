@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Native, rootless validation of the real candidate zip. No upstream Python,
+# Native, rootless validation of the real service release zip. No upstream Python,
 # environment installation, weight download, systemd or GPU.
 set -euo pipefail
 archive="$1"
