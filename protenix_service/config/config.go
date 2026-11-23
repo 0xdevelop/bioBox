@@ -28,7 +28,7 @@ import (
 
 const (
 	ProjectName     = "protenix_service"
-	ProjectVersion  = "v0.0.2"
+	ProjectVersion  = "v0.0.3"
 	ProjectBundleID = "com.protenix_service.protenix_service"
 	apiPortDefault  = 7095
 )

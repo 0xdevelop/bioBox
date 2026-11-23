@@ -1,4 +1,4 @@
-> 本文件由 `gen_api_docs.sh` 从方法注册表生成（v0.0.2，共 23 个方法），禁止手改；新增方法后重新执行生成。
+> 本文件由 `gen_api_docs.sh` 从方法注册表生成（v0.0.3，共 25 个方法），禁止手改；新增方法后重新执行生成。
 
 # 1. 统一调用方式
 
@@ -824,9 +824,98 @@ MCP 凭证使用 HTTP 头，`tools/list` 只暴露业务入参，不含 `jwt_tok
 }
 ```
 
-# 7. protenix
+# 7. Resource
 
-提交 Protenix 结构预测任务（对应 CLI：protenix-run pred）。版本/模型走 arguments。异步队列使用配置的主关系库（支持 SQLite）。version 缺省 v1，用于选择独立 runtime：v1 未单独配置时使用 cli_cfg.protenix.binary，v2 必须配置 cli_cfg.protenix.version_runtimes.v2.binary，不会回退到 v1。对应版本未配置时 Execute 拒绝启动进程。
+## 7.1. resource.status
+
+查询配置资源集合及最后下载字节快照（不是推理进度）；不下载。任务生命周期仍以 task.get 为准。
+
+`arguments` 传参举例（仅含必填字段）：
+
+```json
+{
+  "set": "<set>"
+}
+```
+
+可选字段：`jwt_token`。
+
+`arguments` JSON Schema（约束说明，非请求体；`required` 数组 = 必填字段清单）：
+
+```json
+{
+  "additionalProperties": false,
+  "properties": {
+    "jwt_token": {
+      "description": "一次只带一种凭证：自签 JWT，或 ptxk_ 前缀 API key（校验不同）。已带 Authorization: Bearer 时省略；显式传入优先于头。",
+      "maxLength": 8192,
+      "minLength": 1,
+      "type": "string"
+    },
+    "set": {
+      "maxLength": 128,
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "required": [
+    "set"
+  ],
+  "type": "object"
+}
+```
+
+## 7.2. resource.prepare
+
+明确确认 status 返回的指纹，仅准备所指配置集合；沿用持久异步任务，不启动推理。
+
+异步方法：受理后返回 `task_id`，进度与结果经任务查询方法读取。
+
+`arguments` 传参举例（仅含必填字段）：
+
+```json
+{
+  "confirmation_token": "<confirmation_token>",
+  "set": "<set>"
+}
+```
+
+可选字段：`jwt_token`。
+
+`arguments` JSON Schema（约束说明，非请求体；`required` 数组 = 必填字段清单）：
+
+```json
+{
+  "additionalProperties": false,
+  "properties": {
+    "confirmation_token": {
+      "maxLength": 64,
+      "minLength": 64,
+      "type": "string"
+    },
+    "jwt_token": {
+      "description": "一次只带一种凭证：自签 JWT，或 ptxk_ 前缀 API key（校验不同）。已带 Authorization: Bearer 时省略；显式传入优先于头。",
+      "maxLength": 8192,
+      "minLength": 1,
+      "type": "string"
+    },
+    "set": {
+      "maxLength": 128,
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "required": [
+    "set",
+    "confirmation_token"
+  ],
+  "type": "object"
+}
+```
+
+# 8. protenix
+
+提交 Protenix 结构预测任务（对应 CLI：protenix-run pred）。官方受管 runtime 目前仅核准 v1 默认模型、显式 use_msa=false，且须可信完整资源清单已 ready；其余自动下载分支拒绝启动，不静默回退。版本/模型走 arguments。异步队列使用配置的主关系库（支持 SQLite）。version 缺省 v1，用于选择独立 runtime：v1 未单独配置时使用 cli_cfg.protenix.binary，v2 必须配置 cli_cfg.protenix.version_runtimes.v2.binary，不会回退到 v1。对应版本未配置时 Execute 拒绝启动进程。
 
 异步方法：受理后返回 `task_id`，进度与结果经任务查询方法读取。
 
@@ -922,9 +1011,9 @@ MCP 凭证使用 HTTP 头，`tools/list` 只暴露业务入参，不含 `jwt_tok
 }
 ```
 
-# 8. pxdesign
+# 9. pxdesign
 
-提交 PXDesign 设计流水线任务（对应 CLI：pxdesign-run pipeline）。preset 走 arguments。异步队列使用配置的主关系库（支持 SQLite）。未配置 cli_cfg.pxdesign.binary 时 Execute 拒绝启动进程。
+官方受管 runtime 当前仅核准 preview + 显式 use_msa=false，须可信完整资源集合已 ready；extended/custom 自动下载分支拒绝启动。提交 PXDesign 设计流水线任务（对应 CLI：pxdesign-run pipeline）。preset 走 arguments。异步队列使用配置的主关系库（支持 SQLite）。未配置 cli_cfg.pxdesign.binary 时 Execute 拒绝启动进程。
 
 异步方法：受理后返回 `task_id`，进度与结果经任务查询方法读取。
 
@@ -937,7 +1026,7 @@ MCP 凭证使用 HTTP 头，`tools/list` 只暴露业务入参，不含 `jwt_tok
 }
 ```
 
-可选字段：`N_max_runs`、`N_sample`、`N_step`、`dtype`、`eta_max`、`eta_min`、`eta_type`、`jwt_token`、`preset`。
+可选字段：`N_max_runs`、`N_sample`、`N_step`、`dtype`、`eta_max`、`eta_min`、`eta_type`、`jwt_token`、`preset`、`use_msa`。
 
 `arguments` JSON Schema（约束说明，非请求体；`required` 数组 = 必填字段清单）：
 
@@ -1005,6 +1094,10 @@ MCP 凭证使用 HTTP 头，`tools/list` 只暴露业务入参，不含 `jwt_tok
         "custom"
       ],
       "type": "string"
+    },
+    "use_msa": {
+      "description": "是否使用 MSA；受管离线 preview 必须显式 false，未接管分支拒绝启动。",
+      "type": "boolean"
     }
   },
   "required": [
