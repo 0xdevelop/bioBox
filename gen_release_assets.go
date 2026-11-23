@@ -90,7 +90,7 @@ func run(args []string) error {
 	case "uploaded":
 		err := uploaded(*dir, *remote, v)
 		if err == nil {
-			fmt.Println("[release-assets] all twelve uploaded asset names/sizes PASS (not a remote content re-download)")
+			fmt.Println("[release-assets] all three public asset names/sizes PASS (not a remote content re-download)")
 		}
 		return err
 	case "arch", "aggregate", "verify":
@@ -120,7 +120,7 @@ func run(args []string) error {
 		if err = freshDir(*out); err != nil {
 			return err
 		}
-		for _, n := range archFileNames(v) {
+		for _, n := range publicZipNames(v) {
 			if err = copyFile(*dir, *out, n); err != nil {
 				return err
 			}
@@ -199,9 +199,16 @@ func archFileNames(v string) []string {
 	sort.Strings(ns)
 	return ns
 }
-func completeNames(v string) []string {
-	return append(archFileNames(v), "release-manifest.json", "SHA256SUMS")
+
+// Public delivery is intentionally smaller than the internal six-package inventory.
+func publicZipNames(v string) []string {
+	var ns []string
+	for _, a := range arches {
+		ns = append(ns, "protenix_service_linux_"+a+"_release_"+v+".zip")
+	}
+	return ns
 }
+func completeNames(v string) []string { return append(publicZipNames(v), "SHA256SUMS") }
 func freshDir(d string) error {
 	if d == "" {
 		return errors.New("empty output directory")
@@ -526,42 +533,30 @@ func inspectZip(file, p, a, v, c string) error {
 	return nil
 }
 func writeComplete(d string, m manifest) error {
-	if err := writeJSON(d, "release-manifest.json", m); err != nil {
-		return err
-	}
-	ns := append(archFileNames(m.Version), "release-manifest.json")
-	return writeSums(d, "SHA256SUMS", ns)
+	return writeSums(d, "SHA256SUMS", publicZipNames(m.Version))
 }
 func verifyComplete(d, v, c string) error {
 	if err := exactFiles(d, completeNames(v)); err != nil {
 		return err
 	}
-	m, err := collected(d, v, c)
+	for _, a := range arches {
+		n := "protenix_service_linux_" + a + "_release_" + v + ".zip"
+		if err := inspectZip(filepath.Join(d, n), "protenix_service", a, v, c); err != nil {
+			return err
+		}
+	}
+	sums, err := checksumBytes(d, publicZipNames(v))
 	if err != nil {
 		return err
 	}
-	if err = inspectAssets(d, m); err != nil {
-		return err
-	}
-	actual, err := os.ReadFile(filepath.Join(d, "release-manifest.json"))
-	if err != nil {
-		return err
-	}
-	if !bytes.Equal(actual, jsonBytes(m)) {
-		return errors.New("complete release manifest mismatch")
-	}
-	sums, err := checksumBytes(d, append(archFileNames(v), "release-manifest.json"))
-	if err != nil {
-		return err
-	}
-	actual, err = os.ReadFile(filepath.Join(d, "SHA256SUMS"))
+	actual, err := os.ReadFile(filepath.Join(d, "SHA256SUMS"))
 	if err != nil {
 		return err
 	}
 	if !bytes.Equal(actual, sums) {
-		return errors.New("complete release checksums mismatch")
+		return errors.New("public release checksums mismatch")
 	}
-	fmt.Println("[release-assets] complete six-package inventory, source commit, ELF/CGo and checksums PASS")
+	fmt.Println("[release-assets] two service packages, source commit, ELF/CGo and checksums PASS")
 	return nil
 }
 func uploaded(d, remote, v string) error {
@@ -599,7 +594,7 @@ func uploaded(d, remote, v string) error {
 	sort.Slice(got, func(i, j int) bool { return got[i].Name < got[j].Name })
 	sort.Slice(want, func(i, j int) bool { return want[i].Name < want[j].Name })
 	if !reflect.DeepEqual(got, want) {
-		return errors.New("uploaded release asset names/counts/sizes mismatch; keep draft")
+		return errors.New("uploaded public release asset names/counts/sizes mismatch")
 	}
 	return nil
 }
@@ -744,8 +739,33 @@ func selfTest() error {
 		return err
 	}
 	must(os.Remove(filepath.Join(d, "unexpected.zip")))
+	internalDir := d
+	d = filepath.Join(root, "public")
+	must(freshDir(d))
+	for _, n := range publicZipNames(v) {
+		must(copyFile(internalDir, d, n))
+	}
 	must(writeComplete(d, m))
-	if err = assert("inventory/twelve-files", exactFiles(d, completeNames(v)) == nil); err != nil {
+	if err = assert("inventory/three-public-files", exactFiles(d, completeNames(v)) == nil); err != nil {
+		return err
+	}
+	wantPublic := []string{"protenix_service_linux_amd64_release_" + v + ".zip", "protenix_service_linux_arm64_release_" + v + ".zip", "SHA256SUMS"}
+	if err = assert("public/exact-delivery-contract", reflect.DeepEqual(completeNames(v), wantPublic)); err != nil {
+		return err
+	}
+	sums, sumErr := os.ReadFile(filepath.Join(d, "SHA256SUMS"))
+	if err = assert("public/two-checksum-lines", sumErr == nil && len(strings.Split(strings.TrimSpace(string(sums)), "\n")) == 2 && !bytes.Contains(sums, []byte("manifest"))); err != nil {
+		return err
+	}
+	if err = assert("public/fake-packages-rejected", verifyComplete(d, v, c) != nil); err != nil {
+		return err
+	}
+	must(os.WriteFile(filepath.Join(d, "release-manifest.json"), []byte("stale"), 0644))
+	if err = assert("public/stale-file-rejected", exactFiles(d, completeNames(v)) != nil); err != nil {
+		return err
+	}
+	must(os.Remove(filepath.Join(d, "release-manifest.json")))
+	if err = assert("staging/nonempty-refused", freshDir(d) != nil); err != nil {
 		return err
 	}
 	type remoteAsset struct {
@@ -849,6 +869,10 @@ func selfTest() error {
 		return err
 	}
 	checks += 5
+	buildScript, readErr := os.ReadFile("build.sh")
+	if err = assert("build/full-main-package", readErr == nil && strings.Contains(string(buildScript), `go build -o "${out}" -trimpath -ldflags "${ld}" . )`)); err != nil {
+		return err
+	}
 	fmt.Printf("[release-assets] %d fixture/static contract checks PASS; NOT an Actions run or GPU/install acceptance\n", checks)
 	return nil
 }
@@ -914,6 +938,9 @@ func checkWorkflow() error {
 	}
 	for name, j := range wf.Jobs {
 		for _, s := range j.Steps {
+			if strings.HasPrefix(s.Uses, "george012/upload_github_release_assets_action@") && s.With["path"] != "./tmp/release-assets/*" {
+				return errors.New("upload must use the fresh verified public-only staging directory")
+			}
 			if s.Uses == "actions/setup-go@v6" && s.With["go-version-file"] != "protenix_service/go.mod" {
 				return errors.New("CI must provision the actual service Go toolchain")
 			}

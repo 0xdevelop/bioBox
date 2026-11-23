@@ -9,7 +9,9 @@
 
 ## 交付物
 
-每个 arch 三个 zip：
+公开 Release 仅三个附件：双架构整合包 + 一份 `SHA256SUMS`（只覆盖两包）。独立包仍内部构建、测试和保留安装脚本，不再作为发布附件。详见[交付与资源配置](docs/release_delivery.md)。
+
+内部每个 arch 仍构建三个 zip：
 
 - `protenix_linux_{amd64,arm64}_release_v*.zip`、`pxdesign_linux_{amd64,arm64}_release_v*.zip`：独立单产品包
 - `protenix_service_linux_{amd64,arm64}_release_v*.zip`：整合包（`runtime/<app>/` 与单产品包内容相同）
@@ -48,7 +50,7 @@ unzip pxdesign_linux_arm64_release_v*.zip && cd pxdesign
 | `uninstall` / `uninstall --purge` | 卸载程序保留配置和权重 / 连同配置和权重一起删除 |
 | `status` | 版本、提交、是否可运行 |
 
-换安装目录：`PROTENIX_PREFIX=/dir`（或 `PXDESIGN_PREFIX=/dir`）。复用已有权重跳过下载：`WEIGHTS_REUSE_FROM=/已有/prefix/根`。
+换安装目录：`PROTENIX_PREFIX=/dir`（或 `PXDESIGN_PREFIX=/dir`）。既有资源只改 runtime/conf 根 value 或使用既有目录软链接；不复制，不再支持 `WEIGHTS_REUSE_FROM`。独立包若无原生协调入口会明确失败；环境-only 构建不等于安装/推理已验收。见[交付与资源配置](docs/release_delivery.md)。
 
 安装后目录：`bin/<app>-run`、`conf/<app>.env`、`data/`（权重）、`releases/<版本>/`（每版一套 venv，`current`/`previous` 符号链接指向）。
 
@@ -78,7 +80,7 @@ protenix_service/
 - root 权限（安装到 `/protenix_service`，单元放到 `/etc/systemd/system`）
 - NVIDIA 驱动 + CUDA 13 工具链（`nvidia-smi`、`nvcc`，默认 `CUDA_HOME=/usr/local/cuda-13.0`）
 - [uv](https://github.com/astral-sh/uv)，能解析 Python 3.14。root 的 `PATH` 里没有 uv 时用 `UV=/path/to/uv` 指定
-- 公网访问：安装时用 uv/pip 建 Python 环境，并从上游官方地址下载公开权重
+- 公网访问用于 uv/pip 创建 Python 环境。权重默认是明确标注来源的既有文件离线内容基准，不自动下载；全新联网资源清单仍缺 AF2 整包等可信 pin，见[交付与资源配置](docs/release_delivery.md)
 
 ### 安装
 
@@ -100,7 +102,7 @@ UV=/path/to/uv ./install_protenix_service.sh
 | 4 rollback runtime | 两个运行时各自切回上一版本（`previous`），前后停启服务；服务二进制回退用 `.bak_*` |
 | 5 status | 服务状态与两个运行时的版本、是否可运行 |
 
-选项 1–3 完成后按模板约定删除解压目录和 zip；4、5 不删。复用已有机器上的权重跳过下载：`WEIGHTS_REUSE_FROM=<已校验的 prefix 根>`（与 `UV` 一样作为环境变量传给 install 脚本）。
+选项 1–3 完成后按模板约定删除解压目录和 zip；4、5 不删。既有资源通过 runtime 的 `.env` 根 value 选择，默认启用的清单只证明与已授权本地基准内容相等，不是官方权重认证；缺失不会联网。支持的业务输入必须显式选择 v1/no-MSA 或 PXDesign preview/no-MSA。
 
 ### 安装后的目录
 

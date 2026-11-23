@@ -123,26 +123,24 @@ jobs:
         with:
           go-version-file: protenix_service/go.mod
 
-      - name: Collect and require the complete six-package inventory
+      - name: Collect internal six-package inventory
         uses: actions/download-artifact@v8
         with:
           pattern: release-packages-linux-*
           path: tmp/collected
           merge-multiple: true
 
-      - name: Verify both architectures and stage upload files
+      - name: Verify six internal packages and stage three public files
         run: |
           go run gen_release_assets.go aggregate --commit="$GITHUB_SHA" \
             --dir=tmp/collected --out=tmp/release-assets
           go run gen_release_assets.go verify --commit="$GITHUB_SHA" --dir=tmp/release-assets
-          mkdir -p build/upload_tmp_dir
-          cp -a tmp/release-assets/. build/upload_tmp_dir/
 
       - name: Upload binaries
         id: upload_file_to_release
         uses: george012/upload_github_release_assets_action@latest
         with:
-          path: ./build/upload_tmp_dir/*
+          path: ./tmp/release-assets/*
 
   RemoveOldRelease:
     # Kept as in the template, including deletion of the version-2 release and its tag.

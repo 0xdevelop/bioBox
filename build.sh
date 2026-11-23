@@ -344,7 +344,7 @@ build_service_binary() {
   local ld="-X main.mGitCommitHash=${commit_hash} -X main.mGitCommitTime=${commit_time} -X main.mGoVersion=${go_version} -X main.mPackageOS=Linux -X main.mPackageTime=${build_time} -X main.mRunMode=${RUN_MODE} -s -w"
   echo "${TAG} build ${SERVICE_APP} ${GOOS_TARGET}/${GOARCH_TARGET} CC=${cc}"
   ( cd "${SERVICE_SRC}" && CGO_ENABLED=1 GOOS="${GOOS_TARGET}" GOARCH="${GOARCH_TARGET}" CC="${cc}" \
-      go build -o "${out}" -trimpath -ldflags "${ld}" main.go )
+      go build -o "${out}" -trimpath -ldflags "${ld}" . )
   chmod a+x "${out}"
 }
 

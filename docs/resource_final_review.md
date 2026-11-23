@@ -104,3 +104,7 @@ cli_cfg:
 AF2 bucket枚举返回401、猜测的.tar.sha256侧车HEAD返回403；没有尝试鉴权/秘密，也不把这些拒绝说成文件不存在。公开命名对象的GCS元数据可读。TOS再次核查所有响应头名称，没有出现已识别SHA256元数据字段。未下载GB级权重；未运行模型、sudo/systemd、正式安装/卸载或发版。所有本轮测试/查询进程已正常结束。
 
 精确全量未提交patch与函数/文件清单仍为各仓tmp/resource-tests/resource-preparation-final.patch、review_manifest.json，排除原README及原assets计划；tmp可重建，本文保留必要来源/信任基准和下一步边界。受保护config_local.yaml只做hash核验，源码/build_srcs/show_yeah/现有权重与venv保护边界不变。
+
+## 2026-11-23 t169 后续交付状态
+
+上述14:03/14:08记录保留为历史边界。本轮明确选择已授权既有文件的离线内容基准，将同一16项ID/size/SHA256显式放入成品配置（无URL、download_enabled=false），不改称官方摘要；支持模式仍须显式no-MSA。资源复用实测、三个公开附件契约和未过安装/GPU门禁以[当前交付说明](release_delivery.md)为准。没有把环境缺失时的拒绝包装成真实业务通过；没有发版。

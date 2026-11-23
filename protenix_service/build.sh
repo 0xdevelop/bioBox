@@ -59,7 +59,7 @@ function toBuild() {
     ld_flag_master="-X main.mGitCommitHash=${commit_hash} -X main.mGitCommitTime=${formatted_time} -X main.mGoVersion=${go_version} -X main.mPackageOS=${OS_TYPE} -X main.mPackageTime=${build_time} -X main.mRunMode=${RUN_MODE} -s -w"
 
     echo "build ${product_name}"
-    go build -o "${build_path}/${RUN_MODE}/${product_name}/${product_name}" -trimpath -ldflags "${ld_flag_master}" main.go
+    go build -o "${build_path}/${RUN_MODE}/${product_name}/${product_name}" -trimpath -ldflags "${ld_flag_master}" .
     chmod a+x "${build_path}/${RUN_MODE}/${product_name}/${product_name}"
     [[ -f "./example_files/${product_name}.service" ]] && cp "./example_files/${product_name}.service" "${build_path}/${RUN_MODE}/${product_name}/"
     [[ -f "./example_files/install_${product_name}.sh" ]] && cp "./example_files/install_${product_name}.sh" "${build_path}/${RUN_MODE}/${product_name}/install_${product_name}.sh"
