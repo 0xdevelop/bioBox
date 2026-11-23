@@ -39,6 +39,25 @@ func TestShippedOfflineResourceBaseline(t *testing.T) {
 			if filepath.Base(b.Binary) != tc.kind+"-run" || b.Resources == nil || !b.Resources.Enabled || len(b.Resources.Files) != tc.count {
 				t.Fatal("incomplete default config")
 			}
+			urlCount := 0
+			for _, f := range b.Resources.Files {
+				if f.URL != "" {
+					urlCount++
+					if !strings.HasPrefix(f.URL, "https://") {
+						t.Fatal("non-HTTPS source")
+					}
+				}
+				if (f.ID == "af2_model_1" || f.ID == "af2_model_1_ptm") && f.URL != "" {
+					t.Fatal("unverified AF2 archive shortcut")
+				}
+			}
+			wantURLs := tc.count
+			if tc.kind == "pxdesign" {
+				wantURLs -= 2
+			}
+			if urlCount != wantURLs {
+				t.Fatalf("URL count=%d want %d", urlCount, wantURLs)
+			}
 			if b.Resources.Download.DownloadEnabled || b.Resources.Download.Confirmed {
 				t.Fatal("offline baseline granted network consent")
 			}
@@ -65,7 +84,7 @@ func TestShippedOfflineResourceBaseline(t *testing.T) {
 				t.Fatal(err)
 			}
 			for _, f := range compiled.Files {
-				if f.URL != "" || f.SHA256 == "" || f.Size <= 0 || !filepath.IsAbs(f.Path) || !strings.HasPrefix(f.Path, root+string(os.PathSeparator)) {
+				if f.SHA256 == "" || f.Size <= 0 || !filepath.IsAbs(f.Path) || !strings.HasPrefix(f.Path, root+string(os.PathSeparator)) {
 					t.Fatal("unsafe/incomplete baseline file")
 				}
 			}

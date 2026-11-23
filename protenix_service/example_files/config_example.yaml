@@ -96,16 +96,17 @@ cli_cfg: # 原生 CLI 接线（protenix-run / pxdesign-run）。路径指向 ins
     # 已授权既有资源的离线内容基准：USER_EXISTING_LOCAL_SNAPSHOT_ONLY (2026-11-23)。
     # SHA256来自本机既有文件校验，不是ByteDance官方发布摘要/签名，不证明科学质量。
     # 来源与角色映射见 docs/resource_final_review.md / docs/release_delivery.md。
-    # 缺文件不会联网；若明确选择另一来源，须替换完整清单与可信摘要，不允许exists/TOFU绕过。
+    # 默认下载关闭；所列HTTPS为上游公开地址，pin仍是本地内容基准，不是官方摘要。
+    # 显式开启下载并确认后仅Go下载；AF2两项仍须既有文件（缺可信整tar pin），不回退Python。
     resources:
       enabled: true
       download: {download_enabled: false, retry_enabled: false, retry_count: 0}
       files:
-        - {id: "ccd_components_file", size: 490777362, sha256: "bb31ae5cf6c8bc669924313077cb4231ee5ffefd3a20118cd14f3ec89f8bb6a5"}
-        - {id: "ccd_components_rdkit_mol_file", size: 142498117, sha256: "d1cfb71f5993a3ebea7c47877022d7f597bbfbaf86e28a4770e957da6c50cd35"}
-        - {id: "pdb_cluster_file", size: 21699572, sha256: "1ab4af905e75b382eda8dec59917dc3608bee0729e36b9e71baf860bbe86850c"}
-        - {id: "obsolete_release_data_csv", size: 134716, sha256: "a4f3f63ac5d7eebd78b07995cc669b9eccd6f5d8813c9492c9df02868893cf33"}
-        - {id: "model", size: 1475950125, sha256: "2b7d5a8b30494514fc47fd2271a16260528cdba170ba09cc112fdecd8f85ec04"}
+        - {id: "ccd_components_file", size: 490777362, sha256: "bb31ae5cf6c8bc669924313077cb4231ee5ffefd3a20118cd14f3ec89f8bb6a5", url: "https://protenix.tos-cn-beijing.volces.com/common/components.cif"}
+        - {id: "ccd_components_rdkit_mol_file", size: 142498117, sha256: "d1cfb71f5993a3ebea7c47877022d7f597bbfbaf86e28a4770e957da6c50cd35", url: "https://protenix.tos-cn-beijing.volces.com/common/components.cif.rdkit_mol.pkl"}
+        - {id: "pdb_cluster_file", size: 21699572, sha256: "1ab4af905e75b382eda8dec59917dc3608bee0729e36b9e71baf860bbe86850c", url: "https://protenix.tos-cn-beijing.volces.com/common/clusters-by-entity-40.txt"}
+        - {id: "obsolete_release_data_csv", size: 134716, sha256: "a4f3f63ac5d7eebd78b07995cc669b9eccd6f5d8813c9492c9df02868893cf33", url: "https://protenix.tos-cn-beijing.volces.com/common/obsolete_release_date.csv"}
+        - {id: "model", size: 1475950125, sha256: "2b7d5a8b30494514fc47fd2271a16260528cdba170ba09cc112fdecd8f85ec04", url: "https://protenix.tos-cn-beijing.volces.com/checkpoint/protenix_base_default_v1.0.0.pt"}
     binary: "/protenix_service/runtime/protenix/bin/protenix-run" # v1 runtime 缺省使用的已安装 protenix-run 路径；为空且未在 version_runtimes.v1 给出非空路径时，version=v1（或缺省）拒绝启动
     extra_env: {}
     version_runtimes: # 按 arguments.version 选择独立 runtime；version 不进 CLI 参数或 URL
@@ -116,22 +117,23 @@ cli_cfg: # 原生 CLI 接线（protenix-run / pxdesign-run）。路径指向 ins
     # 已授权既有资源的离线内容基准：USER_EXISTING_LOCAL_SNAPSHOT_ONLY (2026-11-23)。
     # SHA256来自本机既有文件校验，不是ByteDance官方发布摘要/签名，不证明科学质量。
     # 来源与角色映射见 docs/resource_final_review.md / docs/release_delivery.md。
-    # 缺文件不会联网；若明确选择另一来源，须替换完整清单与可信摘要，不允许exists/TOFU绕过。
+    # 默认下载关闭；所列HTTPS为上游公开地址，pin仍是本地内容基准，不是官方摘要。
+    # 显式开启下载并确认后仅Go下载；AF2两项仍须既有文件（缺可信整tar pin），不回退Python。
     resources:
       enabled: true
       download: {download_enabled: false, retry_enabled: false, retry_count: 0}
       files:
-        - {id: "ccd_components_file", size: 427767290, sha256: "7240b17369ccfbbcc86e2d02dc8c9db59f46c32e0420f58889c6c121c60bfef0"}
-        - {id: "ccd_components_rdkit_mol_file", size: 125903802, sha256: "2d6caced2d26c62015115a1d0a50f4106755a300e0c2a2d2b5c101c9038dcbcd"}
-        - {id: "pdb_cluster_file", size: 21699572, sha256: "1ab4af905e75b382eda8dec59917dc3608bee0729e36b9e71baf860bbe86850c"}
-        - {id: "model", size: 556554618, sha256: "b075867bae942dc0c6487173736922b0e2913308c1ba542d227418b6e176478d"}
-        - {id: "protenix_base_default_v0.5.0.pt", size: 1474265486, sha256: "9ea20b0aba42f2256711da1d0cd081510a4b291e64375bff6b70ced70b87a5f1"}
-        - {id: "protenix_mini_default_v0.5.0.pt", size: 537049294, sha256: "3803340c5d9958c038e799ddd2b53b532db21855f261592ad455a5f003791f81"}
-        - {id: "protenix_mini_tmpl_v0.5.0.pt", size: 537487513, sha256: "221ca4da769e36ea0e2fa1fa82c46f6ca3a00bc7a1eff8ec0e3ddc02ed830474"}
+        - {id: "ccd_components_file", size: 427767290, sha256: "7240b17369ccfbbcc86e2d02dc8c9db59f46c32e0420f58889c6c121c60bfef0", url: "https://pxdesign.tos-cn-beijing.volces.com/release_data/components.v20240608.cif"}
+        - {id: "ccd_components_rdkit_mol_file", size: 125903802, sha256: "2d6caced2d26c62015115a1d0a50f4106755a300e0c2a2d2b5c101c9038dcbcd", url: "https://pxdesign.tos-cn-beijing.volces.com/release_data/components.v20240608.cif.rdkit_mol.pkl"}
+        - {id: "pdb_cluster_file", size: 21699572, sha256: "1ab4af905e75b382eda8dec59917dc3608bee0729e36b9e71baf860bbe86850c", url: "https://pxdesign.tos-cn-beijing.volces.com/release_data/clusters-by-entity-40.txt"}
+        - {id: "model", size: 556554618, sha256: "b075867bae942dc0c6487173736922b0e2913308c1ba542d227418b6e176478d", url: "https://pxdesign.tos-cn-beijing.volces.com/release_model/pxdesign_v0.1.0.pt"}
+        - {id: "protenix_base_default_v0.5.0.pt", size: 1474265486, sha256: "9ea20b0aba42f2256711da1d0cd081510a4b291e64375bff6b70ced70b87a5f1", url: "https://pxdesign.tos-cn-beijing.volces.com/release_model/protenix_base_default_v0.5.0.pt"}
+        - {id: "protenix_mini_default_v0.5.0.pt", size: 537049294, sha256: "3803340c5d9958c038e799ddd2b53b532db21855f261592ad455a5f003791f81", url: "https://pxdesign.tos-cn-beijing.volces.com/release_model/protenix_mini_default_v0.5.0.pt"}
+        - {id: "protenix_mini_tmpl_v0.5.0.pt", size: 537487513, sha256: "221ca4da769e36ea0e2fa1fa82c46f6ca3a00bc7a1eff8ec0e3ddc02ed830474", url: "https://pxdesign.tos-cn-beijing.volces.com/release_model/protenix_mini_tmpl_v0.5.0.pt"}
         - {id: "af2_model_1", size: 373069562, sha256: "f95e453e6a290ddf317ba1c9698d53fa110cf007ea979b0eae43e6ad38b4e364"}
         - {id: "af2_model_1_ptm", size: 373103340, sha256: "5e564f79af5bcd54ccef6e2a6bb0ff01015d01650ebc41d4575e35f0de9ecc84"}
-        - {id: "mpnn_ca", size: 6624011, sha256: "f28f40170e21858c5ff31ef50b6e63414ff76dc331b19f85aa8586a12031744a"}
-        - {id: "mpnn_bb", size: 6681301, sha256: "c9cb4a671d79604111231f8dbfc7c590e06f1197453b7a6854ac6661a642f5bd"}
+        - {id: "mpnn_ca", size: 6624011, sha256: "f28f40170e21858c5ff31ef50b6e63414ff76dc331b19f85aa8586a12031744a", url: "https://raw.githubusercontent.com/dauparas/ProteinMPNN/8907e6671bfbfc92303b5f79c4b5e6ce47cdef57/ca_model_weights/v_48_020.pt"}
+        - {id: "mpnn_bb", size: 6681301, sha256: "c9cb4a671d79604111231f8dbfc7c590e06f1197453b7a6854ac6661a642f5bd", url: "https://raw.githubusercontent.com/dauparas/ProteinMPNN/8907e6671bfbfc92303b5f79c4b5e6ce47cdef57/vanilla_model_weights/v_48_020.pt"}
     binary: "/protenix_service/runtime/pxdesign/bin/pxdesign-run" # 已安装的 pxdesign-run 路径
     extra_env: {}
 

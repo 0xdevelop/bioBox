@@ -14,13 +14,13 @@
 
 `build.sh pack` 仍生成每架构的 protenix / pxdesign 独立包及整合包；两套独立 venv、安装/升级/回退脚本不删除。`arch` 在本架构检查三包并产生五项内部 CI artifact；`aggregate` 要求两架构十项内部材料，校验六包、BUILD_INFO、ELF/CGo、来源 commit 后，仅复制两个整合包并生成一份校验文件到全新空目录；`verify` 要求恰好三项并再次检查两包和校验；`uploaded` 也只接受三项远端名字/大小（不是远端内容重新下载证明）。
 
-Release workflow 只上传 `tmp/release-assets/*`，不再把它复制回有内部/旧包的 `build/upload_tmp_dir`。非空输出目录/多余 stale 文件均拒绝。三段 release → Build（内含双原生 runner）→ RemoveOldRelease 不改，git_tag.sh 不改、无新参数。
+Release workflow 只上传 `tmp/release-assets/*`，不再把它复制回有内部/旧包的 `build/upload_tmp_dir`。非空输出目录/多余 stale 文件均拒绝。三段 release → Build（内含双原生 runner）→ RemoveOldRelease 不改，git_tag.sh 的无参入口/自动版本不改、无新参数；本轮只增量修复缺失旧tag/release时的幂等清理，真实错误仍失败。v0.0.2在本地和远端清理处均显式保留。
 
 独立包改为内部产物，并未以删除独立安装路径来减少附件。但现有独立包没有随包原生资源协调入口时仍会明确失败，不能回退旧 curl。**独立安装完整闭环仍未验证，也不因保留脚本就宣称已修好**；需要独立交付时必须验证协调入口与配置绑定，而不是直接重新挂附件。
 
-## 默认选择：已授权既有资源的离线内容基准
+## 默认选择：本地内容pin与显式选择的公开下载源
 
-成品 `conf/config.yaml` 来自 `protenix_service/example_files/config_example.yaml`。现默认显式启用完整的 5 项 Protenix + 11 项 PXDesign 清单，`download_enabled: false`，无下载 URL，无持久化确认。摘要逐项沿用已记录并再次校验的 **USER_EXISTING_LOCAL_SNAPSHOT_ONLY (2026-11-23)** 内容基准，不是 ByteDance 官方发布的 SHA256/签名，更不是上游真实性或科学质量认证；采用此配置就是明确选择这些既有文件的内容 pin，不适用时须替换成所选来源的完整可信清单，不许关闭校验凑通过。
+成品 `conf/config.yaml` 来自 `protenix_service/example_files/config_example.yaml`。现默认显式启用完整的 5 项 Protenix + 11 项 PXDesign 清单，`download_enabled: false`，无持久化确认；14项现在有来自固定上游源码/官方Git仓库的HTTPS来源，默认不触发网络。摘要逐项沿用已记录并再次校验的 **USER_EXISTING_LOCAL_SNAPSHOT_ONLY (2026-11-23)** 内容基准，不是 ByteDance 官方发布的 SHA256/签名，更不是上游真实性或科学质量认证；采用此配置就是明确选择这些既有文件的内容 pin，不适用时须替换成所选来源的完整可信清单，不许关闭校验凑通过。
 
 该选择源自本轮对已授权本机资源复用的执行范围，不是把本地基准改名成“官方清单”。精确16项 ID/size/SHA256、局部公开来源证据见 [原资源审查](resource_final_review.md#已授权用户既有本地资源现有可用方式)；运行时代码按稳定 ID 将整族路径编译到 runtime conf 根，避免在 YAML 反复写机器绝对路径。
 
@@ -59,7 +59,7 @@ PROTENIX_DATA_ROOT_DIR=
 /protenix_service/protenix_service resource verify pxdesign.preview
 ```
 
-`status/prepare=ready` 表示按所选内容pin通过资源完整性校验；`verify` 还要求已安装受管runtime/source/venv，不等于GPU业务验收。离线缺文件返回 `download_disabled`/失败，摘要不匹配拒绝覆盖；不读stdin、不触发上游Python。已有文件不copy、不联网。若未来选择已补齐所有来源/pin的下载配置，必须显式打开download_enabled，先status取得确认令牌，经原CLI交互或API确认再prepare；确认不落盘，不可从systemd环境隐式取得。下载/恢复/状态/ready到启动的唯一owner仍是Go，禁止同时启动历史Python自动下载器。
+`status/prepare=ready` 表示按所选内容pin通过资源完整性校验；`verify` 还要求已安装受管runtime/source/venv，不等于GPU业务验收。默认缺文件返回 `download_disabled`/失败，摘要不匹配拒绝覆盖；不读stdin、不触发上游Python。已有文件不copy、不联网。Protenix v1的5项已有公开URL与明确本地内容pin；PXDesign的9项有公开URL，另2项AF2必须先复用既有文件。选择这些来源并确认接受其本地内容基准后，显式打开所选集合download_enabled，先status取得确认令牌，经原CLI交互或API确认再prepare；确认不落盘，不可从systemd环境隐式取得。下载/恢复/状态/ready到启动的唯一owner仍是Go，禁止同时启动历史Python自动下载器。
 
 4. 业务调用必须显式选择用户已授权的模式，不在代码中暗改科学选项：Protenix arguments 包含 `version: "v1", use_msa: false`（默认模型 `protenix_base_default_v1.0.0`）；PXDesign 包含 `preset: "preview", use_msa: false`。其他正常输入/输出参数照原协议提供。MSA/template/RNA-MSA/ESM/v2/extended等未协调分支不因本清单而受支持，缺显式false仍拒绝。
 
@@ -73,7 +73,7 @@ PROTENIX_DATA_ROOT_DIR=
 - https://pxdesign.tos-cn-beijing.volces.com/release_data/components.v20240608.cif
 - https://storage.googleapis.com/alphafold/alphafold_params_2022-12-06.tar
 
-不能据此编造官方SHA256；现有AF2两成员的本地摘要不能代替整个tar的SHA256。全新联网安装仍需可信完整资源来源/pin（特别是所需AF2整个tar，或另经审查的下载/提取契约）。本次不降级为exists/无校验/TOFU，不下载大权重。默认离线路线现在可以配置并验证到资源ready，但不宣称“零资源新机器已能直接推理”。
+不能据此编造官方SHA256；现有AF2两成员的本地摘要不能代替整个tar的SHA256。PXDesign全新联网安装仍需补齐AF2来源/pin（可信整个tar摘要，或另经审查的下载/提取契约）；Protenix v1可明确选择所给5项上游URL+本地内容pin下载，但不能说这些摘要由官方签发。本次不降级为exists/无校验/TOFU，不下载大权重。默认复用路线已验证到资源ready；14个URL在2026-11-23 18:43 UTC+8只做HEAD均200且size匹配（body读0字节）。远端内容是否仍匹配所选SHA256最终由Go下载器验证，不拿HEAD/CRC/ETag当SHA256通过，不宣称全新环境/真实推理已通过。
 
 ## 本次实测证据与未过门禁
 
@@ -87,6 +87,6 @@ PROTENIX_DATA_ROOT_DIR=
 
 L1工程：本地单测/race/build/发版契约检查；L2：唯一下载owner、保留两套runtime与模板三段、fresh stage隔离；L3：真实既有资源配置→status/prepare ready（环境/模型未运行）；L4正式安装与GPU科学/业务验收：**未执行/未通过**。
 
-仍缺：基于最终提交的新双架构Actions包、从公开资产下载复核、正式根全新环境重建/安装、root/systemd常驻、真实v1/no-MSA与preview/no-MSA任务产物、卸载闭环；独立runtime协调入口/完整安装兼容性也未验收。未发现仓库外部审查完成证据，只有已标边界的本地源码/测试审查。另模板RemoveOldRelease在目标旧版本不存在时会报错，不能把上传完成说成整个workflow全绿；本次没有改该模板阶段。
+仍缺：基于最终提交的新双架构Actions包、从公开资产下载复核、正式根全新环境重建/安装、root/systemd常驻、真实v1/no-MSA与preview/no-MSA任务产物、卸载闭环；独立runtime协调入口/完整安装兼容性也未验收。未发现仓库外部审查完成证据，只有已标边界的本地源码/测试审查。本轮已修复模板/实例清理的不存在no-op：12项离线stub命令回归覆盖不存在、存在、权限/网络/服务器/删除错误；实例另验证v0.0.2保护分支。没有执行真实清理。候选构建改复用已有native/Build路径，见[候选构建](candidate_build.md)。
 
 所以“实现与本地检查完成”不等于“允许现在声称正式发版验收完成”。本切片在主端收回证据前不执行git_tag.sh；受保护config_local仅hash，build_srcs/show_yeah未改；原未提交README验收计划链接和计划文件保留、不混提交。

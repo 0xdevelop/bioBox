@@ -882,11 +882,13 @@ func checkWorkflow() error {
 		return err
 	}
 	type step struct {
+		If   string            `yaml:"if"`
 		Uses string            `yaml:"uses"`
 		Run  string            `yaml:"run"`
 		With map[string]string `yaml:"with"`
 	}
 	type job struct {
+		If       string `yaml:"if"`
 		Needs    string `yaml:"needs"`
 		RunsOn   string `yaml:"runs-on"`
 		Strategy struct {
@@ -911,6 +913,23 @@ func checkWorkflow() error {
 	native := wf.Jobs["build_native"]
 	build := wf.Jobs["Build"]
 	prune := wf.Jobs["RemoveOldRelease"]
+	tagOnly := "github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')"
+	candidateOnly := "github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main'"
+	if release.If != tagOnly || prune.If != tagOnly || !strings.Contains(native.If, "always()") || !strings.Contains(native.If, "github.ref == 'refs/heads/main'") {
+		return errors.New("candidate must bypass release/prune without bypassing native build")
+	}
+	foundCandidate := false
+	for _, st := range build.Steps {
+		if strings.HasPrefix(st.Uses, "george012/upload_github_release_assets_action@") && st.If != tagOnly {
+			return errors.New("candidate must not upload to a Release")
+		}
+		if st.Uses == "actions/upload-artifact@v7" && st.With["name"] == "candidate-${{ github.sha }}" {
+			foundCandidate = st.If == candidateOnly && st.With["path"] == "tmp/release-assets/*"
+		}
+	}
+	if !foundCandidate {
+		return errors.New("candidate public-three-file artifact contract missing")
+	}
 	if len(wf.Jobs) != 4 || release.Needs != "" || native.Needs != "release" || build.Needs != "build_native" || prune.Needs != "Build" {
 		return errors.New("workflow must keep release → Build → RemoveOldRelease, with native packaging inside Build")
 	}
@@ -966,8 +985,8 @@ func checkWorkflow() error {
 		"pattern: release-packages-linux-*",
 		"merge-multiple: true",
 		"george012/upload_github_release_assets_action@latest",
-		"gh release delete ${{ env.APP_OLD_VERSION }} -y",
-		"git push origin --delete ${{ env.APP_OLD_VERSION }}",
+		"release_remove_old_if_present \"$APP_OLD_VERSION\" \"$GITHUB_REPOSITORY\"",
+		"v0.0.2 is preserved; no-op",
 	} {
 		if !strings.Contains(text, required) {
 			return errors.New("workflow template or necessary packaging contract missing")
@@ -997,7 +1016,7 @@ func checkGitTagEntry() error {
 		`for remote in $(git remote)`,
 		`git push --delete ${remote} latest`,
 		`git push ${remote} v${next_version_no}`,
-		`git tag -d v${pre_del_version_no}`,
+		`release_delete_local_tag_if_present "v${pre_del_version_no}"`,
 		`handle_input "$@"`,
 		`./protenix_service/gen_api_docs.sh "${NEXT_VERSION}"`,
 		`pre_build_config_template.yaml`,
@@ -1028,7 +1047,7 @@ func checkGitTagNoArgFixture() error {
 	}
 	repo := filepath.Join(root, "work")
 	remote := filepath.Join(root, "remote.git")
-	for _, d := range []string{repo, filepath.Join(repo, "protenix_service", "config"), filepath.Join(repo, "protenix_service", "docs"), filepath.Join(repo, "bin")} {
+	for _, d := range []string{repo, filepath.Join(repo, "protenix_service", "config"), filepath.Join(repo, "protenix_service", "docs"), filepath.Join(repo, "scripts"), filepath.Join(repo, "bin")} {
 		if err = os.MkdirAll(d, 0755); err != nil {
 			return err
 		}
@@ -1045,6 +1064,11 @@ func checkGitTagNoArgFixture() error {
 	if err = os.WriteFile(filepath.Join(repo, "git_tag.sh"), src, 0755); err != nil {
 		return err
 	}
+	cleanupSource, err := os.ReadFile("scripts/release_cleanup.sh")
+	if err != nil {
+		return err
+	}
+	write("scripts/release_cleanup.sh", string(cleanupSource), 0644)
 	write("pre_build_config_template.yaml", "project:\n  name: protenix_build\n  version: v0.0.1\n", 0644)
 	write("gen_pre_build_config_linux_amd64.yaml", "project:\n  version: v0.0.1\n", 0644)
 	write("gen_pre_build_config_linux_arm64.yaml", "project:\n  version: v0.0.1\n", 0644)

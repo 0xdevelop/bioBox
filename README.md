@@ -80,7 +80,7 @@ protenix_service/
 - root 权限（安装到 `/protenix_service`，单元放到 `/etc/systemd/system`）
 - NVIDIA 驱动 + CUDA 13 工具链（`nvidia-smi`、`nvcc`，默认 `CUDA_HOME=/usr/local/cuda-13.0`）
 - [uv](https://github.com/astral-sh/uv)，能解析 Python 3.14。root 的 `PATH` 里没有 uv 时用 `UV=/path/to/uv` 指定
-- 公网访问用于 uv/pip 创建 Python 环境。权重默认是明确标注来源的既有文件离线内容基准，不自动下载；全新联网资源清单仍缺 AF2 整包等可信 pin，见[交付与资源配置](docs/release_delivery.md)
+- 公网访问用于 uv/pip 创建 Python 环境。权重默认使用明确本地内容pin且下载关闭；可显式确认选择14项上游URL下载，PXDesign仍需既有AF2或补齐整包可信pin，见[交付与资源配置](docs/release_delivery.md)
 
 ### 安装
 
@@ -154,3 +154,5 @@ FORCE_PACK=1 ./build.sh pack        # 双 arch → build/upload_tmp_dir/ 下的�
 v0.0.2 已按模板三段在 GitHub 发布双架构六包（公开 Release 与资产齐全）。正式安装到 `/protenix_service`、业务任务与官方卸载因目标机 sudo 需要密码而未执行。完整过程、命令、时间、链接与未覆盖项见[v0.0.2 发版与正式安装实测记录](docs/acceptance_release_v0.0.2_20261120.md)。此前矩阵记录仍见[验收矩阵与证据](docs/acceptance_product_matrix_20261119.md)。
 
 资源准备、上游下载边界与本地验收见[资源准备契约](docs/resource_preparation_contract.md)。
+
+不发布的双原生候选构建与清理幂等修复见[候选构建](docs/candidate_build.md)。

@@ -6,6 +6,7 @@ set -e
 # Only the version/document paths are adapted to this repository layout.
 project_path=$(cd "$(dirname "$0")" && pwd)
 cd "${project_path}"
+source "${project_path}/scripts/release_cleanup.sh"
 
 ProductName="protenix_build"
 Product_version_key="ProjectVersion"
@@ -212,7 +213,11 @@ function git_handle_push() {
         && git push ${remote} v${next_version_no} \
         || return
     done
-    git tag -d v${pre_del_version_no}
+    if [[ "v${pre_del_version_no}" == v0.0.2 ]]; then
+        echo "[release-cleanup] v0.0.2 is preserved; no-op"
+    else
+        release_delete_local_tag_if_present "v${pre_del_version_no}"
+    fi
 }
 
 handle_input(){
