@@ -3,6 +3,7 @@ package ability
 
 import (
 	"context"
+	"github.com/0xdevelop/protenix_service/ability/ability_resource"
 
 	"github.com/0xdevelop/protenix_service/ability/ability_protenix"
 	"github.com/0xdevelop/protenix_service/ability/ability_pxdesign"
@@ -36,6 +37,7 @@ func LoadAbilityAPIMethods() {
 	//（user → profile → user），故作为契约明记的唯一例外由顶层装配。
 	ability_user_profile.LoadAPIMethods()
 	ability_task.LoadAPIMethods()
+	ability_resource.LoadAPIMethods()
 	ability_protenix.LoadAPIMethods()
 	ability_pxdesign.LoadAPIMethods()
 }

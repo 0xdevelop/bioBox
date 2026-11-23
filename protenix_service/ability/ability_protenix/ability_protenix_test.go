@@ -46,7 +46,7 @@ func TestBuildArgvOmitsVersionAndStagesInput(t *testing.T) {
 	config.GlobalConfig = &config.FileConfig{CliCfg: &config.CLIConfig{
 		WorkRoot:           filepath.Join(work, "jobs"),
 		CancelGraceSeconds: 1,
-		Protenix:           &config.CLIBinaryConfig{Binary: dummyRun(t), ExtraEnv: map[string]string{"LAYERNORM_TYPE": "torch"}},
+		Protenix:           &config.CLIBinaryConfig{Resources: fixtureResources(t), Binary: dummyRun(t), ExtraEnv: map[string]string{"LAYERNORM_TYPE": "torch"}},
 	}}
 	argv, err := BuildArgvForTest(context.Background(), map[string]interface{}{
 		"version":    "v1",
@@ -100,7 +100,7 @@ func TestVersionSelectsIndependentRuntime(t *testing.T) {
 	config.GlobalConfig = &config.FileConfig{CliCfg: &config.CLIConfig{
 		WorkRoot:           filepath.Join(work, "jobs"),
 		CancelGraceSeconds: 1,
-		Protenix: &config.CLIBinaryConfig{
+		Protenix: &config.CLIBinaryConfig{Resources: fixtureResources(t),
 			Binary:   runtimeOne,
 			ExtraEnv: map[string]string{"FROM": "base"},
 			VersionRuntimes: map[string]*config.CLIRuntimeConfig{
@@ -152,7 +152,7 @@ func TestV2DoesNotFallBackToV1Binary(t *testing.T) {
 	t.Cleanup(func() { config.GlobalConfig = previous })
 	config.GlobalConfig = &config.FileConfig{CliCfg: &config.CLIConfig{
 		WorkRoot: filepath.Join(work, "jobs"),
-		Protenix: &config.CLIBinaryConfig{Binary: dummyRun(t)},
+		Protenix: &config.CLIBinaryConfig{Resources: fixtureResources(t), Binary: dummyRun(t)},
 	}}
 	_, err := Execute(context.Background(), map[string]interface{}{"version": "v2", "input": src, "out_dir": "out"})
 	if err == nil || !strings.Contains(err.Error(), "protenix v2 CLI binary is not configured") {
@@ -178,7 +178,7 @@ func TestExecuteRunsConfiguredDummyAndReportsCIF(t *testing.T) {
 	config.GlobalConfig = &config.FileConfig{CliCfg: &config.CLIConfig{
 		WorkRoot:           filepath.Join(work, "jobs"),
 		CancelGraceSeconds: 1,
-		Protenix: &config.CLIBinaryConfig{
+		Protenix: &config.CLIBinaryConfig{Resources: fixtureResources(t),
 			Binary:   dummyRun(t),
 			ExtraEnv: map[string]string{"DUMMY_WRITE_CIF": "1"},
 		},
@@ -212,7 +212,7 @@ func TestExecuteCancelStopsDummyProcess(t *testing.T) {
 	config.GlobalConfig = &config.FileConfig{CliCfg: &config.CLIConfig{
 		WorkRoot:           filepath.Join(work, "jobs"),
 		CancelGraceSeconds: 1,
-		Protenix: &config.CLIBinaryConfig{
+		Protenix: &config.CLIBinaryConfig{Resources: fixtureResources(t),
 			Binary:   dummyRun(t),
 			ExtraEnv: map[string]string{"DUMMY_SLEEP": "1"},
 		},
@@ -363,7 +363,7 @@ func TestExecuteRejectsZeroExitWithoutCIF(t *testing.T) {
 	}
 	previous := config.GlobalConfig
 	t.Cleanup(func() { config.GlobalConfig = previous })
-	config.GlobalConfig = &config.FileConfig{CliCfg: &config.CLIConfig{WorkRoot: filepath.Join(work, "jobs"), Protenix: &config.CLIBinaryConfig{Binary: dummyRun(t)}}}
+	config.GlobalConfig = &config.FileConfig{CliCfg: &config.CLIConfig{WorkRoot: filepath.Join(work, "jobs"), Protenix: &config.CLIBinaryConfig{Resources: fixtureResources(t), Binary: dummyRun(t)}}}
 	value, err := Execute(context.Background(), map[string]interface{}{"input": src, "out_dir": "out"})
 	if err == nil {
 		t.Fatal("zero exit with no CIF was accepted as success")

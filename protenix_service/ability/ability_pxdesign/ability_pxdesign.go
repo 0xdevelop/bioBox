@@ -5,6 +5,9 @@ package ability_pxdesign
 import (
 	"context"
 	"errors"
+	"fmt"
+	"github.com/0xdevelop/protenix_service/common/app_path"
+	"github.com/0xdevelop/protenix_service/runtime_resource"
 	"os"
 	"path/filepath"
 	"strings"
@@ -31,12 +34,13 @@ func LoadAPIMethods() {
 	)
 	api_supported_methods.AddMethod(&api_supported_methods.SupportedMethod{
 		Name:        MethodPXDesign,
-		Description: "提交 PXDesign 设计流水线任务（对应 CLI：pxdesign-run pipeline）。preset 走 arguments。异步队列使用配置的主关系库（支持 SQLite）。未配置 cli_cfg.pxdesign.binary 时 Execute 拒绝启动进程。",
+		Description: "官方受管 runtime 当前仅核准 preview + 显式 use_msa=false，须可信完整资源集合已 ready；extended/custom 自动下载分支拒绝启动。提交 PXDesign 设计流水线任务（对应 CLI：pxdesign-run pipeline）。preset 走 arguments。异步队列使用配置的主关系库（支持 SQLite）。未配置 cli_cfg.pxdesign.binary 时 Execute 拒绝启动进程。",
 		Async:       true,
 		InputSchema: api_auth_common.InputSchema(
 			map[string]interface{}{
 				"input":      schemaWithDesc(api_auth_common.StringSchema("", 1, 4096), "输入 YAML/JSON 文件。对应 CLI -i/--input。"),
 				"dump_dir":   schemaWithDesc(api_auth_common.StringSchema("", 1, 4096), "调用方给出的结果目录名；实际写入隔离作业目录下的 output/。对应 CLI -o/--dump_dir。"),
+				"use_msa":    schemaWithDesc(map[string]interface{}{"type": "boolean"}, "是否使用 MSA；受管离线 preview 必须显式 false，未接管分支拒绝启动。"),
 				"preset":     schemaWithDesc(api_auth_common.EnumStringSchema("preview", "extended", "custom"), "流水线预设。对应 CLI --preset。"),
 				"N_sample":   schemaWithDesc(integerSchema(), "扩散样本数。对应 CLI --N_sample。"),
 				"N_step":     schemaWithDesc(integerSchema(), "扩散步数。对应 CLI --N_step。"),
@@ -99,6 +103,11 @@ func Execute(ctx context.Context, input interface{}) (interface{}, error) {
 		return nil, errors.Join(runErr, err)
 	}
 	payload := executionPayload(jobDir, outDir, result)
+	if runErr != nil && spec.Resources != nil {
+		if state, e := cli_proc.ResourceStatus(evidenceCtx, *spec); e == nil {
+			payload["resources"] = state
+		}
+	}
 	count, hasERR, inspectErr := cli_proc.InspectOutput(outDir)
 	if inspectErr != nil {
 		return payload, errors.Join(runErr, inspectErr, reportBusinessStatus(evidenceCtx, StatusInspectionFailed, "产物检查失败"))
@@ -135,6 +144,14 @@ func buildPXDesignSpec(ctx context.Context, input interface{}) (*cli_proc.Spec, 
 	if err != nil {
 		return nil, "", "", err
 	}
+	root, err := app_path.ExecutableDir()
+	if err != nil {
+		return nil, "", "", err
+	}
+	preparedResources, err := runtime_resource.Compile("pxdesign", binary.Binary, root, binary.ExtraEnv, binary.Resources)
+	if err != nil {
+		return nil, "", "", err
+	}
 	inputPath, _ := api_auth_common.RequiredString(params, "input")
 	taskID := executionTaskID(ctx)
 	jobDir, stagedInput, err := cli_proc.StageInput(cliCfg.WorkRoot, taskID, inputPath)
@@ -155,17 +172,24 @@ func buildPXDesignSpec(ctx context.Context, input interface{}) (*cli_proc.Spec, 
 		grace = 10 * time.Second
 	}
 	return &cli_proc.Spec{
-		Name:    MethodPXDesign,
-		Path:    binary.Binary,
-		Args:    args,
-		Env:     binary.ExtraEnv,
-		Dir:     jobDir,
-		LogPath: filepath.Join(jobDir, "run.log"),
-		Grace:   grace,
+		Resources:   preparedResources,
+		ResourceSet: "pxdesign.preview",
+		Name:        MethodPXDesign,
+		Path:        binary.Binary,
+		Args:        args,
+		Env:         binary.ExtraEnv,
+		Dir:         jobDir,
+		LogPath:     filepath.Join(jobDir, "run.log"),
+		Grace:       grace,
 	}, jobDir, outDir, nil
 }
 
 func appendPXDesignOptionalFlags(args []string, params map[string]interface{}) ([]string, error) {
+	if value, ok, err := cli_proc.OptionalBool(params, "use_msa"); err != nil {
+		return nil, err
+	} else if ok {
+		args = cli_proc.AppendFlag(args, "--use_msa", fmt.Sprint(value))
+	}
 	if value, ok, err := cli_proc.OptionalString(params, "preset"); err != nil {
 		return nil, err
 	} else if ok {

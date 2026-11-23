@@ -48,7 +48,7 @@ sleep 0.3
 				if e := os.WriteFile(binary, []byte(script), 0700); e != nil {
 					t.Fatal(e)
 				}
-				cli := &config.CLIConfig{WorkRoot: filepath.Join(work, "jobs"), CancelGraceSeconds: 1, Protenix: &config.CLIBinaryConfig{Binary: binary}, PXDesign: &config.CLIBinaryConfig{Binary: binary}}
+				cli := &config.CLIConfig{WorkRoot: filepath.Join(work, "jobs"), CancelGraceSeconds: 1, Protenix: &config.CLIBinaryConfig{Resources: fixtureResources(t), Binary: binary}, PXDesign: &config.CLIBinaryConfig{Resources: fixtureResources(t), Binary: binary}}
 				if outcome == "unconfigured" {
 					cli.Protenix.Binary = ""
 					cli.PXDesign.Binary = ""

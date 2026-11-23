@@ -22,6 +22,8 @@ import (
 	"github.com/goccy/go-json"
 	"github.com/goccy/go-yaml"
 	"github.com/pelletier/go-toml/v2"
+
+	"github.com/0xdevelop/protenix_service/common/app_path"
 )
 
 const (
@@ -209,6 +211,45 @@ func LoadConfig(file string) error {
 	}
 	if err := api_auth_config.ValidateEmailSelection(loadedConfig.AuthCfg); err != nil {
 		return err
+	}
+	if CurrentApp != nil {
+		root, pathErr := app_path.ExecutableDir()
+		if pathErr != nil {
+			return pathErr
+		}
+		if loadedConfig.StorageCfg != nil && loadedConfig.StorageCfg.Sqlite != nil {
+			sqlite := loadedConfig.StorageCfg.Sqlite
+			sqlite.DBFilePath, pathErr = app_path.Resolve(root, sqlite.DBFilePath)
+			if pathErr != nil {
+				return pathErr
+			}
+		}
+		if loadedConfig.CliCfg != nil {
+			if loadedConfig.CliCfg.WorkRoot == "" {
+				loadedConfig.CliCfg.WorkRoot = "data/cli_jobs"
+			}
+			loadedConfig.CliCfg.WorkRoot, pathErr = app_path.Resolve(root, loadedConfig.CliCfg.WorkRoot)
+			if pathErr != nil {
+				return pathErr
+			}
+			for _, binary := range []*CLIBinaryConfig{loadedConfig.CliCfg.Protenix, loadedConfig.CliCfg.PXDesign} {
+				if binary == nil {
+					continue
+				}
+				binary.Binary, pathErr = app_path.Resolve(root, binary.Binary)
+				if pathErr != nil {
+					return pathErr
+				}
+				for _, runtime := range binary.VersionRuntimes {
+					if runtime != nil {
+						runtime.Binary, pathErr = app_path.Resolve(root, runtime.Binary)
+						if pathErr != nil {
+							return pathErr
+						}
+					}
+				}
+			}
+		}
 	}
 	GlobalConfig = loadedConfig
 	api_auth_config.CurrentCfgAuth = loadedConfig.AuthCfg

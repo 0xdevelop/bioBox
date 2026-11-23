@@ -5,6 +5,8 @@ package ability_protenix
 import (
 	"context"
 	"errors"
+	"github.com/0xdevelop/protenix_service/common/app_path"
+	"github.com/0xdevelop/protenix_service/runtime_resource"
 	"os"
 	"path/filepath"
 	"strings"
@@ -32,7 +34,7 @@ func LoadAPIMethods() {
 	)
 	api_supported_methods.AddMethod(&api_supported_methods.SupportedMethod{
 		Name:        MethodProtenix,
-		Description: "提交 Protenix 结构预测任务（对应 CLI：protenix-run pred）。版本/模型走 arguments。异步队列使用配置的主关系库（支持 SQLite）。version 缺省 v1，用于选择独立 runtime：v1 未单独配置时使用 cli_cfg.protenix.binary，v2 必须配置 cli_cfg.protenix.version_runtimes.v2.binary，不会回退到 v1。对应版本未配置时 Execute 拒绝启动进程。",
+		Description: "提交 Protenix 结构预测任务（对应 CLI：protenix-run pred）。官方受管 runtime 目前仅核准 v1 默认模型、显式 use_msa=false，且须可信完整资源清单已 ready；其余自动下载分支拒绝启动，不静默回退。版本/模型走 arguments。异步队列使用配置的主关系库（支持 SQLite）。version 缺省 v1，用于选择独立 runtime：v1 未单独配置时使用 cli_cfg.protenix.binary，v2 必须配置 cli_cfg.protenix.version_runtimes.v2.binary，不会回退到 v1。对应版本未配置时 Execute 拒绝启动进程。",
 		Async:       true,
 		InputSchema: api_auth_common.InputSchema(
 			map[string]interface{}{
@@ -101,6 +103,11 @@ func Execute(ctx context.Context, input interface{}) (interface{}, error) {
 		return nil, errors.Join(runErr, err)
 	}
 	payload := executionPayload(jobDir, outDir, result)
+	if runErr != nil && spec.Resources != nil {
+		if state, e := cli_proc.ResourceStatus(evidenceCtx, *spec); e == nil {
+			payload["resources"] = state
+		}
+	}
 	count, hasERR, inspectErr := cli_proc.InspectOutput(outDir)
 	if inspectErr != nil {
 		return payload, errors.Join(runErr, inspectErr, reportBusinessStatus(evidenceCtx, StatusInspectionFailed, "产物检查失败"))
@@ -142,6 +149,17 @@ func buildProtenixSpec(ctx context.Context, input interface{}) (*cli_proc.Spec, 
 	if err != nil {
 		return nil, "", "", err
 	}
+	root, err := app_path.ExecutableDir()
+	if err != nil {
+		return nil, "", "", err
+	}
+	preparedResources, err := runtime_resource.Compile("protenix", binary.Binary, root, binary.ExtraEnv, binary.Resources)
+	if err != nil {
+		return nil, "", "", err
+	}
+	if version != "v1" && filepath.Base(binary.Binary) == "protenix-run" {
+		return nil, "", "", runtime_resource.ErrUnsupported
+	}
 	inputPath, _ := api_auth_common.RequiredString(params, "input")
 	taskID := executionTaskID(ctx)
 	jobDir, stagedInput, err := cli_proc.StageInput(cliCfg.WorkRoot, taskID, inputPath)
@@ -159,13 +177,15 @@ func buildProtenixSpec(ctx context.Context, input interface{}) (*cli_proc.Spec, 
 		grace = 10 * time.Second
 	}
 	return &cli_proc.Spec{
-		Name:    MethodProtenix,
-		Path:    binary.Binary,
-		Args:    args,
-		Env:     binary.ExtraEnv,
-		Dir:     jobDir,
-		LogPath: filepath.Join(jobDir, "run.log"),
-		Grace:   grace,
+		Resources:   preparedResources,
+		ResourceSet: "protenix." + version,
+		Name:        MethodProtenix,
+		Path:        binary.Binary,
+		Args:        args,
+		Env:         binary.ExtraEnv,
+		Dir:         jobDir,
+		LogPath:     filepath.Join(jobDir, "run.log"),
+		Grace:       grace,
 	}, jobDir, outDir, nil
 }
 
@@ -241,13 +261,18 @@ func configuredBinary(version string) (*config.CLIConfig, *config.CLIBinaryConfi
 
 func runtimeForVersion(base *config.CLIBinaryConfig, version string) (*config.CLIBinaryConfig, error) {
 	if override := versionRuntime(base, version); override != nil && strings.TrimSpace(override.Binary) != "" {
+		resources := base.Resources
+		if override.Resources != nil {
+			resources = override.Resources
+		}
 		env := base.ExtraEnv
 		if override.ExtraEnv != nil {
 			env = override.ExtraEnv
 		}
 		return &config.CLIBinaryConfig{
-			Binary:   strings.TrimSpace(override.Binary),
-			ExtraEnv: env,
+			Binary:    strings.TrimSpace(override.Binary),
+			Resources: resources,
+			ExtraEnv:  env,
 		}, nil
 	}
 	if version == "v2" {

@@ -71,7 +71,7 @@ build_release() {
         bash "${PKG}/scripts/install_prefix_protenix.sh" || rc=$?
       ;;
     pxdesign)
-      PREFIX_ROOT="" PXDESIGN_PREFIX="${rel}" PXDESIGN_DATA="${PREFIX}/data" \
+      PREFIX_ROOT="" PXDESIGN_PREFIX="${rel}" PXDESIGN_DATA="${PREFIX}/data" PXDESIGN_ENV_FILE="${PREFIX}/conf/${APP}.env" \
         bash "${PKG}/scripts/install_prefix_pxdesign.sh" || rc=$?
       ;;
   esac

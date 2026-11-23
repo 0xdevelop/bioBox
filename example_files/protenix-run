@@ -6,13 +6,27 @@
 set -euo pipefail
 
 PREFIX="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/.." && pwd)"
+# Verification only: this wrapper never starts or confirms a weight download.
+SERVICE_BIN="${PREFIX}/../../protenix_service"
+[[ -x "${SERVICE_BIN}" ]] || { echo "[protenix-run] native resource coordinator missing; refusing Python" >&2; exit 4; }
+"${SERVICE_BIN}" resource --runtime "${PREFIX}/bin/protenix-run" verify protenix.v1 >/dev/null || { echo "[protenix-run] resources not verified ready; query resource.status / confirm resource.prepare first" >&2; exit 4; }
+
 ENV_FILE="${PREFIX}/conf/protenix.env"
+# Ignore inherited owned-resource roots; only this runtime config is authoritative.
+unset PROTENIX_ROOT_DIR PROTENIX_MODEL PXDESIGN_DATA PXDESIGN_CHECKPOINT_DIR TOOL_WEIGHTS_ROOT PROTENIX_DATA_ROOT_DIR RUNTIME_CACHE_DIR
+PROTENIX_ROOT_DIR="${PREFIX}/data"
+PROTENIX_MODEL="protenix_base_default_v1.0.0"
+
 if [[ -f "${ENV_FILE}" ]]; then
   set -a
   # shellcheck disable=SC1090
   source "${ENV_FILE}"
   set +a
 fi
+
+# Relative resource config values are rooted at this runtime, never cwd.
+resource_path() { case "$1" in /*) printf '%s\n' "$1";; *) printf '%s/%s\n' "${PREFIX}" "$1";; esac; }
+
 if [[ -x "${PREFIX}/current/venv/bin/protenix" ]]; then
   VENV="${PREFIX}/current/venv"
 elif [[ -x "${PREFIX}/venv/bin/protenix" ]]; then
@@ -21,26 +35,46 @@ else
   echo "[protenix-run] 找不到 protenix，请先执行 install_protenix.sh install" >&2
   exit 127
 fi
-export PROTENIX_ROOT_DIR="${PROTENIX_ROOT_DIR:-${PREFIX}/data}"
+export PROTENIX_ROOT_DIR="$(resource_path "${PROTENIX_ROOT_DIR:-data}")"
 export LAYERNORM_TYPE="${LAYERNORM_TYPE:-torch}"
 export CUDA_HOME="${CUDA_HOME:-/usr/local/cuda-13.0}"
+# Keep interpreter resolution and caches process-local to the owned runtime.
+unset PYTHONPATH PYTHONHOME
+export PYTHONNOUSERSITE=1
+CACHE_ROOT="$(resource_path "${RUNTIME_CACHE_DIR:-data/cache}")"
+export XDG_CACHE_HOME="${CACHE_ROOT}/xdg" TORCH_HOME="${CACHE_ROOT}/torch"
+export TORCH_EXTENSIONS_DIR="${CACHE_ROOT}/torch_extensions" TRITON_CACHE_DIR="${CACHE_ROOT}/triton"
+export MPLCONFIGDIR="${CACHE_ROOT}/matplotlib" JAX_COMPILATION_CACHE_DIR="${CACHE_ROOT}/jax"
+export NUMBA_CACHE_DIR="${CACHE_ROOT}/numba" MODELSCOPE_CACHE="${CACHE_ROOT}/modelscope" HF_HOME="${CACHE_ROOT}/huggingface"
 export VIRTUAL_ENV="${VENV}"
 export PATH="${VENV}/bin:${CUDA_HOME}/bin:${PATH}"
 MODEL="${PROTENIX_MODEL:-protenix_base_default_v1.0.0}"
 
+
+
 if [[ "${1:-}" != "pred" ]]; then
-  exec "${VENV}/bin/protenix" "$@"
+  case "${1:-}" in --help|-h) exec "${VENV}/bin/protenix" "$@";; *) echo "[protenix-run] unsupported unmanaged subcommand" >&2; exit 4;; esac
 fi
 
 args=("$@")
+use_msa="" use_template=false use_rna_msa=false preset=preview
 out_dir="./output"
 has_model=0
 for ((i = 0; i < ${#args[@]}; i++)); do
   case "${args[i]}" in
+    --use_msa) use_msa="${args[i+1]:-}" ;;
+    --use_msa=*) use_msa="${args[i]#--use_msa=}" ;;
+    --use_template) use_template="${args[i+1]:-}" ;;
+    --use_template=*) use_template="${args[i]#--use_template=}" ;;
+    --use_rna_msa) use_rna_msa="${args[i+1]:-}" ;;
+    --use_rna_msa=*) use_rna_msa="${args[i]#--use_rna_msa=}" ;;
+
     -o|--out_dir) out_dir="${args[i+1]:-${out_dir}}" ;;
     --out_dir=*) out_dir="${args[i]#--out_dir=}" ;;
     -n|--model_name) has_model=1; MODEL="${args[i+1]:-${MODEL}}" ;;
     --model_name=*) has_model=1; MODEL="${args[i]#--model_name=}" ;;
+    -i|--input|--input=*|-s|--seeds|--seeds=*|-c|--cycle|--cycle=*|-p|--step|--step=*|-e|--sample|--sample=*|-d|--dtype|--dtype=*|--use_default_params|--use_default_params=*) ;;
+    -*) echo "[protenix-run] unsupported unmanaged option" >&2; exit 4 ;;
   esac
 done
 [[ ${has_model} -eq 1 ]] || args+=(-n "${MODEL}")
@@ -49,6 +83,10 @@ if [[ "${MODEL}" == protenix-v2* && ! -s "${PROTENIX_ROOT_DIR}/checkpoint/${MODE
   echo "[protenix-run] ${MODEL} 需要授权权重：${PROTENIX_ROOT_DIR}/checkpoint/${MODEL}.pt 不存在" >&2
   exit 2
 fi
+
+
+[[ "${use_msa,,}" == false && "${use_template,,}" == false && "${use_rna_msa,,}" == false ]] || { echo "[protenix-run] uncoordinated MSA/template branch unsupported; explicitly pass --use_msa false" >&2; exit 4; }
+[[ "${MODEL}" == protenix_base_default_v1.0.0 ]] || { echo "[protenix-run] model profile unsupported" >&2; exit 4; }
 
 rc=0
 "${VENV}/bin/protenix" "${args[@]}" || rc=$?

@@ -7,13 +7,13 @@
 # 可选环境变量：
 #   PREFIX_ROOT / PROTENIX_PREFIX / PROTENIX_SRC / PROTENIX_OVERRIDES / PROTENIX_PYTHON
 #   UV / CUDA_HOME / TORCH_INDEX_URL / PYPI_INDEX_URL / RECREATE_VENV / LAYERNORM_TYPE
-#   PROTENIX_MODEL（默认 v1；v2 需本地授权权重）/ SKIP_WEIGHTS / WEIGHTS_REUSE_FROM
+#   PROTENIX_MODEL（默认 v1；v2 需本地授权权重）/ SKIP_WEIGHTS
 #   PROTENIX_ENV_FILE（默认 <prefix>/conf/protenix.env；install_protenix.sh 指向安装目录的共用配置）
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 # shellcheck disable=SC1091
-source "${ROOT}/scripts/weights_reuse.sh"
+# Managed weights use the native controller; no shell copy/downloader is sourced.
 if [[ -f "${ROOT}/scripts/repo_src_defaults.sh" ]]; then
   # shellcheck disable=SC1091
   source "${ROOT}/scripts/repo_src_defaults.sh"
@@ -156,13 +156,21 @@ fi
 PROTENIX_MODEL="${PROTENIX_MODEL:-protenix_base_default_v1.0.0}"
 DATA_ROOT="$(sed -n 's/^PROTENIX_ROOT_DIR=//p' "${ENV_FILE}" | tail -n1 | tr -d '"')"
 DATA_ROOT="${DATA_ROOT:-${PREFIX}/data}"
+if [[ "${DATA_ROOT}" != /* ]]; then DATA_ROOT="$(cd "$(dirname "${ENV_FILE}")/.." && pwd)/${DATA_ROOT}"; fi
 CKPT="${DATA_ROOT}/checkpoint/${PROTENIX_MODEL}.pt"
-mkdir -p "${DATA_ROOT}"
 echo "${TAG} PROTENIX_MODEL=${PROTENIX_MODEL} PROTENIX_ROOT_DIR=${DATA_ROOT}"
+
+# The product binary is the only weight transport/lock owner. No curl fallback.
+if [[ -n "${WEIGHTS_REUSE_FROM:-}" ]]; then die "WEIGHTS_REUSE_FROM is retired for managed preparation; configure existing paths or a directory symlink (no copy)"; fi
+if [[ "${SKIP_WEIGHTS:-0}" != 1 ]]; then
+  NATIVE="${ROOT}/../../protenix_service"
+  [[ -x "${NATIVE}" ]] || die "integrated native resource coordinator missing; no weight download attempted"
+  "${NATIVE}" resource prepare protenix.v1 || die "resources not ready/confirmed; no Python CLI started"
+fi
 
 READY_MARK="${PREFIX}/conf/install.ready"
 STAGE="${PREFIX}/src/protenix-${SRC_SHA:0:12}"
-if [[ "${RECREATE_VENV:-0}" != "1" && -x "${VENV}/bin/protenix" && -x "${VENV}/bin/python" && -s "${CKPT}" && -f "${STAGE}/setup.py" ]]; then
+if [[ "${SKIP_WEIGHTS:-0}" != "1" && "${RECREATE_VENV:-0}" != "1" && -x "${VENV}/bin/protenix" && -x "${VENV}/bin/python" && -s "${CKPT}" && -f "${STAGE}/setup.py" ]]; then
   PYV="$("${VENV}/bin/python" -c 'import sys;print("%d.%d.%d"%sys.version_info[:3])')"
   if [[ "${PYV}" == 3.14.* ]]; then
     {
@@ -222,38 +230,15 @@ run_step verify_cli "${VENV}/bin/protenix" --help
 "${UV_BIN}" pip freeze --python "${VENV}/bin/python" > "${PREFIX}/conf/pip-freeze.txt"
 echo "${TAG} freeze -> ${PREFIX}/conf/pip-freeze.txt"
 
-fetch_one() {
-  local key="$1" dst="$2" url
-  [[ -s "${dst}" ]] && { echo "${TAG} have ${dst}"; return 0; }
-  url="$("${VENV}/bin/python" -c 'import sys; from protenix.web_service.dependency_url import URL; print(URL[sys.argv[1]])' "${key}")" \
-    || die "no upstream URL for ${key}"
-  mkdir -p "$(dirname "${dst}")"
-  echo "${TAG} download ${key}: ${url}"
-  curl -fL --retry 3 -o "${dst}.part" "${url}" || { rm -f "${dst}.part"; die "download failed: ${key} ${url}"; }
-  mv "${dst}.part" "${dst}"
-}
-if [[ -n "${WEIGHTS_REUSE_FROM:-}" ]]; then
-  REUSE_DATA="${WEIGHTS_REUSE_FROM}/protenix/data"
-  [[ -d "${REUSE_DATA}" ]] || die "WEIGHTS_REUSE_FROM protenix data missing: ${REUSE_DATA}"
-  echo "${TAG} reuse weights from ${REUSE_DATA}"
-  seed_tree_verified "${REUSE_DATA}" "${DATA_ROOT}"
+
+# Preserve the existing completion-marker contract only for fully prepared resources.
+if [[ "${SKIP_WEIGHTS:-0}" == 1 ]]; then
+  echo "${TAG} status=environment_only src_sha=${SRC_SHA} model=${PROTENIX_MODEL}"
+else
+  {
+    echo "src_sha=${SRC_SHA}"
+    echo "model=${PROTENIX_MODEL}"
+    echo "python=${PYV}"
+  } > "${READY_MARK}"
+  echo "${TAG} status=ok src_sha=${SRC_SHA} model=${PROTENIX_MODEL}"
 fi
-if [[ "${PROTENIX_MODEL}" == protenix-v2* ]]; then
-  [[ -s "${CKPT}" ]] || die "PROTENIX_MODEL=${PROTENIX_MODEL} 需要授权权重，本地缺少 ${CKPT}（官方地址 403，脚本不下载；请放入授权权重后重试，或改回 v1）"
-  echo "${TAG} using licensed local weights ${CKPT}"
-elif [[ "${SKIP_WEIGHTS:-0}" != "1" ]]; then
-  fetch_one "${PROTENIX_MODEL}" "${CKPT}"
-  for k in ccd_components_file:components.cif ccd_components_rdkit_mol_file:components.cif.rdkit_mol.pkl \
-           pdb_cluster_file:clusters-by-entity-40.txt obsolete_release_data_csv:obsolete_release_date.csv; do
-    fetch_one "${k%%:*}" "${DATA_ROOT}/common/${k#*:}"
-  done
-  if [[ "${PROTENIX_MODEL}" == *esm* || "${PROTENIX_MODEL}" == *ism* ]]; then
-    echo "${TAG} NOTE: ${PROTENIX_MODEL} 还需要 ESM 权重，首次推理时由上游自动下载" >&2
-  fi
-fi
-{
-  echo "src_sha=${SRC_SHA}"
-  echo "model=${PROTENIX_MODEL}"
-  echo "python=${PYV}"
-} > "${READY_MARK}"
-echo "${TAG} status=ok src_sha=${SRC_SHA} model=${PROTENIX_MODEL}"

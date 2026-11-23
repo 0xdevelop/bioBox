@@ -98,7 +98,7 @@ func TestFlowDebugProxyRunsPxdesignTaskFlowOverLiveProtocols(t *testing.T) {
 	root := t.TempDir()
 	script := writePxdesignFixtureScript(t, root)
 	fixture := newLiveProtocolFixture(t, script, root)
-	config.GlobalConfig.CliCfg.PXDesign = &config.CLIBinaryConfig{Binary: script, ExtraEnv: map[string]string{}}
+	config.GlobalConfig.CliCfg.PXDesign = &config.CLIBinaryConfig{Resources: fixtureResources(t), Binary: script, ExtraEnv: map[string]string{}}
 
 	stopPolicy := policy.PolicyServicesStart()
 	t.Cleanup(stopPolicy)
@@ -194,7 +194,7 @@ func newLiveProtocolFixture(t *testing.T, binary, root string) *liveProtocolFixt
 
 	config.GlobalConfig = &config.FileConfig{
 		StorageCfg: storage_config.Default(filepath.Join(root, "queue.db")),
-		CliCfg:     &config.CLIConfig{WorkRoot: filepath.Join(root, "jobs"), CancelGraceSeconds: 1, Protenix: &config.CLIBinaryConfig{Binary: binary, ExtraEnv: map[string]string{}}},
+		CliCfg:     &config.CLIConfig{WorkRoot: filepath.Join(root, "jobs"), CancelGraceSeconds: 1, Protenix: &config.CLIBinaryConfig{Resources: fixtureResources(t), Binary: binary, ExtraEnv: map[string]string{}}},
 		ApiCfg:     &api_config.ApiConfig{APICfgJsonRPC: jsonRPCCfg, APICfgMCP: mcpCfg, APICfgWebSocket: wsCfg, APICfgGRPC: grpcCfg},
 	}
 	api_auth_config.CurrentCfgAuth = &api_auth_config.AuthConfig{Session: &api_auth_config.SessionConfig{

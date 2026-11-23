@@ -51,7 +51,7 @@ func newQueueHTTPFixture(t *testing.T, binary, root string) *queueHTTPFixture {
 	})
 	config.GlobalConfig = &config.FileConfig{
 		StorageCfg: storage_config.Default(filepath.Join(root, "queue.db")),
-		CliCfg:     &config.CLIConfig{WorkRoot: filepath.Join(root, "jobs"), CancelGraceSeconds: 1, Protenix: &config.CLIBinaryConfig{Binary: binary, ExtraEnv: map[string]string{}}},
+		CliCfg:     &config.CLIConfig{WorkRoot: filepath.Join(root, "jobs"), CancelGraceSeconds: 1, Protenix: &config.CLIBinaryConfig{Resources: fixtureResources(t), Binary: binary, ExtraEnv: map[string]string{}}},
 	}
 	api_auth_config.CurrentCfgAuth = &api_auth_config.AuthConfig{Session: &api_auth_config.SessionConfig{
 		JWTSigningSecret: "disposable-test-signing-secret-at-least-32-bytes", Issuer: "queue-test", Audience: "queue-test-client", AccessTokenTTLSeconds: 600, RefreshTokenTTLSeconds: 1200,
@@ -347,7 +347,7 @@ func TestSQLiteHTTPOfficialPXDesignPreview(t *testing.T) {
 		}
 	}
 	f := newQueueHTTPFixture(t, "", root)
-	config.GlobalConfig.CliCfg.PXDesign = &config.CLIBinaryConfig{Binary: binary, ExtraEnv: map[string]string{}}
+	config.GlobalConfig.CliCfg.PXDesign = &config.CLIBinaryConfig{Resources: fixtureResources(t), Binary: binary, ExtraEnv: map[string]string{}}
 	config.GlobalConfig.CliCfg.ExecuteTimeoutEnabled = false
 	policy_config.CurrentCfgPolicy.MaxWorkers = 1
 	stop := policy.PolicyServicesStart()
@@ -465,7 +465,7 @@ printf 'pxdesign_fixture_cif\n' > "$out/design.cif"
 		t.Fatal(err)
 	}
 	f := newQueueHTTPFixture(t, script, root)
-	config.GlobalConfig.CliCfg.PXDesign = &config.CLIBinaryConfig{Binary: script, ExtraEnv: map[string]string{}}
+	config.GlobalConfig.CliCfg.PXDesign = &config.CLIBinaryConfig{Resources: fixtureResources(t), Binary: script, ExtraEnv: map[string]string{}}
 	stop := policy.PolicyServicesStart()
 	t.Cleanup(stop)
 

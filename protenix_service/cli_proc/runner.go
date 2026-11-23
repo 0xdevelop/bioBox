@@ -10,19 +10,25 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/0xdevelop/protenix_service/common/app_path"
+	"github.com/0xdevelop/protenix_service/common/resource"
 )
 
 var ErrCancelled = errors.New("cli process group cancelled")
 
 // Spec 描述一次独立进程组内的命令执行。
 type Spec struct {
-	Name    string
-	Path    string
-	Args    []string
-	Env     map[string]string
-	Dir     string
-	LogPath string
-	Grace   time.Duration
+	ResourceSet  string
+	Resources    *resource.Config
+	ResourceRoot string
+	Name         string
+	Path         string
+	Args         []string
+	Env          map[string]string
+	Dir          string
+	LogPath      string
+	Grace        time.Duration
 }
 
 // Result 是命令结束后的实测摘要，成功不能只看退出码。
@@ -78,6 +84,36 @@ func Run(ctx context.Context, spec Spec) (*Result, error) {
 	}
 	if strings.TrimSpace(spec.Path) == "" {
 		return nil, fmt.Errorf("cli binary path is required")
+	}
+	if (spec.Name == "protenix" || spec.Name == "pxdesign") && (spec.Resources == nil || !spec.Resources.Enabled || len(spec.Resources.Files) == 0) {
+		return nil, resource.ErrSetUnavailable
+	}
+	if err := validateOfficialResources(spec); err != nil {
+		return nil, err
+	}
+	if spec.Resources != nil && spec.Resources.Enabled {
+		root := spec.ResourceRoot
+		if root == "" {
+			var err error
+			root, err = app_path.ExecutableDir()
+			if err != nil {
+				return nil, err
+			}
+		}
+		p := resource.Preparer{Root: root}
+		if len(spec.Resources.Files) == 0 {
+			return nil, errors.New("enabled resource manifest is empty")
+		}
+		for _, file := range spec.Resources.Files {
+			if err := p.Prepare(ctx, file, spec.Resources.Download); err != nil {
+				return nil, err
+			}
+		}
+	}
+	// Resource verification may finish concurrently with cancellation: do not
+	// create an inference process after a cancelled preparation gate.
+	if ctx.Err() != nil {
+		return nil, fmt.Errorf("%w: %v", ErrCancelled, ctx.Err())
 	}
 	grace := spec.Grace
 	if grace <= 0 {
@@ -158,4 +194,17 @@ func exitCode(err error) int {
 		return exitErr.ExitCode()
 	}
 	return -1
+}
+
+// ResourceStatus reports preparation separately from inference task progress.
+func ResourceStatus(ctx context.Context, s Spec) (resource.Snapshot, error) {
+	root := s.ResourceRoot
+	var err error
+	if root == "" {
+		root, err = app_path.ExecutableDir()
+		if err != nil {
+			return resource.Snapshot{}, err
+		}
+	}
+	return (resource.Controller{Root: root, Sets: map[string]*resource.Config{s.ResourceSet: s.Resources}}).Status(ctx, s.ResourceSet)
 }

@@ -150,3 +150,5 @@ FORCE_PACK=1 ./build.sh pack        # 双 arch → build/upload_tmp_dir/ 下的�
 ## 当前发版与安装实测
 
 v0.0.2 已按模板三段在 GitHub 发布双架构六包（公开 Release 与资产齐全）。正式安装到 `/protenix_service`、业务任务与官方卸载因目标机 sudo 需要密码而未执行。完整过程、命令、时间、链接与未覆盖项见[v0.0.2 发版与正式安装实测记录](docs/acceptance_release_v0.0.2_20261120.md)。此前矩阵记录仍见[验收矩阵与证据](docs/acceptance_product_matrix_20261119.md)。
+
+资源准备、上游下载边界与本地验收见[资源准备契约](docs/resource_preparation_contract.md)。

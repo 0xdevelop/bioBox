@@ -39,7 +39,7 @@ func TestBuildArgvStagesInputAndKeepsPreset(t *testing.T) {
 	config.GlobalConfig = &config.FileConfig{CliCfg: &config.CLIConfig{
 		WorkRoot:           filepath.Join(work, "jobs"),
 		CancelGraceSeconds: 1,
-		PXDesign:           &config.CLIBinaryConfig{Binary: dummyRun(t)},
+		PXDesign:           &config.CLIBinaryConfig{Resources: fixtureResources(t), Binary: dummyRun(t)},
 	}}
 	argv, err := BuildArgvForTest(context.Background(), map[string]interface{}{
 		"input":    src,
@@ -74,7 +74,7 @@ func TestExecuteRunsConfiguredDummy(t *testing.T) {
 	config.GlobalConfig = &config.FileConfig{CliCfg: &config.CLIConfig{
 		WorkRoot:           filepath.Join(work, "jobs"),
 		CancelGraceSeconds: 1,
-		PXDesign: &config.CLIBinaryConfig{
+		PXDesign: &config.CLIBinaryConfig{Resources: fixtureResources(t),
 			Binary:   dummyRun(t),
 			ExtraEnv: map[string]string{"DUMMY_WRITE_CIF": "1"},
 		},
@@ -104,7 +104,7 @@ func TestExecuteCancelStopsDummyProcess(t *testing.T) {
 	config.GlobalConfig = &config.FileConfig{CliCfg: &config.CLIConfig{
 		WorkRoot:           filepath.Join(work, "jobs"),
 		CancelGraceSeconds: 1,
-		PXDesign: &config.CLIBinaryConfig{
+		PXDesign: &config.CLIBinaryConfig{Resources: fixtureResources(t),
 			Binary:   dummyRun(t),
 			ExtraEnv: map[string]string{"DUMMY_SLEEP": "1"},
 		},
@@ -162,7 +162,7 @@ func TestBuildArgvStagesOfficialRelativeSidecars(t *testing.T) {
 	config.GlobalConfig = &config.FileConfig{CliCfg: &config.CLIConfig{
 		WorkRoot:           filepath.Join(work, "jobs"),
 		CancelGraceSeconds: 1,
-		PXDesign:           &config.CLIBinaryConfig{Binary: dummyRun(t)},
+		PXDesign:           &config.CLIBinaryConfig{Resources: fixtureResources(t), Binary: dummyRun(t)},
 	}}
 	argv, err := BuildArgvForTest(context.Background(), map[string]interface{}{
 		"input":    src,

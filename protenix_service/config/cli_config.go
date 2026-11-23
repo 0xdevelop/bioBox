@@ -3,6 +3,8 @@ package config
 import (
 	"fmt"
 	"time"
+
+	"github.com/0xdevelop/protenix_service/common/resource"
 )
 
 // CLIConfig 是原生 CLI 接线的结构化配置。版本/模型/preset 仍走方法 arguments，不进路径。
@@ -19,6 +21,7 @@ type CLIConfig struct {
 
 // CLIBinaryConfig 指向已安装的官方包装命令，不在代码里写死路径。
 type CLIBinaryConfig struct {
+	Resources       *resource.Config             `yaml:"resources" json:"resources" toml:"resources"`
 	Binary          string                       `yaml:"binary" json:"binary" toml:"binary"`
 	ExtraEnv        map[string]string            `yaml:"extra_env" json:"extra_env" toml:"extra_env" comment:"额外环境变量，例如 LAYERNORM_TYPE=torch"`
 	VersionRuntimes map[string]*CLIRuntimeConfig `yaml:"version_runtimes" json:"version_runtimes" toml:"version_runtimes" comment:"按 arguments.version 选择独立 runtime。v1 未单独配置时回退到上级 binary；v2 必须单独配置，不会使用 v1 的 binary。version 不进 CLI 参数或 URL"`
@@ -26,8 +29,9 @@ type CLIBinaryConfig struct {
 
 // CLIRuntimeConfig 是某一产品版本对应的独立 runtime。
 type CLIRuntimeConfig struct {
-	Binary   string            `yaml:"binary" json:"binary" toml:"binary" comment:"该版本已安装包装命令的路径；空字符串表示该版本未配置"`
-	ExtraEnv map[string]string `yaml:"extra_env" json:"extra_env" toml:"extra_env" comment:"该版本的额外环境变量；省略或 null 时沿用上级 extra_env，显式空映射表示不附加额外变量"`
+	Resources *resource.Config  `yaml:"resources" json:"resources" toml:"resources"`
+	Binary    string            `yaml:"binary" json:"binary" toml:"binary" comment:"该版本已安装包装命令的路径；空字符串表示该版本未配置"`
+	ExtraEnv  map[string]string `yaml:"extra_env" json:"extra_env" toml:"extra_env" comment:"该版本的额外环境变量；省略或 null 时沿用上级 extra_env，显式空映射表示不附加额外变量"`
 }
 
 // Validate 校验 cli_cfg。execute_timeout_enabled=true 时 execute_timeout_seconds 必须为正整数；关闭时忽略 seconds。
