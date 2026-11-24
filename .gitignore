@@ -1,24 +1,43 @@
 # 源码树由 submodule 管理；本地检出内容按约定忽略（gitlink / .gitmodules 仍由仓库跟踪）
-build_srcs/
+bb_sources/
 
 # 构建与本地产物
 build/
 tmp/
 prefix/
+bb_prefix/
 
-# Go 本地工具链/缓存（若放在仓内调试）
+# Go 本地工具链/缓存与编译产物
 *.exe
 *.test
 *.out
+/bin/
+/bb_service
+/protenix_service
 
+# IDE 与系统文件
 .DS_Store
+*~
+*.swp
 .idea/
 .vscode/
 .trae/
-*.log
-logs/
+.CLAUDE.md
+.claude/
+.playwright-mcp/
+.auto_coding/
+CMake/
+ai_write/
 
-# protenix_service 本地密钥、运行数据与编译产物（嵌套模块；不要提交）
-protenix_service/example_files/config_local.yaml
-protenix_service/data/
-protenix_service/protenix_service
+# 前端与 test_ui 构建产物（现场构建，不进仓）
+test_ui/web/node_modules/
+test_ui/web/dist/
+frontend/dist/
+frontend/node_modules/
+
+# 本地验收配置（含密钥，勿提交）与运行数据/日志
+example_files/config_local.yaml
+example_files/config_local_auth_bridge.yaml
+/data/
+logs/
+*.log

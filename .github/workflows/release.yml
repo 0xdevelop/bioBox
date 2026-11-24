@@ -63,7 +63,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v6
         with:
-          go-version-file: protenix_service/go.mod
+          go-version-file: go.mod
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
@@ -83,28 +83,28 @@ jobs:
         run: |
           bash scripts/check_native_build.sh "$TARGET_ARCH"
           if [[ "$REF_TYPE" == tag ]]; then
-            go run gen_release_assets.go version --tag="$REF_NAME"
+            go run scripts/gen_release_assets.go version --tag="$REF_NAME"
           else
-            go run gen_release_assets.go version
+            go run scripts/gen_release_assets.go version
           fi
-          go run gen_release_assets.go self-test
+          go run scripts/gen_release_assets.go self-test
 
       - name: Build three native packages (no prefix installation)
         env:
           TARGET_ARCH: ${{ matrix.arch }}
           FORCE_PACK: '1'
         run: |
-          bash ./gen_pre_build_config.sh all
-          bash ./build.sh pack release "linux_$TARGET_ARCH"
-          go run gen_release_assets.go arch --arch="$TARGET_ARCH" \
+          bash ./scripts/gen_pre_build_config.sh all
+          bash ./scripts/build.sh pack release "linux_$TARGET_ARCH"
+          go run scripts/gen_release_assets.go arch --arch="$TARGET_ARCH" \
             --commit="$GITHUB_SHA" --dir=build/upload_tmp_dir --out=tmp/arch-assets
 
       - name: Rootless resource-gate smoke of the real native bundle
         env:
           TARGET_ARCH: ${{ matrix.arch }}
         run: |
-          version=$(go run gen_release_assets.go version)
-          bash scripts/check_bundle_resources.sh "build/upload_tmp_dir/protenix_service_linux_${TARGET_ARCH}_release_${version}.zip"
+          version=$(go run scripts/gen_release_assets.go version)
+          bash scripts/check_bundle_resources.sh "build/upload_tmp_dir/bb_service_linux_${TARGET_ARCH}_release_${version}.zip"
 
       - name: Upload this architecture only (internal job transfer)
         uses: actions/upload-artifact@v7
@@ -128,7 +128,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v6
         with:
-          go-version-file: protenix_service/go.mod
+          go-version-file: go.mod
 
       - name: Collect internal six-package inventory
         uses: actions/download-artifact@v8
@@ -139,9 +139,9 @@ jobs:
 
       - name: Verify six internal packages and stage three public files
         run: |
-          go run gen_release_assets.go aggregate --commit="$GITHUB_SHA" \
+          go run scripts/gen_release_assets.go aggregate --commit="$GITHUB_SHA" \
             --dir=tmp/collected --out=tmp/release-assets
-          go run gen_release_assets.go verify --commit="$GITHUB_SHA" --dir=tmp/release-assets
+          go run scripts/gen_release_assets.go verify --commit="$GITHUB_SHA" --dir=tmp/release-assets
 
       - name: Upload binaries
         id: upload_file_to_release
