@@ -1,6 +1,6 @@
 # 任务查询、业务步进与排障
 
-本说明适用于 `bb_service` 的任务使用者。安装与升级沿用[根目录安装说明](../../README.md)，不需要为步进另装服务、数据库或运行时。任务记录使用 SQLite 主库；一个队列库由一个服务进程负责，不是多实例 HA 队列。
+本说明适用于 `bioBox` 的任务使用者。安装与升级沿用[根目录安装说明](../../README.md)，不需要为步进另装服务、数据库或运行时。任务记录使用 SQLite 主库；一个队列库由一个服务进程负责，不是多实例 HA 队列。
 
 ## 1. 先确认入口与运行模式
 
@@ -24,10 +24,10 @@
 ```bash
 # 在仓库根目录执行；源路径替换为已有的 test 模式二进制
 mkdir -p tmp/task-debug/conf
-cp /path/to/test-mode/bb_service tmp/task-debug/bb_service
+cp /path/to/test-mode/bioBox tmp/task-debug/bioBox
 cp example_files/config_example.yaml tmp/task-debug/conf/config.yaml
 # 先按下文配置，再启动；不要原样启动示例配置
-(cd tmp/task-debug && ./bb_service)
+(cd tmp/task-debug && ./bioBox)
 ```
 
 启动前在这个**独立副本**中确认：
@@ -68,7 +68,7 @@ cp example_files/config_example.yaml tmp/task-debug/conf/config.yaml
 
 ## 4. 不用页面也能查询
 
-向目标服务已配置的 JSON-RPC 根地址发送以下 JSON 请求，HTTP header 使用同一个属主的 Bearer 凭证。示例 UUID 仅为格式示例，须替换为受理返回的 task_id。其他协议只更换通信外壳，业务方法名与 arguments 相同；[方法参数清单](api_methods.md)是完整参数入口。
+向目标服务已配置的 JSON-RPC 根地址发送以下 JSON 请求，HTTP header 使用同一个属主的 Bearer 凭证。示例 UUID 仅为格式示例，须替换为受理返回的 task_id。其他协议只更换通信外壳，业务方法名与 arguments 相同；[方法参数清单](../../bb_docs/api_methods.md)是完整参数入口。
 
 列出已有任务：
 

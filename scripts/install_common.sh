@@ -3,8 +3,8 @@
 # 调用方先设置：APP（protenix|pxdesign）、PKG（发布包解压目录）、CLI（上游命令名），再 source 本文件并调用 main "$@"。
 #
 # 安装目录（默认 ~/.local/share/<app>，用 <APP>_PREFIX 覆盖）。
-# 与 bb_service 一起安装时，install_bb_service.sh 会显式传入
-# <APP>_PREFIX=/bb_service/runtime/<app>，不依赖调用者环境：
+# 与 bioBox 一起安装时，install_bioBox.sh 会显式传入
+# <APP>_PREFIX=/bioBox/runtime/<app>，不依赖调用者环境：
 #   bin/<app>-run          命令入口
 #   conf/<app>.env         运行配置（update 保留）
 #   data/                  权重与数据（update 保留；uninstall 默认保留，--purge 删除）

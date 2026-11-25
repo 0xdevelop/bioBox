@@ -2,7 +2,7 @@
 
 // gen_api_docs.go 是 build-tag 隔离的文档生成器（与 tools.go 同款隔离方式，不属于任何包、
 // 不进任何构建），只由scripts/gen_api_docs.sh 经 `go run scripts/gen_api_docs.go [version]` 调用。
-// 它从 api_supported_methods 方法注册表生成对外文档 docs/bb_service/api_methods.md；生成物禁止手改。
+// 它从 bb_api_supported_methods 方法注册表生成对外文档 bb_docs/api_methods.md；生成物禁止手改。
 package main
 
 import (
@@ -13,22 +13,22 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/0xdevelop/bioBox/ability"
-	"github.com/0xdevelop/bioBox/api/api_error_code"
-	"github.com/0xdevelop/bioBox/api/api_supported_methods"
-	"github.com/0xdevelop/bioBox/config"
+	"github.com/0xdevelop/bioBox/bb_ability"
+	"github.com/0xdevelop/bioBox/bb_api/bb_api_error_code"
+	"github.com/0xdevelop/bioBox/bb_api/bb_api_supported_methods"
+	"github.com/0xdevelop/bioBox/bb_config"
 )
 
-const methodsDocPath = "docs/bb_service/api_methods.md"
+const methodsDocPath = "bb_docs/api_methods.md"
 
 func main() {
-	version := config.ProjectVersion
+	version := bb_config.ProjectVersion
 	if len(os.Args) > 1 && os.Args[1] != "" {
 		version = os.Args[1]
 	}
 
-	ability.LoadAbilityAPIMethods()
-	methods := api_supported_methods.Methods()
+	bb_ability.LoadAbilityAPIMethods()
+	methods := bb_api_supported_methods.Methods()
 	if len(methods) == 0 {
 		fail("method registry is empty")
 	}
@@ -51,11 +51,11 @@ func fail(message string) {
 type docSection struct {
 	title        string
 	fixedBody    string
-	singleMethod *api_supported_methods.SupportedMethod
-	methods      []api_supported_methods.SupportedMethod
+	singleMethod *bb_api_supported_methods.SupportedMethod
+	methods      []bb_api_supported_methods.SupportedMethod
 }
 
-func writeMethodsDoc(methods []api_supported_methods.SupportedMethod, version string) error {
+func writeMethodsDoc(methods []bb_api_supported_methods.SupportedMethod, version string) error {
 	errorCodeTable, err := renderErrorCodeTable()
 	if err != nil {
 		return err
@@ -108,7 +108,7 @@ func writeMethodsDoc(methods []api_supported_methods.SupportedMethod, version st
 	return os.WriteFile(methodsDocPath, []byte(doc.String()), 0644)
 }
 
-func renderMethodBody(doc *strings.Builder, method *api_supported_methods.SupportedMethod) error {
+func renderMethodBody(doc *strings.Builder, method *bb_api_supported_methods.SupportedMethod) error {
 	if method.Description != "" {
 		doc.WriteString("\n")
 		doc.WriteString(method.Description)
@@ -134,7 +134,7 @@ func renderMethodBody(doc *strings.Builder, method *api_supported_methods.Suppor
 
 // renderArgumentsExample 从 InputSchema 生成 arguments 传参举例：只展开必填字段
 // （enum 取首值、date-time 给样例、其余用 <字段名> 占位），可选字段单独列名。
-func renderArgumentsExample(doc *strings.Builder, method *api_supported_methods.SupportedMethod) error {
+func renderArgumentsExample(doc *strings.Builder, method *bb_api_supported_methods.SupportedMethod) error {
 	properties, ok := method.InputSchema["properties"].(map[string]interface{})
 	if !ok || len(properties) == 0 {
 		return nil
@@ -201,13 +201,13 @@ func renderErrorCodeTable() (string, error) {
 | 0 | 成功 |
 `)
 	for _, definedError := range []error{
-		api_error_code.ErrMethodNotFound,
-		api_error_code.ErrMethodNotSupported,
-		api_error_code.ErrInvalidArguments,
-		api_error_code.ErrPermissionDenied,
-		api_error_code.ErrVerifyCodeDeliveryFailed,
+		bb_api_error_code.ErrMethodNotFound,
+		bb_api_error_code.ErrMethodNotSupported,
+		bb_api_error_code.ErrInvalidArguments,
+		bb_api_error_code.ErrPermissionDenied,
+		bb_api_error_code.ErrVerifyCodeDeliveryFailed,
 	} {
-		businessError, ok := api_error_code.As(definedError)
+		businessError, ok := bb_api_error_code.As(definedError)
 		if !ok {
 			return "", fmt.Errorf("business error is not an api_error_code.Error: %v", definedError)
 		}

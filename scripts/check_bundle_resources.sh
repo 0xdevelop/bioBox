@@ -9,29 +9,29 @@ mkdir -p tmp
 stage=$(mktemp -d tmp/bundle-resource-smoke.XXXXXX)
 trap 'rm -rf "$stage"' EXIT
 unzip -q "$archive" -d "$stage"
-root="$(cd "$stage/bb_service" && pwd)"
-chmod u+x "$root/bb_service"
+root="$(cd "$stage/bioBox" && pwd)"
+chmod u+x "$root/bioBox"
 python3 - "$root" <<'PYCODE'
 from pathlib import Path
 import sys
 root=Path(sys.argv[1]);cfg=root/'conf/config.yaml'
 text=cfg.read_text()
 assert text.count('download_enabled: false')==2
-cfg.write_text(text.replace('/bb_service/runtime/',str(root/'runtime')+'/'))
+cfg.write_text(text.replace('/bioBox/runtime/',str(root/'runtime')+'/'))
 for kind in ['protenix','pxdesign']:
  p=root/'runtime'/kind/'conf'/(kind+'.env')
  p.write_text(p.read_text().replace('@PREFIX@',str(root/'runtime'/kind)))
 PYCODE
 for set in protenix.v1 pxdesign.preview; do
-    "$root/bb_service" resource status "$set" > "$stage/status.json" </dev/null
+    "$root/bioBox" resource status "$set" > "$stage/status.json" </dev/null
     python3 - "$stage/status.json" <<'PYCODE'
 import json,sys
 assert json.load(open(sys.argv[1]))['state']=='download_disabled'
 PYCODE
-    if "$root/bb_service" resource prepare "$set" > "$stage/prepare.out" 2> "$stage/prepare.err" </dev/null; then
+    if "$root/bioBox" resource prepare "$set" > "$stage/prepare.out" 2> "$stage/prepare.err" </dev/null; then
         echo 'missing offline weights unexpectedly prepared' >&2; exit 1
     fi
-    if "$root/bb_service" resource verify "$set" > "$stage/verify.out" 2> "$stage/verify.err" </dev/null; then
+    if "$root/bioBox" resource verify "$set" > "$stage/verify.out" 2> "$stage/verify.err" </dev/null; then
         echo 'uninstalled runtime unexpectedly verified' >&2; exit 1
     fi
     python3 - "$stage/verify.err" <<'PYCODE'

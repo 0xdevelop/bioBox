@@ -2,8 +2,8 @@
 # 用法：./scripts/gen_pre_build_config.sh <linux_amd64|linux_arm64|all>
 # 固化产物：bb_build/gen_pre_build_config_<os>_<arch>.yaml
 #
-# 交付：zip 发布包，解压后 install_bb_service.sh / install_<suite>.sh 安装为原生服务与命令行工具（非 Docker）。
-# 编排：仅 Go + shell；上游 Python 只在 bb_sources/bb_prefix 环境内跑。
+# 交付：zip 发布包，解压后 install_bioBox.sh / install_<suite>.sh 安装为原生服务与命令行工具（非 Docker）。
+# 编排：仅 Go + shell；上游源码在 build_srcs/，上游 Python 环境只装在 bb_prefix/ 内。
 #
 # 双环境策略（不可合并）：
 # - bb_prefix/protenix：最新 Protenix submodule（Python 3.14 + torch 2.14.1+cu130，覆盖见 bb_suites/protenix/deps.txt）
@@ -45,7 +45,7 @@ env_strategy_note: >
 
 products:
   - name: protenix
-    src_path: bb_sources/protenix
+    src_path: build_srcs/protenix
     build_subdir: protenix
     env_file: bb_suites/protenix/protenix.env
     wrapper: bb_suites/protenix/protenix-run
@@ -58,7 +58,7 @@ products:
     product_python: "3.14"
 
   - name: pxdesign
-    src_path: bb_sources/pxdesign
+    src_path: build_srcs/pxdesign
     build_subdir: pxdesign
     env_file: bb_suites/pxdesign/pxdesign.env
     wrapper: bb_suites/pxdesign/pxdesign-run

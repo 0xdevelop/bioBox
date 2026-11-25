@@ -21,7 +21,7 @@ User 域持有 User model、用户查询和密码处理。Auth 只调用 User �
 
 # 2. 方法契约
 
-受保护方法由 API 门禁统一验证凭证，身份经 context 下传；凭证来源见 [`ability_auth.md`](ability_auth.md)，入参 schema 权威见 [`api_methods.md`](api_methods.md)。
+受保护方法由 API 门禁统一验证凭证，身份经 context 下传；凭证来源见 [`ability_auth.md`](ability_auth.md)，入参 schema 权威见 [`bb_docs/api_methods.md`](../../bb_docs/api_methods.md)。
 
 ## 2.1. user.nickname.change
 
@@ -31,7 +31,7 @@ User 域持有 User model、用户查询和密码处理。Auth 只调用 User �
 { "nick_name": "新昵称" }
 ```
 
-- trim 后 1–32 字符；注册于 `ability_user_profile` 子包（因跨域鉴权依赖由 `ability` 顶层装配，契约明记例外）。
+- trim 后 1–32 字符；注册于 `bb_ability_user_profile` 子包（因跨域鉴权依赖由 `bb_ability` 顶层装配，契约明记例外）。
 
 # 3. 数据与并发纪律
 

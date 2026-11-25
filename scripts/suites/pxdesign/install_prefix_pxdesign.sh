@@ -142,7 +142,7 @@ case "${SRC_MODE}" in copy|git) ;; *) die "invalid PXDESIGN_SRC_MODE: ${SRC_MODE
 DATA="${PXDESIGN_DATA:-${PREFIX}}"
 if [[ -n "${WEIGHTS_REUSE_FROM:-}" ]]; then die "WEIGHTS_REUSE_FROM is retired for managed preparation; configure existing paths or a directory symlink (no copy)"; fi
 if [[ "${SKIP_WEIGHTS:-0}" != 1 ]]; then
-  NATIVE="${ROOT}/../../bb_service"
+  NATIVE="${ROOT}/../../bioBox"
   [[ -x "${NATIVE}" ]] || die "integrated native resource coordinator missing; no weight download attempted"
   "${NATIVE}" resource prepare pxdesign.preview || die "resources not ready/confirmed; no Python CLI started"
 fi

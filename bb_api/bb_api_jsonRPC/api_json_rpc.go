@@ -1,0 +1,70 @@
+package bb_api_jsonRPC
+
+import (
+	"context"
+	"errors"
+	"net"
+	"net/http"
+	"strconv"
+	"time"
+
+	"github.com/0xdevelop/bioBox/bb_api/bb_api_common"
+	"github.com/0xdevelop/bioBox/bb_api/bb_api_jsonRPC/bb_api_config_jsonRPC"
+	"github.com/0xdevelop/bioBox/bb_api/bb_api_jsonRPC/bb_api_jsonRPC_handler"
+	"github.com/george012/gtbox/gtbox_log"
+	"github.com/gorilla/mux"
+)
+
+var httpServer *http.Server
+
+func StartAPIServiceWithJsonRPC(apiCfgJsonRPC *bb_api_config_jsonRPC.APIConfigJsonRPC) {
+	bb_api_config_jsonRPC.CurrentAPICfgJsonRPC = apiCfgJsonRPC
+
+	if apiCfgJsonRPC.Port < 1 || apiCfgJsonRPC.Port > 65535 {
+		gtbox_log.LogErrorf("api port must be between 1 and 65535")
+		return
+	}
+	if apiCfgJsonRPC.BindAddress == "" {
+		gtbox_log.LogErrorf("api_cfg.api_cfg_jsonRPC.bind_address is required")
+		return
+	}
+
+	muxRouter := mux.NewRouter()
+	//muxRouter.Use(api_jsonRPC_handler.Middleware) // 使用中间件
+	muxRouter.HandleFunc("/", bb_api_common.HomeHandler).Methods("GET")
+	muxRouter.HandleFunc("/", bb_api_jsonRPC_handler.APIJsonRPCHandler).Methods("POST")
+	muxRouter.HandleFunc("/robots.txt", bb_api_common.RobotsHandler).Methods("GET")
+	muxRouter.NotFoundHandler = http.HandlerFunc(bb_api_common.HomeHandler)
+	muxRouter.MethodNotAllowedHandler = http.HandlerFunc(bb_api_common.HomeHandler)
+
+	addr := net.JoinHostPort(apiCfgJsonRPC.BindAddress, strconv.Itoa(apiCfgJsonRPC.Port))
+
+	httpServer = &http.Server{
+		Addr:    addr,
+		Handler: muxRouter,
+	}
+	go func() {
+		gtbox_log.LogInfof("API server Run On  [http://%s]", addr)
+		if err := httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			gtbox_log.LogErrorf("Failed to start HTTP server: %v\n", err)
+		}
+	}()
+
+}
+
+func StopApiServiceWithJsonRPC() {
+	if httpServer == nil {
+		gtbox_log.LogInfof("API server is not running")
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	gtbox_log.LogInfof("Shutting down API server...")
+	if err := httpServer.Shutdown(ctx); err != nil {
+		gtbox_log.LogErrorf("Error shutting down API server: %v\n", err)
+	} else {
+		gtbox_log.LogInfof("API server stopped successfully")
+	}
+}

@@ -1,5 +1,5 @@
 # 源码树由 submodule 管理；本地检出内容按约定忽略（gitlink / .gitmodules 仍由仓库跟踪）
-bb_sources/
+build_srcs/
 
 # 构建与本地产物
 build/
@@ -12,6 +12,7 @@ bb_prefix/
 *.test
 *.out
 /bin/
+/bioBox
 /bb_service
 /protenix_service
 
@@ -30,10 +31,10 @@ CMake/
 ai_write/
 
 # 前端与 test_ui 构建产物（现场构建，不进仓）
-test_ui/web/node_modules/
-test_ui/web/dist/
-frontend/dist/
-frontend/node_modules/
+bb_test_ui/web/node_modules/
+bb_test_ui/web/dist/
+bb_frontend/dist/
+bb_frontend/node_modules/
 
 # 本地验收配置（含密钥，勿提交）与运行数据/日志
 example_files/config_local.yaml

@@ -1,4 +1,4 @@
-// Package bb_service /main.go
+// Package main (bioBox)
 package main
 
 import (
@@ -9,15 +9,15 @@ import (
 	"runtime"
 	"time"
 
-	"github.com/0xdevelop/bioBox/api"
-	"github.com/0xdevelop/bioBox/common"
-	"github.com/0xdevelop/bioBox/common/app_path"
-	"github.com/0xdevelop/bioBox/config"
-	"github.com/0xdevelop/bioBox/custom_cmd"
-	"github.com/0xdevelop/bioBox/frontend"
-	"github.com/0xdevelop/bioBox/policy"
-	"github.com/0xdevelop/bioBox/storage"
-	"github.com/0xdevelop/bioBox/test_ui"
+	"github.com/0xdevelop/bioBox/bb_api"
+	"github.com/0xdevelop/bioBox/bb_common"
+	"github.com/0xdevelop/bioBox/bb_common/bb_app_path"
+	"github.com/0xdevelop/bioBox/bb_config"
+	"github.com/0xdevelop/bioBox/bb_custom_cmd"
+	"github.com/0xdevelop/bioBox/bb_frontend"
+	"github.com/0xdevelop/bioBox/bb_policy"
+	"github.com/0xdevelop/bioBox/bb_storage"
+	"github.com/0xdevelop/bioBox/bb_test_ui"
 	"github.com/george012/gtbox"
 	"github.com/george012/gtbox/gtbox_cmd"
 	"github.com/george012/gtbox/gtbox_log"
@@ -45,16 +45,16 @@ func setupApp() {
 		runMode = gtbox.RunModeDebug
 	}
 
-	config.CurrentApp = config.NewApp(
-		config.ProjectName,
-		config.ProjectBundleID,
+	bb_config.CurrentApp = bb_config.NewApp(
+		bb_config.ProjectName,
+		bb_config.ProjectBundleID,
 		fmt.Sprintf("%s service",
-			config.ProjectName,
+			bb_config.ProjectName,
 		),
 		runMode,
 	)
 
-	if config.CurrentApp.CurrentRunMode == gtbox.RunModeDebug {
+	if bb_config.CurrentApp.CurrentRunMode == gtbox.RunModeDebug {
 		cmdMap := map[string]string{
 			"git_commit_hash": "git show -s --format=%H",
 			"git_commit_time": "git show -s --format=\"%ci\" | cut -d ' ' -f 1,2 | sed 's/ /_/'",
@@ -72,28 +72,28 @@ func setupApp() {
 		}
 	}
 
-	root, err := app_path.ExecutableDir()
+	root, err := bb_app_path.ExecutableDir()
 	if err != nil {
 		panic("cannot resolve executable resource root")
 	}
-	config.CurrentApp.AppRunAsDir = root
-	config.CurrentApp.AppLogPath = filepath.Join(root, "logs")
-	config.CurrentApp.AppConfigFilePath = filepath.Join(root, "conf/config.yaml")
+	bb_config.CurrentApp.AppRunAsDir = root
+	bb_config.CurrentApp.AppLogPath = filepath.Join(root, "logs")
+	bb_config.CurrentApp.AppConfigFilePath = filepath.Join(root, "conf/config.yaml")
 
-	config.CurrentApp.GitCommitHash = mGitCommitHash
-	config.CurrentApp.GitCommitTime = mGitCommitTime
-	config.CurrentApp.GoVersion = mGoVersion
-	config.CurrentApp.PackageOS = mPackageOS
-	config.CurrentApp.PackageTime = mPackageTime
+	bb_config.CurrentApp.GitCommitHash = mGitCommitHash
+	bb_config.CurrentApp.GitCommitTime = mGitCommitTime
+	bb_config.CurrentApp.GoVersion = mGoVersion
+	bb_config.CurrentApp.PackageOS = mPackageOS
+	bb_config.CurrentApp.PackageTime = mPackageTime
 
-	custom_cmd.HandleCustomCmds(os.Args, config.CurrentApp)
+	bb_custom_cmd.HandleCustomCmds(os.Args, bb_config.CurrentApp)
 
-	gtbox.SetupGTBox(config.CurrentApp.AppName,
-		config.CurrentApp.CurrentRunMode,
-		config.CurrentApp.AppLogPath,
+	gtbox.SetupGTBox(bb_config.CurrentApp.AppName,
+		bb_config.CurrentApp.CurrentRunMode,
+		bb_config.CurrentApp.AppLogPath,
 		30,
 		gtbox_log.GTLogSaveHours,
-		config.CurrentApp.HTTPRequestTimeOut,
+		bb_config.CurrentApp.HTTPRequestTimeOut,
 	)
 }
 
@@ -105,45 +105,45 @@ func main() {
 
 	setupApp()
 
-	defer common.PanicHandler()
+	defer bb_common.PanicHandler()
 
 	// All run modes use the executable-owned configuration selected in setupApp.
 
 	var configLoadErr error
-	config.SyncConfigFile(func(err error) {
+	bb_config.SyncConfigFile(func(err error) {
 		configLoadErr = err
 		gtbox_log.LogErrorf("config load failed: %v", err)
 	})
 	if configLoadErr != nil {
 		return
 	}
-	if err := storage.OpenStorage(); err != nil {
+	if err := bb_storage.OpenStorage(); err != nil {
 		gtbox_log.LogErrorf("storage open failed: %v", err)
 		return
 	}
 	defer func() {
-		if err := storage.CloseStorage(); err != nil {
+		if err := bb_storage.CloseStorage(); err != nil {
 			gtbox_log.LogErrorf("storage close failed: %v", err)
 		}
 	}()
-	if err := storage.GormAutoMigrate(); err != nil {
+	if err := bb_storage.GormAutoMigrate(); err != nil {
 		gtbox_log.LogErrorf("gorm AutoMigrate failed: %v", err)
 		return
 	}
 	gtbox_log.LogInfof("storage migrated")
 
-	if err := config.GlobalConfig.ApiCfg.Validate(); err != nil {
+	if err := bb_config.GlobalConfig.ApiCfg.Validate(); err != nil {
 		gtbox_log.LogErrorf("api config invalid: %v; refusing to start", err)
 		return
 	}
-	api.StartAPIServices(config.GlobalConfig.ApiCfg)
-	stopPolicy := policy.PolicyServicesStart()
+	bb_api.StartAPIServices(bb_config.GlobalConfig.ApiCfg)
+	stopPolicy := bb_policy.PolicyServicesStart()
 	defer stopPolicy()
-	defer api.StopApiServices()
-	if config.CurrentApp.CurrentRunMode != gtbox.RunModeRelease {
-		test_ui.LoadTestWeb()
+	defer bb_api.StopApiServices()
+	if bb_config.CurrentApp.CurrentRunMode != gtbox.RunModeRelease {
+		bb_test_ui.LoadTestWeb()
 	}
-	frontendServer, err := frontend.FrontendServicesStart(config.GlobalConfig.FrontendCfg)
+	frontendServer, err := bb_frontend.FrontendServicesStart(bb_config.GlobalConfig.FrontendCfg)
 	if err != nil {
 		gtbox_log.LogErrorf("frontend start failed: %v", err)
 		return
@@ -157,6 +157,6 @@ func main() {
 			}
 		}()
 	}
-	common.LoadSigHandle(nil, nil)
+	bb_common.LoadSigHandle(nil, nil)
 
 }

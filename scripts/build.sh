@@ -6,8 +6,8 @@
 # 默认 TARGET=all：双 arch 发布包 + bb_prefix/protenix + bb_prefix/pxdesign（两套独立 venv）。
 # 发布包（每个 arch）：
 #   独立单产品包 protenix_/pxdesign_linux_<arch>_<mode>_<version>.zip：install_<app>.sh，默认 ~/.local/share/<app>
-#   整合包 bb_service_linux_<arch>_<mode>_<version>.zip：root 跑 install_bb_service.sh，
-#   服务与 Protenix/PXDesign 运行时统一装到 /bb_service。
+#   整合包 bioBox_linux_<arch>_<mode>_<version>.zip：root 跑 install_bioBox.sh，
+#   服务与 Protenix/PXDesign 运行时统一装到 /bioBox。
 # 幂等：已就绪步骤跳过（FORCE_*=1 强制重做）。
 # PREFIX_ROOT：把双 prefix 装到 <PREFIX_ROOT>/{protenix,pxdesign}（默认 <repo>/bb_prefix）。
 set -euo pipefail
@@ -32,7 +32,7 @@ Targets (default: all):
   all       双 arch 发布包 + bb_prefix/protenix + bb_prefix/pxdesign
   pack      只打发布包到 build/upload_tmp_dir/：
             <app>_linux_<arch>_<mode>_<version>.zip（独立单产品包，protenix / pxdesign）
-            bb_service_linux_<arch>_<mode>_<version>.zip（整合包：服务二进制 + install 脚本 +
+            bioBox_linux_<arch>_<mode>_<version>.zip（整合包：服务二进制 + install 脚本 +
             systemd 单元 + conf/config.yaml + runtime/{protenix,pxdesign}）
   protenix  只安装/校验 bb_prefix/protenix（uv + Python 3.14 + torch cu130）
   pxdesign  只安装/校验 bb_prefix/pxdesign（独立 venv；复用 scripts/suites/pxdesign/install_prefix_pxdesign.sh）
@@ -294,7 +294,7 @@ PBINFO
   echo "${TAG} packed ${UPLOAD_TMP_DIR}/${zip_name} (src_sha=${src_sha:0:12})"
 }
 
-SERVICE_APP="bb_service"
+SERVICE_APP="bioBox"
 SERVICE_SRC="${project_path}"
 SERVICE_WEB_READY=0
 
@@ -487,7 +487,7 @@ build_protenix() {
     echo "${TAG} skip protenix prefix (venv+CLI+weights ready at ${PROTENIX_PREFIX})"
     return 0
   fi
-  local src="${project_path}/bb_sources/protenix"
+  local src="${project_path}/build_srcs/protenix"
   [[ -d "${src}" ]] || { echo "${TAG} missing ${src}; run git submodule update --init --recursive" >&2; exit 1; }
   echo "${TAG} install ${PROTENIX_PREFIX}"
   PROTENIX_SRC="${src}" PROTENIX_SRC_MODE=git \
@@ -518,7 +518,7 @@ build_pxdesign() {
     echo "${TAG} skip pxdesign prefix (independent venv+CLI+weights ready at ${PXDESIGN_PREFIX})"
     return 0
   fi
-  local src="${project_path}/bb_sources/pxdesign"
+  local src="${project_path}/build_srcs/pxdesign"
   [[ -d "${src}" ]] || { echo "${TAG} missing ${src}; run git submodule update --init --recursive" >&2; exit 1; }
   echo "${TAG} install ${PXDESIGN_PREFIX} (independent venv; not merged with protenix)"
   PXDESIGN_SRC="${src}" PXDESIGN_SRC_MODE=git \

@@ -12,7 +12,7 @@
 
 # 1. Policy 域定位与边界
 
-`policy` 是统一策略调度域：周期从主关系库（本实例 SQLite）持久化排队区认领异步任务，限制全局同时执行数，并异步派发未尽之事恢复、周期清理等维护事项。Task 域只负责受理、持久状态与单条任务执行，不自建 Worker 池或轮询循环。
+`bb_policy` 是统一策略调度域：周期从主关系库（本实例 SQLite）持久化排队区认领异步任务，限制全局同时执行数，并异步派发未尽之事恢复、周期清理等维护事项。Task 域只负责受理、持久状态与单条任务执行，不自建 Worker 池或轮询循环。
 
 本域无对外 API 方法，不设方法契约节；对外能力经 Task 域方法（`task.get` / `task.list` / `task.cancel`）与各业务域 Async 方法体现。
 
@@ -36,7 +36,7 @@ Worker 不常驻、不空转：每个 Worker 只原子认领一条 `queued` 任�
 
 # 3. 数据与并发纪律
 
-配置（`config.FileConfig` 体系）：
+配置（`bb_config.FileConfig` 体系）：
 
 ```yaml
 policy_cfg:

@@ -1,6 +1,6 @@
 # bb_suites/pxdesign/deps.txt
 # PXDesign 独立 prefix（bb_prefix/pxdesign/venv，与 bb_prefix/protenix 分开，不合并）在 Python 3.14 / CUDA 13 / aarch64 上的外层覆盖。
-# 依赖来源：bb_sources/pxdesign/requirements.txt + 上游 install.sh（Protenix@v0.5.0+pxd、PXDesignBench@v0.1.2、
+# 依赖来源：build_srcs/pxdesign/requirements.txt + 上游 install.sh（Protenix@v0.5.0+pxd、PXDesignBench@v0.1.2、
 #           ColabDesign、jax[cuda]、dm-haiku/optax/transformers 等）。用法同 bb_suites/protenix/deps.txt（uv --override）。
 # 每条写原因；能保持上游版本就保持。
 

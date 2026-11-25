@@ -28,7 +28,7 @@
 
 # 1. Auth 域定位与边界
 
-Auth 是 **API 准入域**：实现整体位于 `api/api_auth`（不在 `ability` 树内），涵盖通信之后的权限准入——验证码、注册、登录、session/JWT、用户级 API key 与统一准入门禁；`ability` 只承载业务功能实现。文件名沿用 `ability_auth.md` 以保持链接稳定。
+Auth 是 **API 准入域**：实现整体位于 `bb_api/bb_api_auth`（不在 `bb_ability` 树内），涵盖通信之后的权限准入——验证码、注册、登录、session/JWT、用户级 API key 与统一准入门禁；`bb_ability` 只承载业务功能实现。文件名沿用 `ability_auth.md` 以保持链接稳定。
 
 预期目的：提供真实可用、可失效、可审计且不泄露敏感身份信息的验证码、登录和 token 链路。Auth 负责认证编排；User 数据、密码变更和手机号绑定属于 User 域。
 
@@ -72,7 +72,7 @@ flowchart LR
 
 业务错误统一复用 API 通用错误码，不增加独立错误码区间：身份认证和 token 校验失败统一 `API_PERMISSION_DENIED`，验证码或账户输入不可用统一 `API_INVALID_ARGUMENTS`，不得通过错误码或消息暴露邮箱、手机号或账户是否存在。邮件供应商、数据库或内部状态故障属于服务错误，不伪装成业务成功；可预期业务失败经统一 MCP `CallToolResult`（`isError=true` + `error_code`/`error_msg`）返回，不得使用协议错误冒充业务状态。
 
-入参 schema 权威见 [`api_methods.md`](api_methods.md)。
+入参 schema 权威见 [`bb_docs/api_methods.md`](../../bb_docs/api_methods.md)。
 
 ## 3.1. auth.verify_code.send.email
 
@@ -212,9 +212,9 @@ API key 记录中的 `created_at`、`last_used_at`、`revoked_at` 使用 UTC 毫
 - API key 的 `last_used_at` 在用户存在后更新；数据库条件保证同一把 key 每分钟至多写入一次，并发旧读取不能覆盖更新的使用时间。查询或更新时间写入失败时拒绝本次调用，不伪造认证成功。
 - 门禁开关 `auth_cfg.enabled`：缺省启用（段/键缺席均按启用处理，fail-closed 取向）；显式 `enabled: false` 时门禁放行且**不提供身份**——依赖 `AuthenticatedUser(ctx)` 的方法照常返回权限错误（不造匿名/系统假身份），适用无用户体系的部署形态。
 - Auth 配置校验纪律同样覆盖 `auth_cfg.auth_type`（支持 `jwt` / `bridge`，非法值 warning + 全部受保护方法拒绝）。
-- `storage` 包是唯一存储入口。查询和写入使用 `GormDB(ctx)`，多步写操作使用 `Transaction`；表结构以 Go model 为事实源经 `GormAutoMigrate` 同步，不得经另一连接池、原始 DDL、数据库 CLI 或外部脚本修改。
+- `bb_storage` 包是唯一存储入口。查询和写入使用 `GormDB(ctx)`，多步写操作使用 `Transaction`；表结构以 Go model 为事实源经 `GormAutoMigrate` 同步，不得经另一连接池、原始 DDL、数据库 CLI 或外部脚本修改。
 - 多关系库并存时，Auth/User 经 `GormDB(ctx)` 使用 `storage_cfg.primary` 指定的主库；程序固定存储与 Ability 独立实例的边界见 [存储说明](storage.md)。
-- 邮件通道供应商由 auth 配置 `email.provider` 选择，当前仅支持 `resend`（Resend 官方 Go SDK）；配置进入 `config.FileConfig` 的 YAML/JSON/TOML 体系。
+- 邮件通道供应商由 auth 配置 `email.provider` 选择，当前仅支持 `resend`（Resend 官方 Go SDK）；配置进入 `bb_config.FileConfig` 的 YAML/JSON/TOML 体系。
 - `email.enabled=false` 明确关闭邮件；已启用邮件的供应商、凭证、合法发件人、品牌和主题在加载与最终调用两层校验。旧块未写开关保留发送意图，缺失块则不发送；新通用冷却键及兼容规则见 [操作说明](verification_delivery.md)。
 - Auth 配置校验失败输出字段级 warning 日志（指向 `auth_cfg.xxx.yyy` 完整键路径，敏感字段只报名不报值）。
 - API key、密码和 token 不得写日志、落入错误响应或以明文保存。验证码仅允许上述用户授权的服务 INFO 日志，不进入响应或明文数据库。
@@ -237,7 +237,7 @@ API key 记录中的 `created_at`、`last_used_at`、`revoked_at` 使用 UTC 毫
 ## 5.1. auth_type=bridge（身份桥接形态）
 
 `auth_cfg.auth_type: bridge` 时本服务不签发令牌：令牌由外部 IdP 签发，本服务用 IdP
-公钥本地验签（`api/api_auth/api_auth_bridge`），并在本地管理这批外部令牌。这条路不接受本地 `api_key`，`ptxk_` 不是凭证，也没有拿外部系统的 api key 在本地当凭证的入口。`auth_type` 一次只开一种：`jwt` 走本地账户的两条凭证，`bridge` 只走本条。
+公钥本地验签（`bb_api/bb_api_auth/bb_api_auth_bridge`），并在本地管理这批外部令牌。这条路不接受本地 `api_key`，`ptxk_` 不是凭证，也没有拿外部系统的 api key 在本地当凭证的入口。`auth_type` 一次只开一种：`jwt` 走本地账户的两条凭证，`bridge` 只走本条。
 
 - 配置 `auth_cfg.bridge.*`：`issuer`（IdP 标识）、`allowed_algs`（缺省 `[ES256]`，
   禁 `none` 与空串）、`public_key_path`（PKIX PEM，P-256，必填）、`leeway_seconds`
@@ -260,7 +260,7 @@ API key 记录中的 `created_at`、`last_used_at`、`revoked_at` 使用 UTC 毫
 
 - [ ] 🟡 DONE — Auth 配置、验证码哈希、JWT 基础实现已存在；密码哈希由 User 域持有。
 - [ ] 🟡 DONE — verify_code 域包收口完成：`api_auth_verify_code` 持有 email/SMS 四方法，email provider 由 `email.provider` 配置选择（`EmailConfig` 含 `product_name` 品牌配置），配置校验失败有字段级 warning 日志。
-- [ ] 🟡 DONE — 准入域整体上移：auth 六子包迁至 `api/api_auth`；APIExecuter 统一准入门禁（非 Public 方法 Execute 前验 `arguments.jwt_token`，身份经 context 下传）；业务方法删除自行鉴权样板；wire 与 `api_methods.md` 零变化。
+- [ ] 🟡 DONE — 准入域整体上移：auth 六子包迁至 `bb_api/bb_api_auth`；APIExecuter 统一准入门禁（非 Public 方法 Execute 前验 `arguments.jwt_token`，身份经 context 下传）；业务方法删除自行鉴权样板；wire 与 `api_methods.md` 零变化。
 - [ ] 🟡 DONE — 门禁参数收口：门禁验证后 `jwt_token` 即从 arguments 移除，业务层零感知；`jwt_token` 入参 schema 由方法注册表按非 Public 自动注入（业务注册声明即启动 panic）；业务包与 Async 落库不再出现 token；wire 与 `api_methods.md` 零变化。
 - [ ] 🟡 DONE — Auth method 描述和实际 Execute 函数已统一注册。
 - [ ] 🟡 DONE — 邮箱验证码 `send/check` 和注册消费语义已实现。

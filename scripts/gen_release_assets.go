@@ -43,7 +43,7 @@ type manifest struct {
 }
 
 var arches = []string{"amd64", "arm64"}
-var products = []string{"protenix", "pxdesign", "bb_service"}
+var products = []string{"protenix", "pxdesign", "bioBox"}
 var versionRE = regexp.MustCompile(`^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$`)
 var shaRE = regexp.MustCompile(`^[a-f0-9]{40}$`)
 
@@ -204,7 +204,7 @@ func archFileNames(v string) []string {
 func publicZipNames(v string) []string {
 	var ns []string
 	for _, a := range arches {
-		ns = append(ns, "bb_service_linux_"+a+"_release_"+v+".zip")
+		ns = append(ns, "bioBox_linux_"+a+"_release_"+v+".zip")
 	}
 	return ns
 }
@@ -501,7 +501,7 @@ func inspectZip(file, p, a, v, c string) error {
 		return err
 	}
 	req := []string{root + "install_" + p + ".sh"}
-	if p == "bb_service" {
+	if p == "bioBox" {
 		req = append(req, root+p+".service", root+"conf/config.yaml")
 		for _, runtime := range []string{"protenix", "pxdesign"} {
 			r := root + "runtime/" + runtime + "/"
@@ -540,8 +540,8 @@ func verifyComplete(d, v, c string) error {
 		return err
 	}
 	for _, a := range arches {
-		n := "bb_service_linux_" + a + "_release_" + v + ".zip"
-		if err := inspectZip(filepath.Join(d, n), "bb_service", a, v, c); err != nil {
+		n := "bioBox_linux_" + a + "_release_" + v + ".zip"
+		if err := inspectZip(filepath.Join(d, n), "bioBox", a, v, c); err != nil {
 			return err
 		}
 	}
@@ -749,7 +749,7 @@ func selfTest() error {
 	if err = assert("inventory/three-public-files", exactFiles(d, completeNames(v)) == nil); err != nil {
 		return err
 	}
-	wantPublic := []string{"bb_service_linux_amd64_release_" + v + ".zip", "bb_service_linux_arm64_release_" + v + ".zip", "SHA256SUMS"}
+	wantPublic := []string{"bioBox_linux_amd64_release_" + v + ".zip", "bioBox_linux_arm64_release_" + v + ".zip", "SHA256SUMS"}
 	if err = assert("public/exact-delivery-contract", reflect.DeepEqual(completeNames(v), wantPublic)); err != nil {
 		return err
 	}
@@ -1062,7 +1062,7 @@ func checkGitTagNoArgFixture() error {
 	}
 	repo := filepath.Join(root, "work")
 	remote := filepath.Join(root, "remote.git")
-	for _, d := range []string{repo, filepath.Join(repo, "config"), filepath.Join(repo, "docs", "bb_service"), filepath.Join(repo, "bb_build"), filepath.Join(repo, "scripts"), filepath.Join(repo, "bin")} {
+	for _, d := range []string{repo, filepath.Join(repo, "bb_config"), filepath.Join(repo, "bb_docs"), filepath.Join(repo, "bb_build"), filepath.Join(repo, "scripts"), filepath.Join(repo, "bin")} {
 		if err = os.MkdirAll(d, 0755); err != nil {
 			return err
 		}
@@ -1087,9 +1087,9 @@ func checkGitTagNoArgFixture() error {
 	write("bb_build/pre_build_config_template.yaml", "project:\n  name: bioBox\n  version: v0.0.1\n", 0644)
 	write("bb_build/gen_pre_build_config_linux_amd64.yaml", "project:\n  version: v0.0.1\n", 0644)
 	write("bb_build/gen_pre_build_config_linux_arm64.yaml", "project:\n  version: v0.0.1\n", 0644)
-	write("config/config.go", "package config\nconst (\n\tProjectVersion  = \"v0.0.1\"\n)\n", 0644)
+	write("bb_config/config.go", "package bb_config\nconst (\n\tProjectVersion  = \"v0.0.1\"\n)\n", 0644)
 	write("scripts/gen_pre_build_config.sh", "#!/bin/bash\nset -e\nsed -i -e 's/^\\(  version: \\)v0.0.1$/\\1v0.0.2/' bb_build/gen_pre_build_config_linux_amd64.yaml bb_build/gen_pre_build_config_linux_arm64.yaml\n", 0755)
-	write("scripts/gen_api_docs.sh", "#!/bin/bash\nset -e\nprintf 'methods for %s\\n' \"$1\" > docs/bb_service/api_methods.md\n", 0755)
+	write("scripts/gen_api_docs.sh", "#!/bin/bash\nset -e\nprintf 'methods for %s\\n' \"$1\" > bb_docs/api_methods.md\n", 0755)
 	write("bin/go", `#!/bin/bash
 set -euo pipefail
 if [[ "$1" != run || "$2" != scripts/gen_release_assets.go ]]; then
@@ -1164,14 +1164,14 @@ esac
 		return fmt.Errorf("no-arg flow did not complete: %s", out)
 	}
 	checks := map[string][]string{
-		"service-version": {"grep", "-q", `ProjectVersion  = "v0.0.2"`, "config/config.go"},
+		"service-version": {"grep", "-q", `ProjectVersion  = "v0.0.2"`, "bb_config/config.go"},
 		"yaml-version":    {"grep", "-qx", "  version: v0.0.2", "bb_build/pre_build_config_template.yaml", "bb_build/gen_pre_build_config_linux_amd64.yaml", "bb_build/gen_pre_build_config_linux_arm64.yaml"},
 		"lightweight-tag": {"bash", "-c", "test $(git cat-file -t v0.0.2) = commit"},
 		"latest-move":     {"bash", "-c", "test $(git rev-parse latest) = $(git rev-parse v0.0.2)"},
 		"old-local-tag":   {"bash", "-c", "! git show-ref --verify --quiet refs/tags/v0.0.0"},
 		"release-commit":  {"bash", "-c", "git log -1 --format=%s | grep -q '^Release:--: v0.0.2_'"},
 		"changelog":       {"test", "-s", "changelog/v0.0.2.md"},
-		"api-docs":        {"test", "-s", "docs/bb_service/api_methods.md"},
+		"api-docs":        {"test", "-s", "bb_docs/api_methods.md"},
 	}
 	for name, args := range checks {
 		if _, e := run(repo, nil, args...); e != nil {

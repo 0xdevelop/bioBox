@@ -442,3 +442,116 @@ L1工程：本地单测/race/build/发版契约检查；L2：唯一下载owner�
       - 已验：`arm64` Go `1.26.10` 原生全仓 `18` 含测试包 `-race`、`self-test`（58）、`cleanup`/`guards`/`staging`、UTC 修正后隔离 `arm64` `release` 打包（`a05725d3...`）、`bwrap` 无 root 资源正负例与同 netns 静态前端 HTTP 启动退出（非完整 runtime 安装）；DevFull 报告 `amd64` v2 Go `1.26.10` 全仓 `-race`（22 包）与直接 `go build` ELF。
       - 明确未验边界（按原范围保留，不再桩重跑）：`amd64` 完整 pack gate（待具 `bun` + `.git` + `bb_sources/*` 的原生 `linux/amd64` runner）、真实 `root`/`systemd`/完整 `runtime` 首次安装、正式双架构干净 Release 构建、源二进制真浏览器渲染/交互（无 `ego-browser`/Playwright MCP）。
       - 正式发布前最小必要阻塞/授权门槛：① 清理/提交当前脏工作区并形成明确基线 commit（消除 `dirty=1`）；② 在原生双架构 runner（`ubuntu-24.04` 含 `bun` 与 `ubuntu-24.04-arm`）或受控完整环境完成 `amd64` pack gate 与真实整合包 `root`/`systemd`/完整 `runtime` 首次安装验收；③ 获得用户明确发版/tag/CI 授权（保护配置 `config_local*.yaml` 与 `v0.0.2` 资产继续保持隔离不变）。
+
+- **`2026-11-25 11:40 HKT`｜AT-1 阶段二实施前基线核查、CLI 实证与完整分类/旧新映射（`bb_` Go 包全量收口 + `build_srcs` 恢复 + 默认入口 `bioBox`）**：
+  - **实施前现场与保护守卫复核**：
+    - `bioBox` `HEAD`：`565a09f63c5762e332dd16fb8085cdd4067ab888`；`git status --short` 仅 2 项既有未跟踪（`?? docs/acceptance_plan_official_assets_v0.0.2.md`、`?? scripts/tests/__pycache__/`），工作区无其他脏修改或暂存项；
+    - 保护 SHA-256：`.git/index` = `d03af1b6cf3c238c1aa9464938e9fc660cb02c31384c27654915438203642c0d`、`example_files/config_local.yaml` = `684b906075c72cd76806cafd645bb7da9c6ac6b235550b5e77eaf15f0e31bf6c`、`example_files/config_local_auth_bridge.yaml` = `d53a8a357f4a3f0d65a9d2669c81893ed3756c2186a2c9a0cb43673259d36623`、`docs/acceptance_plan_official_assets_v0.0.2.md` = `de1dafe19706af12bb6ef0c0beba93c21539ff7b63b579556e36f67411fbddbd`、`scripts/tests/__pycache__/test_release_cleanup.cpython-312.pyc` = `742ef011b390a43f64c861dc6f3bcbcd48fdfabf7f5f9d22bd382121fec86670`；
+    - Submodule pins（内容/object ID 不升级、不改内部文件）：`bb_sources/protenix` = `85767b811c40ed46e73a9b39519cf6bfca8701ba`、`bb_sources/pxdesign` = `f788441313c84c3074fe9596ac2433f96b15c763`；
+    - 模板参照基线 `project_template_go` `HEAD`：`2990acfdcac78f1847901629f2c7410dbd36cc5e`（补充 `git ls-files -s` 19 项 blob 与 `stage1-template-ref` 完整 `argv`/`cwd`/`exit=0`/`go list -e ./...` 至 `tmp/at1-prefix-rule-audit/excerpts/06_template_2990acf_blobs_and_stage1_golist.txt` 与 box `/workspace/biobox-at1-prefix-rule-audit/`）。
+  - **本机 CLI / `xjb_code` 实证**：
+    - `acpx` 缺失（禁止安装）；`agent` / `cursor-agent`（`2026.11.11-b912975`）已认证（`isAuthenticated: True` / `agent status` 成功），但 `agent --help` 无细粒度写权限策略参数（`--mode` 仅只读 `plan|ask`，`-p/--print` 放开全写与 shell），且 `~/.cursor/cli-config.json` `approvalMode="allowlist"` 仅放行 `Shell(ls)`，不支持不带 `--force`/`--trust` 的安全受限非交互写委派；`xjb_code` 不在 MCP 目录且无 `12100`/`12101` 监听，无 `.auto_coding/`，沿原 markdown 回退记录于本唯一 `docs/bb_build/release_delivery.md`，并经受支持 `machineId` 直接在原本地 checkout 实施。
+  - **完整分类与旧→新映射（共 52 个自有非 `main` Go 包 + 子模块路径 + 默认产物入口；`main`/工具 `main`/第三方/子模块内容/wire/认证不变）**：
+    1. **保持不变的 `main` / 工具 `main` / 隔离文件 / 第三方 / 纯资源与纯文档目录**：
+       - `main.go`、`resource_cmd.go`（`package main`）、`tools.go`（`//go:build tools` `package tools`）；
+       - `scripts/gen_api_docs.go`、`scripts/gen_pre_build_config.go`、`scripts/gen_release_assets.go`（`//go:build ignore` `package main`）；
+       - 纯资源/构建/文档目录：`bb_build/`、`bb_suites/`、`bb_prefix/`、`scripts/`（含 `scripts/suites/`、`scripts/tests/`）、`example_files/`、`changelog/`、`.github/`、`docs/bb_build/`、`docs/bb_upstream/`、`docs/bb_service/*.md`（除随 `bb_docs` embed 的生成件 `api_methods.md`）、受保护未跟踪 `docs/acceptance_plan_official_assets_v0.0.2.md`。
+       - 认证与 wire 兼容常量保持不变：`APIKeyPrefix="ptxk_"`（不并入阶段一参照的 `"bb_"`）、`DefaultSessionIssuer="protenix_service"`、`DefaultSessionAudience="protenix_service"`、`api.proto` `package protenix_service.api.v1;`（`APIService_Call_FullMethodName="/protenix_service.api.v1.APIService/Call"`）。
+    2. **全部 52 个项目自有非 `main` Go 包/子包（每层路径与 `package` 声明加一次 `bb_`，保留语义与层级）**：
+       - `ability` → `bb_ability`（`package bb_ability`）
+       - `ability/ability_protenix` → `bb_ability/bb_ability_protenix`（`package bb_ability_protenix`，含 `testdata/`）
+       - `ability/ability_pxdesign` → `bb_ability/bb_ability_pxdesign`（`package bb_ability_pxdesign`，含 `testdata/`）
+       - `ability/ability_resource` → `bb_ability/bb_ability_resource`（`package bb_ability_resource`）
+       - `ability/ability_task` → `bb_ability/bb_ability_task`（`package bb_ability_task`）
+       - `ability/ability_task/ability_task_model` → `bb_ability/bb_ability_task/bb_ability_task_model`（`package bb_ability_task_model`）
+       - `ability/ability_user` → `bb_ability/bb_ability_user`（`package bb_ability_user`）
+       - `ability/ability_user/ability_user_model` → `bb_ability/bb_ability_user/bb_ability_user_model`（`package bb_ability_user_model`）
+       - `ability/ability_user/ability_user_profile` → `bb_ability/bb_ability_user/bb_ability_user_profile`（`package bb_ability_user_profile`）
+       - `api` → `bb_api`（`package bb_api`）
+       - `api/api_auth` → `bb_api/bb_api_auth`（`package bb_api_auth`）
+       - `api/api_auth/{api_auth_api_key,api_auth_bridge,api_auth_common,api_auth_config,api_auth_model,api_auth_register,api_auth_session,api_auth_verify_code}` → `bb_api/bb_api_auth/bb_api_auth_{api_key,bridge,common,config,model,register,session,verify_code}`（`package bb_api_auth_*`）
+       - `api/{api_common,api_config,api_error_code,api_executer,api_supported_methods}` → `bb_api/bb_{api_common,api_config,api_error_code,api_executer,api_supported_methods}`（`package bb_api_*`）
+       - `api/api_grpc` → `bb_api/bb_api_grpc`（`package bb_api_grpc`，内含 `.proto` 源 `proto/api.proto`）
+       - `api/api_grpc/api_config_grpc` → `bb_api/bb_api_grpc/bb_api_config_grpc`（`package bb_api_config_grpc`）
+       - `api/api_grpc/protobuf` → `bb_api/bb_api_grpc/bb_protobuf`（`package bb_api_grpc_protobuf`，由 `scripts/gen_proto.sh` 按新 `option go_package` 原链重生成）
+       - `api/api_jsonRPC` → `bb_api/bb_api_jsonRPC`（`package bb_api_jsonRPC`）
+       - `api/api_jsonRPC/{api_config_jsonRPC,api_jsonRPC_handler,api_jsonRPC_protocol,api_jsonRPC_request,api_jsonRPC_response}` → `bb_api/bb_api_jsonRPC/bb_{api_config_jsonRPC,api_jsonRPC_handler,api_jsonRPC_protocol,api_jsonRPC_request,api_jsonRPC_response}`（`package bb_*`）
+       - `api/api_mcp` → `bb_api/bb_api_mcp`（`package bb_api_mcp`）
+       - `api/api_mcp/api_config_mcp` → `bb_api/bb_api_mcp/bb_api_config_mcp`（`package bb_api_config_mcp`）
+       - `api/api_websocket` → `bb_api/bb_api_websocket`（`package bb_api_websocket`）
+       - `api/api_websocket/api_config_websocket` → `bb_api/bb_api_websocket/bb_api_config_websocket`（`package bb_api_config_websocket`）
+       - `cli_proc` → `bb_cli_proc`（`package bb_cli_proc`，含 `testdata/`）
+       - `common` → `bb_common`（`package bb_common`）
+       - `common/{app_path,resource}` → `bb_common/bb_{app_path,resource}`（`package bb_app_path`、`package bb_resource`）
+       - `config` → `bb_config`（`package bb_config`）
+       - `custom_cmd` → `bb_custom_cmd`（`package bb_custom_cmd`）
+       - `docs/docs.go`（`package docs`）+ 生成物 `docs/bb_service/api_methods.md` → `bb_docs/docs.go`（`package bb_docs`）+ `bb_docs/api_methods.md`（`//go:embed api_methods.md`，不复制双份、不移动 `docs/{bb_build,bb_service,bb_upstream}` 与 `docs/acceptance_plan_official_assets_v0.0.2.md`）
+       - `frontend` → `bb_frontend`（`package bb_frontend`，含 `dist/`、`src/`、`scripts/`、`package.json`、`tsconfig.json`）
+       - `frontend/frontend_config` → `bb_frontend/bb_frontend_config`（`package bb_frontend_config`）
+       - `policy` → `bb_policy`（`package bb_policy`）
+       - `policy/policy_config` → `bb_policy/bb_policy_config`（`package bb_policy_config`）
+       - `runtime_resource` → `bb_runtime_resource`（`package bb_runtime_resource`）
+       - `storage` → `bb_storage`（`package bb_storage`）
+       - `storage/storage_config` → `bb_storage/bb_storage_config`（`package bb_storage_config`）
+       - `test_ui` → `bb_test_ui`（`package bb_test_ui`，含 `flow_debug.html`、`web/`、`testdata/`）
+    3. **子模块路径恢复（保留 gitlink commit ID 与内部内容不变）**：
+       - `bb_sources/protenix`（`85767b811c40ed46e73a9b39519cf6bfca8701ba`）→ `build_srcs/protenix`
+       - `bb_sources/pxdesign`（`f788441313c84c3074fe9596ac2433f96b15c763`）→ `build_srcs/pxdesign`
+       - 同步 `.gitmodules`、索引 gitlink 路径、`scripts/repo_src_defaults.sh`、`scripts/build.sh`、`bb_build/*.yaml`。
+    4. **默认 binary 与包/安装入口归位（`bb_service` → `bioBox`）**：
+       - `bb_config/config.go`：`ProjectName="bioBox"`、`ProjectBundleID="com.bioBox.bioBox"`、`StorageCfg: bb_storage_config.Default("./data/bioBox.db")`（`ProjectVersion="v0.0.4"` 不变）；
+       - `scripts/build.sh` `SERVICE_APP="bioBox"`；`scripts/gen_release_assets.go`、`scripts/check_bundle_resources.sh`、`scripts/tests/check_install_update_restore.sh`、`.github/workflows/release.yml`、`bb_suites/*/*-run`、`scripts/suites/*/install_prefix_*.sh`、`example_files/config_example.yaml`、`example_files/install_bb_service.sh` → `example_files/install_bioBox.sh`、`example_files/bb_service.service` → `example_files/bioBox.service`、`.run/bb_service-debug.run.xml` → `.run/bioBox-debug.run.xml`。
+  - **旧 `bb_service` 安装身份 → 新 `bioBox` 升级/一致性风险记录**：
+    - 若目标机器历史上通过旧安装包部署了 `/bb_service/`、`bb_service.service` 与 `./data/bb_service.db`，新整合包 `bioBox_linux_<arch>_release_v<version>.zip` 的安装脚本 `install_bioBox.sh`（`APP_NAME=bioBox`、`APP_DIR=/bioBox`、`bioBox.service`）**不会**自动迁移或静默删除 `/bb_service/` 与 `/etc/systemd/system/bb_service.service`；运维升级时需先停旧 `bb_service.service`、显式迁移配置/数据库（`conf/config.yaml` 中 `cli_cfg.*.binary` 指向 `/bioBox/runtime/...`、`storage_sqlite.path` 保持或迁移 DB）与权重数据，避免新旧两套 systemd unit 同时监听默认端口 `13001–13006` 冲突或旧 wrapper 仍指向 `/bb_service`。
+
+- **`2026-11-25 11:55 HKT`｜AT-1 阶段二实施完成与验收实证（52 个非 `main` `bb_*` 包全量落盘 + `build_srcs` + 默认入口 `bioBox`；未 commit/push/tag/安装）**：
+  - **模板参照绑定（`2990acfdcac78f1847901629f2c7410dbd36cc5e`）**：
+    - 非阻塞补齐 `tmp/at1-prefix-rule-audit/excerpts/06_template_2990acf_blobs_and_stage1_golist.txt`（19 份模板文件 `git ls-files -s` blob SHA-1 与 `tmp/stage1-template-ref` 完整 `argv`/`cwd`/`numeric_exit_code=0`/`go list -e ./...`）并更新 `SHA256SUMS`（`71282f109e82b06076199040bdee0d1c92d06d22e92203835a6a8600c2dda993`），已同步拷贝至 `/workspace/biobox-at1-prefix-rule-audit/` 并以 `sha256sum -c SHA256SUMS`（`exit 0`）验真。
+  - **实施范围与 wire/认证/子模块不变性**：
+    - 全部 **52 个**项目自有非 `main` Go 包/子包均已按“每层加一次 `bb_`、保留层级与语义、不重复父名”迁移完毕（`bb_ability/*`、`bb_api/*`、`bb_cli_proc`、`bb_common/{bb_app_path,bb_resource}`、`bb_config`、`bb_custom_cmd`、`bb_docs`、`bb_frontend/*`、`bb_policy/*`、`bb_runtime_resource`、`bb_storage/*`、`bb_test_ui`）；`main`、`tools.go`、`scripts/gen_*.go`（`//go:build ignore`）、纯资源/文档目录（`bb_build/`、`bb_suites/`、`bb_prefix/`、`docs/{bb_build,bb_service,bb_upstream}/`）保留原位；
+    - `bb_docs/docs.go`（`package bb_docs`，`//go:embed api_methods.md`）与 `bb_docs/api_methods.md`（由 `scripts/gen_api_docs.sh` 生成，25 methods）单源落位，`bb_test_ui/test_ui.go` 修正 `scripts/gen_test_ui.sh` 调用路径、优先读 `bb_docs/api_methods.md` 离仓回落 `bb_docs.APIDocFS`、且 `GRPCProtoImportPath="bb_api/bb_api_grpc/proto"`；
+    - Auth/Wire 兼容零漂移：`APIKeyPrefix="ptxk_"`（未并入阶段一参照 `"bb_"`）、`DefaultSessionIssuer/Audience="protenix_service"`、`package protenix_service.api.v1;` 与 `APIService_Call_FullMethodName="/protenix_service.api.v1.APIService/Call"`；仅 `api.proto` `option go_package` 改为 `.../bb_api/bb_api_grpc/bb_protobuf;bb_api_grpc_protobuf` 并经 `scripts/gen_proto.sh` 原链重生成；
+    - 子模块路径恢复为 `build_srcs/{protenix,pxdesign}`：gitlink object ID 保持 `85767b811c40ed46e73a9b39519cf6bfca8701ba` 与 `f788441313c84c3074fe9596ac2433f96b15c763`，上游内容零改动；索引仅更新此 2 条 gitlink 路径（`R100 bb_sources/* -> build_srcs/*`），未批量 stage 普通代码；
+    - 默认产物与入口统一归位为 `bioBox`（`bb_config/config.go`、`scripts/build.sh`、`scripts/gen_release_assets.go`、`scripts/check_bundle_resources.sh`、`example_files/{bioBox.service,install_bioBox.sh,config_example.yaml}`、`bb_suites/*/*-run`、`scripts/suites/*/install_prefix_*.sh`、`.github/workflows/release.yml`、`.run/bioBox-debug.run.xml`），未新增任何 binary 覆盖参数。
+  - **命令与 numeric exit codes（工作目录 `/home/certa/workspace/bioBox`）**：
+    - `bash ./scripts/gen_pre_build_config.sh all` → `0`
+    - `bash ./scripts/gen_proto.sh` → `0`
+    - `bash ./scripts/gen_api_docs.sh` → `0`（写入 `bb_docs/api_methods.md`，25 methods）
+    - `bash ./scripts/gen_frontend.sh` → `0`
+    - `bash ./scripts/gen_test_ui.sh` → `0`
+    - `go list -f '{{.ImportPath}} -> {{.Name}}' . ./bb_...` → `0`（53 个仓库包：`1` `main` + `52` `bb_*`；全仓未加前缀内部 import 扫描 = `0` 漏项）
+    - `go vet . ./bb_...` → `0`
+    - `go test -count=1 -race . ./bb_...` → `0`（含新增回归：`APIKeyPrefix=="ptxk_"`、`ProjectName=="bioBox"`/`com.bioBox.bioBox`/`./data/bioBox.db`、gRPC `/protenix_service.api.v1.APIService/Call`、`bb_docs.APIDocFS` 离仓回落与 `/api/config`）
+    - `go run scripts/gen_release_assets.go version` → `0`（`v0.0.4`）
+    - `go run scripts/gen_release_assets.go self-test` → `0`（58 checks PASS）
+    - `python3 scripts/tests/test_release_cleanup.py` → `0`（12 cases PASS）
+    - `python3 scripts/tests/test_release_guards.py` → `0`
+    - `bash scripts/tests/test_source_staging.sh` → `0`
+    - `bash scripts/tests/check_install_update_restore.sh` → `0`（`bwrap` 隔离夹具，`host_root_install=false`）
+    - `bash ./scripts/check_native_build.sh arm64` → `0`
+    - `bash ./scripts/build.sh pack release linux_arm64` → `0`（产出 `bioBox_linux_arm64_release_v0.0.4.zip`、`protenix_linux_arm64_release_v0.0.4.zip`、`pxdesign_linux_arm64_release_v0.0.4.zip`，既有 11 份 `v0.0.1–v0.0.3` 归档与 `v0.0.4`/`latest` git tag 均未覆盖或删除）
+    - `bash scripts/check_bundle_resources.sh build/upload_tmp_dir/bioBox_linux_arm64_release_v0.0.4.zip` → `0`
+    - 解包产物 `./bioBox version` → `0`（`名字: bioBox`、`包名: com.bioBox.bioBox`、`版本: v0.0.4`、`打包模式: Release`）
+  - **保护基线复核**：
+    - `example_files/config_local.yaml` (`684b9060...`)、`example_files/config_local_auth_bridge.yaml` (`d53a8a35...`)、`docs/acceptance_plan_official_assets_v0.0.2.md` (`de1dafe1...`)、`scripts/tests/__pycache__/test_release_cleanup.cpython-312.pyc` (`742ef011...`) SHA-256 全数一致；`HEAD` 仍为 `565a09f63c5762e332dd16fb8085cdd4067ab888`；`tmp/stage1-template-ref` 未改；未 commit/push/tag/发布/真实 root 安装。
+  - **已验 vs 未验边界**：
+    - 已验：全部 52 `bb_*` 包编译/`go vet`/`-race` 单测与协议回归、5 条生成链、`gen_release_assets.go self-test`、隔离 `bwrap` 更新/回退夹具、真实 `linux/arm64` release 打包与二进制 `version`/`resource status|prepare|verify` 门禁。
+    - 未验：`linux/amd64` 原生 CGo/release 打包（本机为 `linux/arm64`）、真实 root `/bioBox` + `systemd` 安装与 GPU 上游推理、以及无头浏览器实打开 `/docs_api` 与 `/flow_debug.html` 交互渲染；此外 `tmp/at1-nonprod-iface-compat-logs/iface_client.go` 系 11-24 遗留临时文件（保护未删），因此用 `. ./bb_...` 限定仓内正式 Go 包执行 `go list`/`go vet`/`go test`。
+
+- **`2026-11-25 12:20 HKT`｜AT-1 阶段二 M1 独立 review 修复与完整落盘留证（`install_bioBox.sh` 旧身份预检 + 16 项 `bwrap` 隔离夹具 + 独立目录重打包；仍为未提交 dirty 候选，未安装/未推送）**：
+  - **M1 最小修复（`example_files/install_bioBox.sh`）**：
+    - 在 `install()` 与 `updateBinary()` 执行任何副作用（`mkdir`、`systemctl stop/start/enable/restart`、移动/覆写配置或二进制、构建/下载运行时、`clear_install_files`）之前，新增只读 `legacy_identity_preflight()`（配合 `check_legacy_path()`）；
+    - 检测覆盖：`/bb_service` 目录或 symlink（含悬空 symlink）、`bb_service.service` unit 文件/drop-in/`.wants`/`.requires`/symlink（涵盖 `/etc/systemd/system`、`/lib/systemd/system`、`/usr/lib/systemd/system`）及 `systemctl show -p LoadState,ActiveState,UnitFileState -- bb_service.service` 状态（运行中、未运行/stopped、disabled、masked 等）、以及已知旧 DB 路径（`/bb_service/data/{bb_service,protenix_service}.db`、`/bioBox/data/{bb_service,protenix_service}.db` 与 `/bioBox/conf/config.yaml` 对 `/bb_service`/`bb_service.db`/`protenix_service.db` 的引用）；
+    - 缺工具或无法判明（如 `/` 或 `/etc/systemd/system` 不可读、缺少 `systemctl`、`systemctl show` 非零退出或返回空/不完整 `LoadState`/`ActiveState`）一律 fail-closed 拒绝继续，绝不当作不存在；发现任一旧项或不确定状态时清楚报出路径与 `bb_service` 身份并 `exit 1`，不自动停旧、删旧或迁移数据库；未新增 `--force` 跳过参数或额外公共环境变量，未改变调用契约与菜单。
+  - **非阻断瑕疵与子模块核查**：
+    - `bb_build/pre_build_config_template.yaml:6` 错误注释 `build_srcs/bb_prefix` 已修正为真实双目录分工（源码 `build_srcs/`、环境 `bb_prefix/`），并运行 `bash ./scripts/gen_pre_build_config.sh all`（`exit 0`）；
+    - `.gitmodules` section 名 `[submodule "bb_sources/protenix"]` / `[submodule "bb_sources/pxdesign"]` 实测绑定 `.git/config`、`.git/modules/bb_sources/*` 及 `build_srcs/*/.git`（`gitdir: ../../.git/modules/bb_sources/...`），属于 git 内部稳定逻辑标识而非路径，核实保留未盲改，pins（`85767b811c40ed46e73a9b39519cf6bfca8701ba`、`f788441313c84c3074fe9596ac2433f96b15c763`）与 `git submodule status` 均正常。
+  - **隔离夹具与回归验证（全程原始命令/cwd/stdout/numeric exit 落盘于 `tmp/at1-m1-fix-review/logs/`）**：
+    - `scripts/tests/check_install_update_restore.sh` 扩充至 16 个 `bwrap` 隔离夹具（TDD 先红后绿：`01_tdd_red_*` `exit=1` 复现漏洞 → `02_tdd_green_*` `exit=0` 16/16 PASS），覆盖干净新装（`0`）、`bioBox` 自升级（`0`）、既有更新失败回退/混合态禁启（`1`/`1`）、`/bb_service` 目录与悬空 symlink、active/inactive/symlink/masked `bb_service.service`、已知旧 DB 与旧配置引用、缺失 `systemctl` 及 `systemctl show` 失败/空输出 fail-closed；
+    - 完整回归与真实包校验：`gen_pre_build_config.sh all`（`0`）、`go list . ./bb_...`（`0`，53 包）、`go vet . ./bb_...`（`0`）、`go test -count=1 -race . ./bb_...`（`0`）、`gen_release_assets.go self-test`（`0`，58 checks）、`test_release_cleanup.py`（`0`）、`test_release_guards.py`（`0`）、`test_source_staging.sh`（`0`）、`check_native_build.sh arm64`（`0`）；
+    - 保留 `build/upload_tmp_dir/` 原有全部 14 份 zip 原样不动（含前次 3 份 dirty 候选 `4a739c56...`/`1d5444f8...`/`156dab8f...`），将 M1 新打出的 3 份 dirty 候选 zip 独立存放在 `build/m1_dirty_candidates/`：
+      - `bioBox_linux_arm64_release_v0.0.4.zip`（`96360997` bytes，SHA-256 `37a4628bbe1047d1ae425065a9cd0db327779244190051306959c5e500a2cd72`）
+      - `protenix_linux_arm64_release_v0.0.4.zip`（`67983601` bytes，SHA-256 `74221a2f4bdadbec1607dac9129dbedc07450d3f16e8b6260d6cf1aae0242c9d`）
+      - `pxdesign_linux_arm64_release_v0.0.4.zip`（`16626427` bytes，SHA-256 `6b2869edc4b8687494586b6a2b0eeb3884e5aa831ac1c15fc7d82c9644e516bb`）
+    - 对新包执行 `check_bundle_resources.sh`（`0`）、解包 `./bioBox version`（`0`）、校验解包 `install_bioBox.sh`/`conf/config.yaml`/`bioBox.service` 与仓内文件 SHA-256 一致，并对解包出的 `install_bioBox.sh` 在 `bwrap` 下实跑旧目录拦截（`exit=1`）与干净安装（`exit=0`）。
+  - **执行路径与历史日志诚实声明**：本轮与前轮源码修改均由 Grok Bot 经受支持 `machineId` 的 `Shell` 工具完成（前次已核 `acpx` 缺失且 `agent` CLI allowlist 仅放行 `Shell(ls)`，未向 `agent` CLI 发写入调用，无审批阻断）；前次短同步命令无独立落盘原始日志（不事后补造），本轮全部命令均经 `tmp/at1-m1-fix-review/run_logged.py` 完整落盘；仍未提交、未推送、未发版、未真实 root/systemd/GPU 安装，待独立 review 复核。

@@ -1,6 +1,6 @@
 > 最终审查更正（2026-11-23 14:03 UTC+8）：完整性不等于官方认证，已授权本地基准可用，不要求上游签发SHA256；生产默认/MSA兼容性尚未闭合。见 [最终审查与可用本地模式](resource_final_review.md)。
 
-> **时效说明（2026-11-24 AT-1）**：下文保留 2026-11-23 重构前资源审查/矩阵证据；自 AT-1 起现行服务二进制、安装根与示例配置已统一为 `bb_service`、`/bb_service` 与 `example_files/config_example.yaml`。下文出现的 `/protenix_service`、`./protenix_service`、`prefix/` 等路径仅代表 11-23 历史证据与快照，不替代现行安装路径。
+> **时效说明（2026-11-24 AT-1）**：下文保留 2026-11-23 重构前资源审查/矩阵证据；自 AT-1 阶段二收口起现行服务二进制、安装根与示例配置已统一为 `bioBox`、`/bioBox` 与 `example_files/config_example.yaml`。下文出现的 `/protenix_service`、`./protenix_service`、`prefix/` 等路径仅代表 11-23 历史证据与快照，不替代现行安装路径。
 
 
 # 已安装上游资源矩阵与当前受管边界

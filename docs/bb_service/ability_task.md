@@ -80,7 +80,7 @@ stateDiagram-v2
 
 # 3. 方法契约
 
-受保护方法由 API 门禁统一验证凭证，身份经 context 下传；凭证来源见 [`ability_auth.md`](ability_auth.md)。本文方法签名只列业务参数，入参 schema 权威见 [`api_methods.md`](api_methods.md)。
+受保护方法由 API 门禁统一验证凭证，身份经 context 下传；凭证来源见 [`ability_auth.md`](ability_auth.md)。本文方法签名只列业务参数，入参 schema 权威见 [`bb_docs/api_methods.md`](../../bb_docs/api_methods.md)。
 
 无属主任务（Public 异步方法产生，`user_id` NULL）不可经下列方法查询或取消。
 
@@ -141,11 +141,11 @@ stateDiagram-v2
 - **认领**：SQLite 单条条件 `UPDATE … WHERE id=(SELECT … queued … LIMIT 1) AND run_status=queued RETURNING *`，置 `running` 并 `execution_count + 1`，返回行才执行；其他行锁引擎保留事务 SKIP LOCKED（本轮未验）。8 Worker/24 任务实测每条 Execute 一次。
 - **Worker 并发**：由 Policy 按 `runtime.NumCPU() × policy_cfg.workers_scaller` 计算全局上限，可用 `max_workers` 正数加绝对上限（取较小值）；每个 Worker 只认领并执行一条任务，完成后 goroutine 自然释放。
 - **排队区**：受理层不设人为的每用户在途数量上限；主关系库 任务记录承载排队，资源故障按正常数据库错误返回。
-- **选库与退出**：Task 使用 `storage.GormDB(ctx)` 主库；停机停止派发并取消在途 Execute，等进程组清理后关闭库。SQLite 单连接池，短生命周期锁串行认领/恢复/取消/终态转换，调度仍只有 Policy。
+- **选库与退出**：Task 使用 `bb_storage.GormDB(ctx)` 主库；停机停止派发并取消在途 Execute，等进程组清理后关闭库。SQLite 单连接池，短生命周期锁串行认领/恢复/取消/终态转换，调度仍只有 Policy。
 - 普通状态查询读已提交快照不加锁；并发状态变更一律条件原子更新或行锁事务。共享瓶颈是全局 DB 连接池（Worker 与请求线程共用），池容量属部署参数。
 - **任务身份快照**：Worker 把 `AsyncTaskInfo{TaskID, UserID}` 注入 context，业务 `Execute` 经 `AsyncTaskInfoFromContext` 读取——与门禁在线身份语义分离，异步执行不要求受理时的 session 仍存活。
 - **执行单元**：Policy 每轮只填充当前空闲名额，长任务持续占用其名额，下一轮不会重复扩容。
-- **未尽之事自愈（取代一次性启动恢复）**：`policy` 维护大循环每轮调 `ExpireTimedOutTasks` 与 `RequeueOrphanedTasks`。默认（重试限制关闭）下，DB `running` 且不在本进程 in-flight 执行集合的孤儿任务重置回 `queued` 拉起来继续；`cancel_requested` 的孤儿仍落 `cancelled`。重启后第一轮即捞回全部死进程遗留；运行中意外孤儿同样自愈。防误拉：认领与恢复共用短生命周期锁，认领在释放锁前登记 in-flight，终态后移除。**异步 `Execute` 必须幂等或自查重**——重跑兜底依赖此契约，责任归业务函数。
+- **未尽之事自愈（取代一次性启动恢复）**：`bb_policy` 维护大循环每轮调 `ExpireTimedOutTasks` 与 `RequeueOrphanedTasks`。默认（重试限制关闭）下，DB `running` 且不在本进程 in-flight 执行集合的孤儿任务重置回 `queued` 拉起来继续；`cancel_requested` 的孤儿仍落 `cancelled`。重启后第一轮即捞回全部死进程遗留；运行中意外孤儿同样自愈。防误拉：认领与恢复共用短生命周期锁，认领在释放锁前登记 in-flight，终态后移除。**异步 `Execute` 必须幂等或自查重**——重跑兜底依赖此契约，责任归业务函数。
 - **整体超时**：由显式开关 `policy_cfg.task_lifecycle_timeout_enabled`（`true`/`false`，默认 `false`）控制。为 `false` 时忽略 `task_lifecycle_timeout_seconds`，不因耗时终止任务，也不会暗含三天或其他默认期限。为 `true` 时 `task_lifecycle_timeout_seconds` 必须是正整数（单位秒，从 `AcceptAsyncTask` 写入的 `created_at` 起算到当前时刻），`0` 或负数在配置加载时直接报错。启用后，到期的排队任务落 `done + system_error`（`error_message=task lifecycle timed out`）；执行中任务把同一截止时间交给 `Execute` 的 context，到期同样落 `system_error`。不为内部步骤另设短超时。单次 Execute 超时由 `cli_cfg.execute_timeout_enabled`（`true`/`false`，默认 `false`）控制：`false` 时忽略 `execute_timeout_seconds`，不限制单次 Execute 时长；`true` 时 `execute_timeout_seconds` 必须是正整数（秒，从本次开始执行起算），`0` 或负数在配置加载时直接报错。
 - **不确定写回**：`Execute` 结束后若终态写回失败或崩溃在写回窗口，任务标记 `writeback_pending`，恢复时落 `system_error`（`execution result writeback was incomplete; not rerun`），不得当作孤儿重跑。
 - **客户端断线**：请求连接断开不等于任务失败。任务在受理写入后即独立于调用连接；重连只查询已有 `task_id`，不盲目重新提交。
@@ -215,10 +215,10 @@ stateDiagram-v2
 - [ ] 🟡 DONE — 状态三字段（`run_status`/`process_status`/`progress`）落 model，枚举三处同步。
 - [ ] 🟡 DONE — `AcceptAsyncTask` 受理（持久化排队 + 身份快照）。
 - [ ] 🟡 DONE — Policy 按 CPU 倍率填充执行名额（SQLite 原子认领、绝对上限、临时 Worker、panic 归 system_error）。
-- [ ] 🟡 DONE — 未尽之事自愈：`RequeueOrphanedTasks` 经 `policy` 维护大循环每轮侦测（in-flight 防误拉）。
+- [ ] 🟡 DONE — 未尽之事自愈：`RequeueOrphanedTasks` 经 `bb_policy` 维护大循环每轮侦测（in-flight 防误拉）。
 - [ ] 🟡 DONE — 从模板显式移植默认关闭的整体超时与可选重试次数限制；写回不确定不重跑；断线不改变已持久化任务。保留 `cancel_requested` 与 `cli_cfg` 单次 Execute 超时（现为显式 `execute_timeout_enabled: false`）。
 - [ ] 🟡 DONE — `task.get` / `task.list` / `task.cancel` 带所有权校验接入统一调用链。
 - [x] ✅ ACCEPTED — `task.artifacts` / `task.artifact`：属主列出并读取隔离作业目录产物；跨用户、无凭证、伪造 `ptxk_`、输入目录、扩展名黑名单与路径穿越均拒绝。证据为隔离 HTTP fixture 短脚本，不是官方 GPU 推理取件。
 - [x] ✅ ACCEPTED — Protenix v1 经真实 HTTP Bearer → SQLite → Policy → Execute → 原生小任务，产出 1 CIF；低采样烟测不是科学质量验收。
-- [ ] ⬜ TODO — done 任务的归档/清理策略（保留窗口拍板后作为 `policy` 定期轮询租户实施）。
+- [ ] ⬜ TODO — done 任务的归档/清理策略（保留窗口拍板后作为 `bb_policy` 定期轮询租户实施）。
 - [ ] ⬜ TODO — 任务载荷持久化加密契约（待真实敏感任务出现）。

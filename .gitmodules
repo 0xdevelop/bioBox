@@ -1,6 +1,6 @@
 [submodule "bb_sources/protenix"]
-	path = bb_sources/protenix
+	path = build_srcs/protenix
 	url = git@github.com:bytedance/Protenix.git
 [submodule "bb_sources/pxdesign"]
-	path = bb_sources/pxdesign
+	path = build_srcs/pxdesign
 	url = git@github.com:bytedance/PXDesign.git

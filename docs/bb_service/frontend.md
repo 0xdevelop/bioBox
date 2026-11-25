@@ -9,11 +9,11 @@
 
 # 1. 前端定位与边界
 
-`frontend` 提供 TypeScript/Bun 页面壳子，示例文字为 `this is example frontend`。Go 只托管构建后的静态资源，不提供业务代理或另一套 API。
+`bb_frontend` 提供 TypeScript/Bun 页面壳子，示例文字为 `this is example frontend`。Go 只托管构建后的静态资源，不提供业务代理或另一套 API。
 
 # 2. 配置与启动
 
-配置沿用 `config.FileConfig` 的 YAML/JSON/TOML 装配：
+配置沿用 `bb_config.FileConfig` 的 YAML/JSON/TOML 装配：
 
 ```yaml
 frontend_cfg:
@@ -28,9 +28,9 @@ frontend_cfg:
 
 # 3. 构建与发布
 
-`frontend/package.json` 的 `build` 使用 Bun 原生构建 TypeScript/CSS，无第三方前端依赖。`frontend/dist/` 不入仓，由 `//go:embed` 随 Go 二进制发布，部署时不依赖 Bun 或源码目录。
+`bb_frontend/package.json` 的 `build` 使用 Bun 原生构建 TypeScript/CSS，无第三方前端依赖。`bb_frontend/dist/` 不入仓，由 `//go:embed` 随 Go 二进制发布，部署时不依赖 Bun 或源码目录。
 
-GoLand 共享 Run/Debug 配置和 `scripts/build.sh` 均在 Go 编译前构建 `test_ui/web` 和 `frontend`。命令行运行：
+GoLand 共享 Run/Debug 配置和 `scripts/build.sh` 均在 Go 编译前构建 `bb_test_ui/web` 和 `bb_frontend`。命令行运行：
 
 ```bash
 ./scripts/gen_test_ui.sh && ./scripts/gen_frontend.sh && go run .
@@ -38,7 +38,7 @@ GoLand 共享 Run/Debug 配置和 `scripts/build.sh` 均在 Go 编译前构建 `
 
 共享配置中的 `NpmBeforeRunTask` 是 JetBrains 固定任务标识，两个构建任务均通过 `package-manager: bun` 明确使用 Bun。GoLand 的构建输出位于启动前任务控制台；服务启动日志中的 `Frontend Run On` 仅在 `frontend_cfg.enabled` 时出现。
 
-2026-11-03 用户要求参考 Cursor 会话 `cc85014d-c5c3-4ed9-9859-7e9ed65e99eb` 回灌通用能力：沿用二进制嵌入、配置控制和页面地址日志；测试台监听字段直接归现有 `config.TestUIConfig`。该会话原话为「在之前的 config 基础上增加字段不就行了」。
+2026-11-03 用户要求参考 Cursor 会话 `cc85014d-c5c3-4ed9-9859-7e9ed65e99eb` 回灌通用能力：沿用二进制嵌入、配置控制和页面地址日志；测试台监听字段直接归现有 `bb_config.TestUIConfig`。该会话原话为「在之前的 config 基础上增加字段不就行了」。
 
 # 4. 验收边界与实现进度
 

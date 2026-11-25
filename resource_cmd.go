@@ -4,9 +4,9 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"github.com/0xdevelop/bioBox/common/app_path"
-	"github.com/0xdevelop/bioBox/common/resource"
-	"github.com/0xdevelop/bioBox/config"
+	"github.com/0xdevelop/bioBox/bb_common/bb_app_path"
+	"github.com/0xdevelop/bioBox/bb_common/bb_resource"
+	"github.com/0xdevelop/bioBox/bb_config"
 	"os"
 	"os/signal"
 	"syscall"
@@ -14,7 +14,7 @@ import (
 
 // Product resource command runs before normal app setup: no server/storage/systemd startup.
 func resourceCommand(args []string) int {
-	root, err := app_path.ExecutableDir()
+	root, err := bb_app_path.ExecutableDir()
 	if err != nil {
 		return 1
 	}
@@ -25,28 +25,28 @@ func resourceCommand(args []string) int {
 	if fs.Parse(args) != nil {
 		return 2
 	}
-	path, err := app_path.Resolve(root, *file)
+	path, err := bb_app_path.Resolve(root, *file)
 	if err != nil {
 		return 1
 	}
-	if err = config.LoadConfig(path); err != nil {
+	if err = bb_config.LoadConfig(path); err != nil {
 		fmt.Fprintln(os.Stderr, "cannot load resource configuration (contents suppressed)")
 		return 1
 	}
 	if rest := fs.Args(); len(rest) > 1 && rest[0] == "verify" {
 		if *runtimePath != "" {
-			if err = config.VerifyResourceRuntimeBinding(rest[1], *runtimePath); err != nil {
+			if err = bb_config.VerifyResourceRuntimeBinding(rest[1], *runtimePath); err != nil {
 				fmt.Fprintln(os.Stderr, "configured resource/runtime binding mismatch")
 				return 1
 			}
 		}
-		if err = config.VerifyResourceRuntime(rest[1]); err != nil {
+		if err = bb_config.VerifyResourceRuntime(rest[1]); err != nil {
 			fmt.Fprintln(os.Stderr, "runtime revision not verified; Python was not started")
 			return 1
 		}
 	}
-	interactive := resource.IsTerminal(os.Stdin)
+	interactive := bb_resource.IsTerminal(os.Stdin)
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	return resource.RunCLI(ctx, resource.Controller{Root: root, Sets: config.ConfiguredResourceSets()}, fs.Args(), os.Stdin, os.Stdout, os.Stderr, interactive)
+	return bb_resource.RunCLI(ctx, bb_resource.Controller{Root: root, Sets: bb_config.ConfiguredResourceSets()}, fs.Args(), os.Stdin, os.Stdout, os.Stderr, interactive)
 }

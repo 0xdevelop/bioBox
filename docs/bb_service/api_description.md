@@ -41,7 +41,7 @@
 {
   "_meta": {
     "io.modelcontextprotocol/serverInfo": {
-      "name": "bb_service",
+      "name": "bioBox",
       "version": "v0.0.3"
     }
   },
@@ -62,7 +62,7 @@
 {
   "_meta": {
     "io.modelcontextprotocol/serverInfo": {
-      "name": "bb_service",
+      "name": "bioBox",
       "version": "v0.0.3"
     }
   },
@@ -97,7 +97,7 @@
 
 协议 Adapter 只负责本协议连接、外壳解析和响应编码，不得复制 `tools/call` 内部提取、方法选择或业务执行。哪个 Adapter 调用 `APIExecuter`，统一结果就沿本次调用栈回到该 Adapter；协议层不设置独立结果查询接口、进程内结果缓存或跨协议返回分发。长任务的受理与进度、结果读取实现为 Ability 层普通注册方法，走同一条统一调用链，真相源是数据库任务记录。
 
-gRPC 的 `.proto` 源只放在 `api/api_grpc/proto`，生成的 `.pb.go` 只放在 `api/api_grpc/protobuf`，并且只由`scripts/gen_proto.sh` 生成。新增 Ability 方法不修改 proto、生成脚本或 gRPC Handler。
+gRPC 的 `.proto` 源只放在 `bb_api/bb_api_grpc/proto`，生成的 `.pb.go` 只放在 `bb_api/bb_api_grpc/bb_protobuf`，并且只由`scripts/gen_proto.sh` 生成。新增 Ability 方法不修改 proto、生成脚本或 gRPC Handler。
 
 ## 方法注册与执行
 
@@ -134,15 +134,15 @@ Ability 继续只返回 `value/error`：
 
 ## 父包带子包
 
-API 启动时只调用 `ability.LoadAbilityAPIMethods()`：
+API 启动时只调用 `bb_ability.LoadAbilityAPIMethods()`：
 
-1. `ability` 先注册 `test`，确保它始终是第一项。
-2. `ability` 主动加载直属业务子包。
+1. `bb_ability` 先注册 `test`，确保它始终是第一项。
+2. `bb_ability` 主动加载直属业务子包。
 3. 每个业务父包继续主动加载自己的直属子包。
 4. 子包在自己的 `LoadAPIMethods()` 中注册本域描述和执行函数，不反向 import 或调用父包。
 5. 上层不得越级逐个装配叶子包。
 
-`api_supported_methods` 只提供有序方法目录、按名称查找和共享结构，不声明具体业务方法，也不引用 `ability`。
+`bb_api_supported_methods` 只提供有序方法目录、按名称查找和共享结构，不声明具体业务方法，也不引用 `bb_ability`。
 
 ## 通用错误码
 

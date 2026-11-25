@@ -1,13 +1,13 @@
 # 1. 程序固定存储
 
-`storage` 管理程序启动配置里的固定存储，每种引擎一个实例，MySQL、SQLite、PostgreSQL、Redis 可同时启用。连接配置沿用对应 gtbox SDK，配置层负责现有键名映射。
+`bb_storage` 管理程序启动配置里的固定存储，每种引擎一个实例，MySQL、SQLite、PostgreSQL、Redis 可同时启用。连接配置沿用对应 gtbox SDK，配置层负责现有键名映射。
 
 ```yaml
 storage_cfg:
   primary: sqlite
   storage_sqlite:
     enabled: true
-    path: ./data/bb_service.db
+    path: ./data/bioBox.db
   storage_mysql:
     enabled: false
 ```

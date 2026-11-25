@@ -1,6 +1,6 @@
 # 资源准备最终审查：完整性、来源与迁移边界
 
-> **时效说明（2026-11-24 AT-1）**：下文保留 2026-11-23 重构前资源审查/矩阵证据；自 AT-1 起现行服务二进制、安装根与示例配置已统一为 `bb_service`、`/bb_service` 与 `example_files/config_example.yaml`。下文出现的 `/protenix_service`、`./protenix_service`、`prefix/` 等路径仅代表 11-23 历史证据与快照，不替代现行安装路径。
+> **时效说明（2026-11-24 AT-1）**：下文保留 2026-11-23 重构前资源审查/矩阵证据；自 AT-1 阶段二收口起现行服务二进制、安装根与示例配置已统一为 `bioBox`、`/bioBox` 与 `example_files/config_example.yaml`。下文出现的 `/protenix_service`、`./protenix_service`、`prefix/` 等路径仅代表 11-23 历史证据与快照，不替代现行安装路径。
 
 
 更新：2026-11-23 14:03 UTC+8。这是未提交源码/本地测试的审查，不是整合资产安装、GPU业务或科学验收完成。

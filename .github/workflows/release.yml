@@ -104,7 +104,7 @@ jobs:
           TARGET_ARCH: ${{ matrix.arch }}
         run: |
           version=$(go run scripts/gen_release_assets.go version)
-          bash scripts/check_bundle_resources.sh "build/upload_tmp_dir/bb_service_linux_${TARGET_ARCH}_release_${version}.zip"
+          bash scripts/check_bundle_resources.sh "build/upload_tmp_dir/bioBox_linux_${TARGET_ARCH}_release_${version}.zip"
 
       - name: Upload this architecture only (internal job transfer)
         uses: actions/upload-artifact@v7

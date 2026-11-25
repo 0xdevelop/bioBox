@@ -2,7 +2,7 @@
 
 在一台装了 NVIDIA GPU（如 GB10 / aarch64）的机器上，对给定靶点做蛋白 binder 设计。本包是命令行工具，不是常驻服务。
 
-> 本包可独立使用（下文）。与 Go 服务 `bb_service` 一起安装时，改用整合包 `bb_service_linux_<arch>_release_v*.zip`：其中 `runtime/pxdesign/` 就是本包内容，由 root 跑 `install_bb_service.sh` 显式装到 `/bb_service/runtime/pxdesign`，与本包的独立安装目录互不影响。
+> 本包可独立使用（下文）。与 Go 服务 `bioBox` 一起安装时，改用整合包 `bioBox_linux_<arch>_release_v*.zip`：其中 `runtime/pxdesign/` 就是本包内容，由 root 跑 `install_bioBox.sh` 显式装到 `/bioBox/runtime/pxdesign`，与本包的独立安装目录互不影响。
 
 ## 前置条件
 
@@ -20,12 +20,12 @@ cd pxdesign
 ```
 
 默认装到 `~/.local/share/pxdesign`。换目录：`PXDESIGN_PREFIX=/your/dir ./install_pxdesign.sh install`。
-既有机器上的权重不再通过已退役环境变量复制；在整合包部署中请改 `runtime/pxdesign/conf/pxdesign.env` 的数据根路径（或使用既有目录软链接）并由 `bb_service resource prepare` 校验就位。
+既有机器上的权重不再通过已退役环境变量复制；在整合包部署中请改 `runtime/pxdesign/conf/pxdesign.env` 的数据根路径（或使用既有目录软链接）并由 `bioBox resource prepare` 校验就位。
 
 首次安装会下载约 4GB 权重（PXDesign、Protenix v0.5.0、AF2 两个参数文件、ProteinMPNN、CCD 缓存）。
 命令入口是 `~/.local/share/pxdesign/bin/pxdesign-run`。
 
-> **独立模式当前边界（未完成闭环）**：`WEIGHTS_REUSE_FROM` 已退役；独立安装脚本与包装器 `pxdesign-run` 会查找相邻 Go 协调器 `${PREFIX}/../../bb_service`（独立单产品包未随包提供该协调器），缺失时将明确以 **exit code 4** 拒绝执行。独立安装与独立设计流程当前尚未通过验收，请优先使用整合包 `bb_service_linux_<arch>_release_v*.zip`。
+> **独立模式当前边界（未完成闭环）**：`WEIGHTS_REUSE_FROM` 已退役；独立安装脚本与包装器 `pxdesign-run` 会查找相邻 Go 协调器 `${PREFIX}/../../bioBox`（独立单产品包未随包提供该协调器），缺失时将明确以 **exit code 4** 拒绝执行。独立安装与独立设计流程当前尚未通过验收，请优先使用整合包 `bioBox_linux_<arch>_release_v*.zip`。
 
 ## 跑一次设计
 
@@ -38,7 +38,7 @@ cd ~/pxd_job
 ```
 
 `pxdesign-run` 会自动补上权重目录、`--use_fast_ln False`、`--num_workers 0`。
-整合包（或提供相邻 `bb_service` 协调器并完成资源就绪后）的成功判断：退出码 0、`out/` 下有 `.cif`、没有 `out/ERR/`、运行时 GPU 有占用；未配置协调器的独立单产品包执行会以 exit 4 失败。
+整合包（或提供相邻 `bioBox` 协调器并完成资源就绪后）的成功判断：退出码 0、`out/` 下有 `.cif`、没有 `out/ERR/`、运行时 GPU 有占用；未配置协调器的独立单产品包执行会以 exit 4 失败。
 
 ## 升级 / 回退 / 卸载 / 查看状态
 

@@ -10,7 +10,7 @@ source "${project_path}/scripts/release_cleanup.sh"
 
 ProductName="bioBox"
 Product_version_key="ProjectVersion"
-VersionFile=./config/config.go
+VersionFile=./bb_config/config.go
 # Packaging versions live in pre_build_config_template.yaml and the two generated
 # arch files; they must stay identical to the service ProjectVersion.
 CURRENT_VERSION=$(go run scripts/gen_release_assets.go version)
@@ -198,7 +198,7 @@ function git_handle_push() {
 
     gen_changelog_if_possible \
     && gen_api_docs \
-    && git add -- "${VersionFile}" bb_build/pre_build_config_template.yaml bb_build/gen_pre_build_config_linux_amd64.yaml bb_build/gen_pre_build_config_linux_arm64.yaml docs/bb_service/api_methods.md "changelog/${NEXT_VERSION}.md" \
+    && git add -- "${VersionFile}" bb_build/pre_build_config_template.yaml bb_build/gen_pre_build_config_linux_amd64.yaml bb_build/gen_pre_build_config_linux_arm64.yaml bb_docs/api_methods.md "changelog/${NEXT_VERSION}.md" \
     && git commit -m "Release:--: v${next_version_no}_$(date -u +"%Y-%m-%d_%H:%M:%S")"_"UTC" \
     && git tag v${next_version_no} \
     && git tag -f latest v${next_version_no} \

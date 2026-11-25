@@ -1,6 +1,6 @@
 # 验证码 INFO 日志与可选邮件
 
-适用于现有 `auth.verify_code.send.email`，不新增投递模式、日志开关或新的控制接口。完整账户与消费契约见 [ability_auth.md](ability_auth.md)，方法结构见 [api_methods.md](api_methods.md)。
+适用于现有 `auth.verify_code.send.email`，不新增投递模式、日志开关或新的控制接口。完整账户与消费契约见 [ability_auth.md](ability_auth.md)，方法结构见 [bb_docs/api_methods.md](../../bb_docs/api_methods.md)。
 
 ## 行为与响应
 
@@ -47,13 +47,13 @@ auth_cfg:
 ## 可重复验证
 
 ```bash
-go test ./api/api_auth/... ./config
+go test ./bb_api/bb_api_auth/... ./bb_config
 ```
 
 表驱动测试捕获 INFO sink，只在内存比对真实码与数据库 hash/模拟邮件内容，断言消息不输出码。覆盖无邮件、显式关闭、邮件成功/失败、残缺依赖、非法枚举/类型、别名迁移、回滚仍记日志、pending/失败码不可用、频控不生码、TTL/错误预算以及注册单次消费。`TestIsolatedHTTPVerificationWorkflows` 使用临时 SQLite 和真实 loopback HTTP，走生产 JSON-RPC Handler → APIExecuter → 注册方法；仅邮件供应商和 INFO sink 是本地替身。它不等于真实供应商发信或收件箱送达验收，也不触发对外邮件。
 
 ## 模板对齐与运维边界补充
 
-- Go 服务 `bb_service` 与模板采用同一实现：每次真实生码即写服务 INFO（所有运行模式），不设日志开关、不与邮件互斥。
+- Go 服务 `bioBox` 与模板采用同一实现：每次真实生码即写服务 INFO（所有运行模式），不设日志开关、不与邮件互斥。
 - 运维只能从受权服务日志用 `delivery_id` 关联排查，须限制日志权限/保留周期；失败/回滚日志中的码不一定可用。
 - 本次测试中邮件供应商使用本地替身，不等于真实发信验收，不涉及重装或 GPU 推理。

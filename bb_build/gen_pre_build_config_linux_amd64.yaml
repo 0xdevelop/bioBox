@@ -33,7 +33,7 @@ env_strategy_note: >
 
 products:
   - name: protenix
-    src_path: bb_sources/protenix
+    src_path: build_srcs/protenix
     build_subdir: protenix
     env_file: bb_suites/protenix/protenix.env
     wrapper: bb_suites/protenix/protenix-run
@@ -46,7 +46,7 @@ products:
     product_python: "3.14"
 
   - name: pxdesign
-    src_path: bb_sources/pxdesign
+    src_path: build_srcs/pxdesign
     build_subdir: pxdesign
     env_file: bb_suites/pxdesign/pxdesign.env
     wrapper: bb_suites/pxdesign/pxdesign-run

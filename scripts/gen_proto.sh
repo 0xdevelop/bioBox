@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# gen_proto.sh — 生成 bb_service 的 protobuf Go 代码。
+# gen_proto.sh — 生成 bioBox 的 protobuf Go 代码。
 # 用法：./gen_proto.sh
 # 依赖：protoc（在 PATH 中）；protoc-gen-go / protoc-gen-go-grpc 由本脚本
 #       自动按 go.mod 里 tools.go 锁定的版本安装到 $GOBIN（即 $GOPATH/bin）。
 #       注意：$GOBIN 需要在 PATH 中，protoc 才能找到 plugin binary。
 #
 # 布局约定：
-#   api/api_grpc/proto/     ← .proto 源
-#   api/api_grpc/protobuf/  ← 生成的 .pb.go
+#   bb_api/bb_api_grpc/proto/     ← .proto 源
+#   bb_api/bb_api_grpc/bb_protobuf/  ← 生成的 .pb.go
 #
 # 输出策略：用 protoc --go_opt=module=<module> 让输出按 go_package 减去
 # module 前缀自动放置。
@@ -81,8 +81,8 @@ sync_external_proto() {
 # ─── 显式注册本仓 gRPC 契约 ────────────────────────────────────────────────
 
 gen_domain api_grpc \
-  "api/api_grpc/proto" \
+  "bb_api/bb_api_grpc/proto" \
   api.proto
 
 echo ">>> 全部完成。当前输出："
-find api/api_grpc/protobuf -name "*.pb.go" -type f | sort
+find bb_api/bb_api_grpc/bb_protobuf -name "*.pb.go" -type f | sort
