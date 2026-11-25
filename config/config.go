@@ -28,7 +28,7 @@ import (
 
 const (
 	ProjectName     = "bb_service"
-	ProjectVersion  = "v0.0.3"
+	ProjectVersion  = "v0.0.4"
 	ProjectBundleID = "com.biobox.bb_service"
 	// DefaultSessionIssuer / DefaultSessionAudience preserve JWT compatibility with published v0.0.3 clients.
 	DefaultSessionIssuer   = "protenix_service"
