@@ -95,7 +95,8 @@ jobs:
           FORCE_PACK: '1'
         run: |
           bash ./scripts/gen_pre_build_config.sh all
-          bash ./scripts/build.sh pack release "linux_$TARGET_ARCH"
+          chmod a+x ./build.sh \
+          && bash ./build.sh pack release "linux_$TARGET_ARCH"
           go run scripts/gen_release_assets.go arch --arch="$TARGET_ARCH" \
             --commit="$GITHUB_SHA" --dir=build/upload_tmp_dir --out=tmp/arch-assets
 

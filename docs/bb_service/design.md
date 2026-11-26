@@ -23,9 +23,9 @@
 
 两种用法、两类包：Protenix / PXDesign 单独使用时是各自独立的**命令行工具**（单产品包）；与 Go 服务 `bioBox` 结合时按 Go 模板 install 体系整合成**一套服务**（整合包、一个 install 脚本）。
 
-- `./scripts/build.sh pack` 每个 arch 产出独立单产品包 `protenix_` / `pxdesign_linux_<arch>_<mode>_<version>.zip`（内容即下述运行时安装材料），以及整合包 `bioBox_linux_<arch>_<mode>_<version>.zip`：顶层是服务二进制、`install_bioBox.sh`、systemd 单元、`conf/config.yaml`、`BUILD_INFO.txt`；`runtime/<app>/` 下是运行时安装材料——安装脚本（`install_<app>.sh` + `scripts/install_common.sh` + `install_prefix_*`）、命令入口 `bin/<app>-run`、配置模板 `conf/<app>.env`、**git archive 的上游快照**（`src/<product>/` + `src/SRC_SHA`）、`deps/`、`patches/`、`examples/`、`README.md`、`BUILD_INFO.txt`
+- `./build.sh pack` 每个 arch 产出独立单产品包 `protenix_` / `pxdesign_linux_<arch>_<mode>_<version>.zip`（内容即下述运行时安装材料），以及整合包 `bioBox_linux_<arch>_<mode>_<version>.zip`：顶层是服务二进制、`install_bioBox.sh`、systemd 单元、`conf/config.yaml`、`BUILD_INFO.txt`；`runtime/<app>/` 下是运行时安装材料——安装脚本（`install_<app>.sh` + `scripts/install_common.sh` + `install_prefix_*`）、命令入口 `bin/<app>-run`、配置模板 `conf/<app>.env`、**git archive 的上游快照**（`src/<product>/` + `src/SRC_SHA`）、`deps/`、`patches/`、`examples/`、`README.md`、`BUILD_INFO.txt`
 - 包内安装只读包内路径；联网仅用于 pip 与权重
-- 仓库内 `./scripts/build.sh protenix|pxdesign` 通过 `scripts/repo_src_defaults.sh` 指向 submodule（该文件不打进 zip）
+- 仓库内 `./build.sh protenix|pxdesign` 通过 `scripts/repo_src_defaults.sh` 指向 submodule（该文件不打进 zip）
 
 ## 安装布局
 
@@ -44,5 +44,5 @@
 ## 套件扩展点与当前机制边界
 
 - 当前仅支持两套硬编码套件：`protenix`（默认 `v1`、`use_msa=false`；`cli_cfg.protenix.version_runtimes.v2.binary` 默认为空字符串，未配置时 fail-closed 拒绝）与 `pxdesign`（固定 `PINNED_PROTENIX_REF=d18aa1daadd02a001b32bc7fa2278fc8a2f8f025`、`preview`、`use_msa=false`）。
-- 现行结构为「一份材料、多处点名」，扩展新套件或同名多版本必须同步修改：`bb_build/pre_build_config_template.yaml`（`products[]`）、`bb_suites/<suite>/`、`scripts/suites/<suite>/`、`scripts/build.sh`（`build_protenix` / `build_pxdesign`）、`example_files/install_bioBox.sh`（`RUNTIME_APPS`）与 `scripts/install_common.sh`（`case` 分支）。
+- 现行结构为「一份材料、多处点名」，扩展新套件或同名多版本必须同步修改：`bb_build/pre_build_config_template.yaml`（`products[]`）、`bb_suites/<suite>/`、`scripts/suites/<suite>/`、`scripts/linux_release_pack.sh`、`scripts/suites/protenix/install_prefix_protenix.sh`、`scripts/suites/pxdesign/install_prefix_pxdesign.sh`、`example_files/install_bioBox.sh`（`RUNTIME_APPS`）与 `scripts/install_common.sh`（`case` 分支）。
 - 机制缺口：尚未建立动态多套件加载器或 `bb_suites/<suite>/<version>` 同名多版本目录轴，不宣称任意套件或同名多版本已开箱支持。

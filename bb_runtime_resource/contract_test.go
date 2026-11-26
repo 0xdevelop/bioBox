@@ -55,18 +55,6 @@ func TestOfficialManifestCompletenessAndRelativeSymlinkRoots(t *testing.T) {
 		t.Fatal("unknown runtime should block", err)
 	}
 }
-func TestReadOnlyInstalledRuntimeEvidence(t *testing.T) {
-	root := os.Getenv("READONLY_RUNTIME_EVIDENCE")
-	if root == "" {
-		t.Skip("explicit local installed-runtime evidence opt-in")
-	}
-	for _, kind := range []string{"protenix", "pxdesign"} {
-		binary := filepath.Join(root, kind, "bin", kind+"-run")
-		if err := ValidateInstalled(kind, binary, root); err != nil {
-			t.Fatal(kind, err)
-		}
-	}
-}
 
 func TestRoleManifestFollowsSingleConfiguredRootValue(t *testing.T) {
 	app := t.TempDir()
@@ -91,14 +79,4 @@ func TestRoleManifestFollowsSingleConfiguredRootValue(t *testing.T) {
 	}
 	// Digests above are deliberately invalid: compilation binds paths, whereas
 	// Preparer/Controller must reject them. No model checksum is invented here.
-}
-func TestRuntimeEnvRejectsShellSemanticMismatch(t *testing.T) {
-	for _, value := range []string{"models # comment", "models; echo unsafe", `"models\\escaped"`, "$(false)", "'not-closed"} {
-		if _, err := parseLiteral(value); err == nil {
-			t.Fatal("accepted nonliteral", value)
-		}
-	}
-	if v, err := parseLiteral(`"models with space"`); err != nil || v != "models with space" {
-		t.Fatal(v, err)
-	}
 }

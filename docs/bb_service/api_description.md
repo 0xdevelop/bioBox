@@ -97,7 +97,7 @@
 
 协议 Adapter 只负责本协议连接、外壳解析和响应编码，不得复制 `tools/call` 内部提取、方法选择或业务执行。哪个 Adapter 调用 `APIExecuter`，统一结果就沿本次调用栈回到该 Adapter；协议层不设置独立结果查询接口、进程内结果缓存或跨协议返回分发。长任务的受理与进度、结果读取实现为 Ability 层普通注册方法，走同一条统一调用链，真相源是数据库任务记录。
 
-gRPC 的 `.proto` 源只放在 `bb_api/bb_api_grpc/proto`，生成的 `.pb.go` 只放在 `bb_api/bb_api_grpc/bb_protobuf`，并且只由`scripts/gen_proto.sh` 生成。新增 Ability 方法不修改 proto、生成脚本或 gRPC Handler。
+gRPC 的 `.proto` 源只放在 `bb_api/bb_api_grpc/proto`，生成的 `.pb.go` 只放在 `bb_api/bb_api_grpc/bb_protobuf`，并且只由根目录 `gen_proto.sh` 生成。新增 Ability 方法不修改 proto、生成脚本或 gRPC Handler。
 
 ## 方法注册与执行
 

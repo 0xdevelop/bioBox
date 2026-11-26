@@ -13,7 +13,7 @@
 # module 前缀自动放置。
 set -euo pipefail
 
-project_path=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+project_path=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 cd "${project_path}"
 
 MODULE="github.com/0xdevelop/bioBox"

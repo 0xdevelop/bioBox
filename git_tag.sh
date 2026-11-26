@@ -4,7 +4,7 @@ set -e
 
 # Copied from project_template_go git_tag.sh (same blob as protenix_service/git_tag.sh).
 # Only the version/document paths are adapted to this repository layout.
-project_path=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+project_path=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 cd "${project_path}"
 source "${project_path}/scripts/release_cleanup.sh"
 
@@ -187,7 +187,7 @@ function gen_changelog_if_possible() {
 }
 
 function gen_api_docs() {
-  ./scripts/gen_api_docs.sh "${NEXT_VERSION}"
+  ./gen_api_docs.sh "${NEXT_VERSION}"
 }
 
 function git_handle_push() {

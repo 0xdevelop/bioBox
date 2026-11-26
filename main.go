@@ -98,9 +98,6 @@ func setupApp() {
 }
 
 func main() {
-	if len(os.Args) > 1 && os.Args[1] == "resource" {
-		os.Exit(resourceCommand(os.Args[2:]))
-	}
 	runtime.LockOSThread()
 
 	setupApp()
@@ -109,14 +106,26 @@ func main() {
 
 	// All run modes use the executable-owned configuration selected in setupApp.
 
-	var configLoadErr error
-	bb_config.SyncConfigFile(func(err error) {
-		configLoadErr = err
-		gtbox_log.LogErrorf("config load failed: %v", err)
-	})
-	if configLoadErr != nil {
-		return
+	if bb_config.CurrentApp.CurrentRunMode == gtbox.RunModeDebug {
+		bb_config.CurrentApp.AppConfigFilePath = "./example_files/config_local.yaml"
+	} else {
+		bb_config.CurrentApp.AppConfigFilePath = "./conf/config.yaml"
 	}
+
+	// 配置加载失败即停：继续往下跑只会把「配置里缺哪一段」的现场，变成十几行之后
+	// 某个 nil 解引用的 panic 堆栈（2026-08-20 实测——outside 那份配置少了 mysql_cfg，
+	// 报出来的是 main.go 的 invalid memory address，跟真正的原因隔着十几行）。
+	bb_config.SyncConfigFile(func(err error) {
+		if err != nil {
+			gtbox_log.LogErrorf("配置加载失败，进程终止：%v", err)
+			os.Exit(1)
+		}
+	})
+	if bb_config.GlobalConfig == nil {
+		gtbox_log.LogErrorf("配置加载后 GlobalConfig 为空，进程终止")
+		os.Exit(1)
+	}
+
 	if err := bb_storage.OpenStorage(); err != nil {
 		gtbox_log.LogErrorf("storage open failed: %v", err)
 		return

@@ -11,7 +11,7 @@
 
 `check_native_build.sh` 同时核对 Linux/uname、Go host 与 target、CGo 开启、本机 gcc 的 GNU target；不是只改 GOARCH。服务构建入口仍强制 CGO_ENABLED=1（SQLite），门禁还检查 zip 内服务 ELF machine 与 Go build info 的 GOOS/GOARCH/CGO_ENABLED。
 
-CI 使用 `go.mod`（当前要求 1.26.10）。打包依赖还包括原生 gcc/build-essential、pkg-config、zip/unzip、bun。Actions 只执行 `FORCE_PACK=1 ./scripts/build.sh pack release linux_<arch>`，不跑默认 `all`，避免把打包变成 prefix 安装或 GPU 任务。成功打包不等于目标机器已完成依赖安装或 GPU 推理。
+CI 使用 `go.mod`（当前要求 1.26.10）。打包依赖还包括原生 gcc/build-essential、pkg-config、zip/unzip、bun。Actions 只执行 `FORCE_PACK=1 bash ./build.sh pack release linux_<arch>`，不跑 `all`，避免把打包变成 prefix 安装或 GPU 任务。成功打包不等于目标机器已完成依赖安装或 GPU 推理。
 
 ## 六包与清单门禁
 
@@ -30,7 +30,7 @@ bb_service_linux_<arch>_release_vX.Y.Z.zip
 ```bash
 go run scripts/gen_release_assets.go self-test
 bash scripts/check_native_build.sh arm64  # amd64 原生机器使用 amd64
-bash -n scripts/git_tag.sh scripts/build.sh scripts/check_native_build.sh
+bash -n git_tag.sh scripts/linux_release_pack.sh scripts/check_native_build.sh
 ```
 
-self-test 是 fixture/静态检查，另含隔离仓库中的无参 `scripts/git_tag.sh` 契约测试，不是真实产品发版，也不是 Actions 双 runner 实证。GPU/HTTP 成品验收见 [本轮产物验收](acceptance_product_matrix_20261119.md)。
+self-test 是 fixture/静态检查，另含隔离仓库中的无参 `git_tag.sh` 契约测试，不是真实产品发版，也不是 Actions 双 runner 实证。GPU/HTTP 成品验收见 [本轮产物验收](acceptance_product_matrix_20261119.md)。

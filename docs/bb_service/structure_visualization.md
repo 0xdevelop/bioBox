@@ -2,7 +2,7 @@
 
 ## 使用
 
-沿用现有构建入口：`./scripts/gen_test_ui.sh` 安装锁定依赖并由 Bun 打包，`go build` 将资源与调试页嵌入二进制。开发启动也调用同一个生成脚本，不增加 Vite、React 或第二套构建工具。运行环境不需要 Bun、CDN 或 node_modules。
+沿用现有构建入口：`./gen_test_ui.sh` 安装锁定依赖并由 Bun 打包，`go build` 将资源与调试页嵌入二进制。开发启动也调用同一个生成脚本，不增加 Vite、React 或第二套构建工具。运行环境不需要 Bun、CDN 或 node_modules。
 
 启用 `test_ui_cfg` 后打开 `/flow_debug.html`：
 

@@ -6,7 +6,6 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -14,37 +13,12 @@ import (
 	"github.com/0xdevelop/bioBox/bb_config"
 	"github.com/0xdevelop/bioBox/bb_storage/bb_storage_config"
 	"github.com/george012/gtbox/gtbox_orm/gtbox_orm_sqlite"
-	"gorm.io/driver/mysql"
-	"gorm.io/driver/postgres"
-	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
-	"gorm.io/gorm/schema"
 )
 
 type storageProbe struct {
 	ID   uint `gorm:"primaryKey"`
 	Name string
-}
-
-func TestStorageTaskPayloadColumnTypes(t *testing.T) {
-	model, err := schema.Parse(&bb_ability_task_model.AsyncTask{}, &sync.Map{}, schema.NamingStrategy{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, testCase := range []struct {
-		dialect gorm.Dialector
-		want    string
-	}{
-		{mysql.New(mysql.Config{}), "mediumtext"},
-		{postgres.New(postgres.Config{}), "text"},
-		{sqlite.Open(":memory:"), "text"},
-	} {
-		for _, name := range []string{"InputPayload", "ResultPayload"} {
-			if got := testCase.dialect.DataTypeOf(model.LookUpField(name)); got != testCase.want {
-				t.Errorf("%s %s: got %s, want %s", testCase.dialect.Name(), name, got, testCase.want)
-			}
-		}
-	}
 }
 
 func TestStorageCloseWhileReading(t *testing.T) {

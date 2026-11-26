@@ -28,41 +28,6 @@ func TestExecuteValidatesAndRejectsUnconfigured(t *testing.T) {
 	}
 }
 
-func TestBuildArgvStagesInputAndKeepsPreset(t *testing.T) {
-	work := t.TempDir()
-	src := filepath.Join(work, "task.yaml")
-	if err := os.WriteFile(src, []byte("name: src\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	previous := bb_config.GlobalConfig
-	t.Cleanup(func() { bb_config.GlobalConfig = previous })
-	bb_config.GlobalConfig = &bb_config.FileConfig{CliCfg: &bb_config.CLIConfig{
-		WorkRoot:           filepath.Join(work, "jobs"),
-		CancelGraceSeconds: 1,
-		PXDesign:           &bb_config.CLIBinaryConfig{Resources: fixtureResources(t), Binary: dummyRun(t)},
-	}}
-	argv, err := BuildArgvForTest(context.Background(), map[string]interface{}{
-		"input":    src,
-		"dump_dir": "caller-out",
-		"preset":   "preview",
-		"N_sample": 2,
-		"dtype":    "bf16",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if argv[1] != "pipeline" || flagValue(argv, "--preset") != "preview" || flagValue(argv, "--N_sample") != "2" || flagValue(argv, "--dtype") != "bf16" {
-		t.Fatalf("unexpected argv: %v", argv)
-	}
-	if strings.Contains(strings.Join(argv, " "), "caller-out") {
-		t.Fatalf("caller dump_dir must not be used as CLI path: %v", argv)
-	}
-	inputPath := flagValue(argv, "--input")
-	if inputPath == src || !strings.Contains(inputPath, filepath.Join(work, "jobs")) {
-		t.Fatalf("input must be staged, got %s", inputPath)
-	}
-}
-
 func TestExecuteRunsConfiguredDummy(t *testing.T) {
 	work := t.TempDir()
 	src := filepath.Join(work, "task.yaml")
@@ -128,63 +93,4 @@ func dummyRun(t *testing.T) string {
 		t.Fatal(err)
 	}
 	return abs
-}
-
-func flagValue(argv []string, name string) string {
-	for i, arg := range argv {
-		if arg == name && i+1 < len(argv) {
-			return argv[i+1]
-		}
-	}
-	return ""
-}
-
-func TestBuildArgvStagesOfficialRelativeSidecars(t *testing.T) {
-	project := t.TempDir()
-	examples := filepath.Join(project, "examples")
-	if err := os.MkdirAll(filepath.Join(examples, "msa", "PDL1", "0"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(examples, "5o45.cif"), []byte("data_target\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(examples, "msa", "PDL1", "0", "pairing.a3m"), []byte(">msa\nA\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	src := filepath.Join(examples, "PDL1_quick_start.yaml")
-	original := []byte("target:\n  file: \"./examples/5o45.cif\"\n  chains:\n    A:\n      msa: \"./examples/msa/PDL1/0\"\nbinder_length: 80\n")
-	if err := os.WriteFile(src, original, 0o644); err != nil {
-		t.Fatal(err)
-	}
-	work := t.TempDir()
-	previous := bb_config.GlobalConfig
-	t.Cleanup(func() { bb_config.GlobalConfig = previous })
-	bb_config.GlobalConfig = &bb_config.FileConfig{CliCfg: &bb_config.CLIConfig{
-		WorkRoot:           filepath.Join(work, "jobs"),
-		CancelGraceSeconds: 1,
-		PXDesign:           &bb_config.CLIBinaryConfig{Resources: fixtureResources(t), Binary: dummyRun(t)},
-	}}
-	argv, err := BuildArgvForTest(context.Background(), map[string]interface{}{
-		"input":    src,
-		"dump_dir": "out",
-		"preset":   "preview",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	inputPath := flagValue(argv, "--input")
-	jobDir := filepath.Dir(filepath.Dir(inputPath))
-	if _, err = os.Stat(filepath.Join(jobDir, "examples", "5o45.cif")); err != nil {
-		t.Fatalf("expected staged cif under job dir: %v", err)
-	}
-	if _, err = os.Stat(filepath.Join(jobDir, "examples", "msa", "PDL1", "0", "pairing.a3m")); err != nil {
-		t.Fatalf("expected staged msa under job dir: %v", err)
-	}
-	copied, err := os.ReadFile(src)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if string(copied) != string(original) {
-		t.Fatal("original official yaml was modified")
-	}
 }

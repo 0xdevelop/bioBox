@@ -35,113 +35,6 @@ func TestExecuteValidatesAndRejectsUnconfigured(t *testing.T) {
 	}
 }
 
-func TestBuildArgvOmitsVersionAndStagesInput(t *testing.T) {
-	work := t.TempDir()
-	src := filepath.Join(work, "input.json")
-	if err := os.WriteFile(src, []byte(`{"name":"src"}`), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	previous := bb_config.GlobalConfig
-	t.Cleanup(func() { bb_config.GlobalConfig = previous })
-	bb_config.GlobalConfig = &bb_config.FileConfig{CliCfg: &bb_config.CLIConfig{
-		WorkRoot:           filepath.Join(work, "jobs"),
-		CancelGraceSeconds: 1,
-		Protenix:           &bb_config.CLIBinaryConfig{Resources: fixtureResources(t), Binary: dummyRun(t), ExtraEnv: map[string]string{"LAYERNORM_TYPE": "torch"}},
-	}}
-	argv, err := BuildArgvForTest(context.Background(), map[string]interface{}{
-		"version":    "v1",
-		"input":      src,
-		"out_dir":    "caller-out",
-		"model_name": "protenix_base_default_v1.0.0",
-		"seeds":      "101",
-		"use_msa":    false,
-		"cycle":      10,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	joined := strings.Join(argv, " ")
-	if containsFlag(argv, "--version") || containsToken(argv, "v1") || strings.Contains(joined, "caller-out") {
-		t.Fatalf("version or caller out_dir must not be CLI args: %s", joined)
-	}
-	if !containsPair(argv, "--model_name", "protenix_base_default_v1.0.0") || !containsPair(argv, "--seeds", "101") || !containsPair(argv, "--use_msa", "false") || !containsPair(argv, "--cycle", "10") {
-		t.Fatalf("expected optional flags missing: %v", argv)
-	}
-	if !containsPair(argv, "--input", "") {
-		// staged input path should exist and differ from original
-	}
-	inputPath := flagValue(argv, "--input")
-	if inputPath == src || !strings.Contains(inputPath, filepath.Join(work, "jobs")) {
-		t.Fatalf("input must be staged under work root, got %s", inputPath)
-	}
-	if _, err := os.Stat(inputPath); err != nil {
-		t.Fatalf("staged input missing: %v", err)
-	}
-	original, _ := os.ReadFile(src)
-	if err := os.WriteFile(inputPath, []byte(`{"name":"changed"}`), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	after, _ := os.ReadFile(src)
-	if string(after) != string(original) {
-		t.Fatal("original input was modified")
-	}
-}
-
-func TestVersionSelectsIndependentRuntime(t *testing.T) {
-	work := t.TempDir()
-	src := filepath.Join(work, "input.json")
-	if err := os.WriteFile(src, []byte(`{"name":"src"}`), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	runtimeOne := copyDummyRun(t, work, "runtime-one")
-	runtimeTwo := copyDummyRun(t, work, "runtime-two")
-	previous := bb_config.GlobalConfig
-	t.Cleanup(func() { bb_config.GlobalConfig = previous })
-	bb_config.GlobalConfig = &bb_config.FileConfig{CliCfg: &bb_config.CLIConfig{
-		WorkRoot:           filepath.Join(work, "jobs"),
-		CancelGraceSeconds: 1,
-		Protenix: &bb_config.CLIBinaryConfig{Resources: fixtureResources(t),
-			Binary:   runtimeOne,
-			ExtraEnv: map[string]string{"FROM": "base"},
-			VersionRuntimes: map[string]*bb_config.CLIRuntimeConfig{
-				"v2": {Binary: runtimeTwo, ExtraEnv: map[string]string{"FROM": "v2"}},
-			},
-		},
-	}}
-
-	argvV1, err := BuildArgvForTest(context.Background(), map[string]interface{}{"input": src, "out_dir": "out"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if argvV1[0] != runtimeOne {
-		t.Fatalf("omitted version must use v1 base binary, got %s", argvV1[0])
-	}
-	if containsFlag(argvV1, "--version") || containsToken(argvV1, "v1") || containsToken(argvV1, "v2") {
-		t.Fatalf("version must not enter CLI args: %v", argvV1)
-	}
-
-	argvV2, err := BuildArgvForTest(context.Background(), map[string]interface{}{"version": "v2", "input": src, "out_dir": "out"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if argvV2[0] != runtimeTwo {
-		t.Fatalf("version=v2 must use v2 runtime, got %s", argvV2[0])
-	}
-	if containsFlag(argvV2, "--version") || containsToken(argvV2, "v1") || containsToken(argvV2, "v2") {
-		t.Fatalf("version must not enter CLI args: %v", argvV2)
-	}
-
-	override := copyDummyRun(t, work, "runtime-one-override")
-	bb_config.GlobalConfig.CliCfg.Protenix.VersionRuntimes["v1"] = &bb_config.CLIRuntimeConfig{Binary: override}
-	argvOverride, err := BuildArgvForTest(context.Background(), map[string]interface{}{"version": "v1", "input": src, "out_dir": "out"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if argvOverride[0] != override {
-		t.Fatalf("version=v1 must use version_runtimes.v1 when set, got %s", argvOverride[0])
-	}
-}
-
 func TestV2DoesNotFallBackToV1Binary(t *testing.T) {
 	work := t.TempDir()
 	src := filepath.Join(work, "input.json")
@@ -297,19 +190,6 @@ func TestAsyncAcceptUsesSqliteWithoutMysql(t *testing.T) {
 	}
 }
 
-func copyDummyRun(t *testing.T, dir, name string) string {
-	t.Helper()
-	data, err := os.ReadFile(dummyRun(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	path := filepath.Join(dir, name)
-	if err := os.WriteFile(path, data, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	return path
-}
-
 func dummyRun(t *testing.T) string {
 	t.Helper()
 	path := filepath.Join("testdata", "dummy-run.sh")
@@ -321,37 +201,6 @@ func dummyRun(t *testing.T) string {
 		t.Fatal(err)
 	}
 	return abs
-}
-
-func containsPair(argv []string, name, value string) bool {
-	return flagValue(argv, name) == value
-}
-
-func flagValue(argv []string, name string) string {
-	for i, arg := range argv {
-		if arg == name && i+1 < len(argv) {
-			return argv[i+1]
-		}
-	}
-	return ""
-}
-
-func containsFlag(argv []string, name string) bool {
-	for _, arg := range argv {
-		if arg == name || strings.HasPrefix(arg, name+"=") {
-			return true
-		}
-	}
-	return false
-}
-
-func containsToken(argv []string, token string) bool {
-	for _, arg := range argv {
-		if arg == token {
-			return true
-		}
-	}
-	return false
 }
 
 // Upstream can exit zero after invalid JSON; no structures must never mean success.

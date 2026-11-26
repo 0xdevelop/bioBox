@@ -25,14 +25,14 @@
 - 不声明或使用已由 SEP-2577 废弃的 roots、sampling、logging capability；SDK 为兼容窗口保留的旧 API 不构成本项目能力。
 - 协议层不得自造 MCP Tasks、进程内结果缓存、第二套执行链或返回分发器。长任务的受理、进度与结果查询只能实现为 Ability 层普通注册方法，走同一条统一调用链，真相源是数据库任务记录。
 - JSON-RPC HTTP 只允许 `POST /` 承载真实协议调用；`GET /` 使用 `HomeHandler`，`GET /robots.txt` 使用独立 `RobotsHandler`，其余不匹配路径或方法使用 `HomeHandler`。
-- gRPC 只提供一个 `APIService.Call` RPC，使用原生 protobuf `CallRequest` / `CallResponse` 运输统一调用数据和结果；实际业务方法通过 `params.name` 扩展，不新增 RPC。`.proto` 源只放在 `bb_api/bb_api_grpc/proto`，生成的 `.pb.go` 只放在 `bb_api/bb_api_grpc/bb_protobuf`，并且只由`scripts/gen_proto.sh` 生成。
+- gRPC 只提供一个 `APIService.Call` RPC，使用原生 protobuf `CallRequest` / `CallResponse` 运输统一调用数据和结果；实际业务方法通过 `params.name` 扩展，不新增 RPC。`.proto` 源只放在 `bb_api/bb_api_grpc/proto`，生成的 `.pb.go` 只放在 `bb_api/bb_api_grpc/bb_protobuf`，并且只由根目录 `gen_proto.sh` 生成。
 
 ## 文档与临时目录
 
 - 每个功能域使用对应的 `docs/bb_service/ability_xxx.md` 维护功能概览、业务流程、预期目的和实现进度，README 只保留入口链接，不重复维护细节。
 - Ability 文档统一模板（`<!-- TOC -->` 索引 + 编号 H1/H2，无独立大标题）：`1. <域> 域定位与边界 → 2. 业务流转（mermaid 调用/状态图）→ 3. 方法契约（每方法 `## 3.N.`：一句语义 + JSON 传参举例 + 实现要求要点）→ 4. 数据与并发纪律 → 5. 验收边界 → 6. 实现进度`；无流转或无对外方法的域可省对应节并顺延编号。入参 schema 权威只在 `api_methods.md`（编号分组由 `gen_api_docs.go` 生成、正文不带 TOC 块，禁手改；功能域树形分类目录由 `/docs_api` 渲染页左侧承担，实现在 `web/src/docs_api.ts` 的 buildToc：H1 域为可折叠父节点、H2 方法为子节点），ability 文档不重复 schema。
 - 实现进度统一使用 Markdown checklist 和状态标识：`[ ] ⬜ TODO` 未开始、`[ ] 🔄 IN_PROGRESS` 推进中、`[ ] 🟡 DONE` 实现完成未验收、`[x] ✅ ACCEPTED` 验收通过终态、`[ ] ❓ DISPUTED` 有争议需对齐。只有 `ACCEPTED` 可以打勾；不得把计划、编译、局部测试或仅完成代码提前标记为验收通过。
-- 方法清单文档 `bb_docs/api_methods.md` 由`scripts/gen_api_docs.sh` 从 `bb_api_supported_methods` 注册表生成，禁止手改；新增方法后重新执行生成，发版由 `scripts/git_tag.sh` 自动调用。对外只暴露单个渲染页 `GET /docs_api`（`api_methods.md` 内容由服务端注入页面，无任何原始文件路由，页面源码为 `bb_test_ui/web/src/docs_api.*`）；`api_description.md` 等内部契约一律不对外、不 embed。
+- 方法清单文档 `bb_docs/api_methods.md` 由根目录 `gen_api_docs.sh` 从 `bb_api_supported_methods` 注册表生成，禁止手改；新增方法后重新执行生成，发版由根目录 `git_tag.sh` 自动调用。对外只暴露单个渲染页 `GET /docs_api`（`api_methods.md` 内容由服务端注入页面，无任何原始文件路由，页面源码为 `bb_test_ui/web/src/docs_api.*`）；`api_description.md` 等内部契约一律不对外、不 embed。
 - `docs/bb_service/` 文档需要网页呈现时统一走既定模式：文档本体留在 `docs/` 作唯一事实源，对外文档经 `bb_docs` 包 `//go:embed` 随二进制发布；`bb_test_ui` 现有 mux 挂单页路由，文档内容由服务端注入页面（dev 优先读磁盘、离仓回落 embed），不设任何原始文件路由。失败路径与未匹配路径统一 `HomeHandler` 中性空响应，不输出任何提示。不新增 HTTP 服务、不复制文档、不引入 Python 或额外构建步骤。
 - 项目根目录 `tmp/` 只存放可再生成的缓存、中间产物和临时探针，允许随时整体删除。正式源码、配置事实和续做所需状态不得依赖 `tmp/` 中的内容。
 
@@ -77,7 +77,7 @@ PostgreSQL 走 gtbox `gtbox_orm_postgres`：`New`、`PostgresDB`、`Close`。驱
 ## 工具与测试纪律
 
 - 不得自造独立小工具 main 包、演示/测试程序包，工具类代码不得编进服务二进制，也不得塞进既有功能包（如 `bb_custom_cmd`）。
-- 生成类工具统一形态：`scripts/gen_*.sh` 脚本 + `//go:build ignore` 单文件生成器（与 `tools.go` 同为 build-tag 隔离，不属于任何包、不进任何构建），只由脚本 `go run` 调用。
+- 生成类工具：与模板相同的 `gen_frontend.sh`、`gen_proto.sh`、`gen_test_ui.sh`、`gen_api_docs.sh` 在仓库根；`scripts/` 只留本仓的 `gen_pre_build_config.sh` 和 `gen_release_assets.go`。配套 `//go:build ignore` 单文件生成器（与 `tools.go` 同为 build-tag 隔离，不属于任何包、不进任何构建），只由对应脚本 `go run` 调用。
 - 不得堆积无验收价值的 `*_test.go`。新增测试必须对应真实验收路径（协议行为、关键失败路径），不为覆盖率或演示而写。
 
 ## 验收

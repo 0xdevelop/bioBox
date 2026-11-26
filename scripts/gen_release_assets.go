@@ -859,7 +859,7 @@ func selfTest() error {
 		return err
 	}
 	checks++
-	for _, script := range []string{"scripts/git_tag.sh", "scripts/build.sh", "scripts/check_native_build.sh", "scripts/gen_pre_build_config.sh"} {
+	for _, script := range []string{"git_tag.sh", "scripts/linux_release_pack.sh", "scripts/suites/protenix/install_prefix_protenix.sh", "scripts/suites/pxdesign/install_prefix_pxdesign.sh", "scripts/check_native_build.sh", "scripts/gen_pre_build_config.sh"} {
 		if e := exec.Command("bash", "-n", script).Run(); e != nil {
 			return fmt.Errorf("shell syntax: %s", script)
 		}
@@ -869,7 +869,7 @@ func selfTest() error {
 		return err
 	}
 	checks += 5
-	buildScript, readErr := os.ReadFile("scripts/build.sh")
+	buildScript, readErr := os.ReadFile("scripts/linux_release_pack.sh")
 	if err = assert("build/full-main-package", readErr == nil && strings.Contains(string(buildScript), `go build -o "${out}" -trimpath -ldflags "${ld}" . )`)); err != nil {
 		return err
 	}
@@ -991,7 +991,7 @@ func checkWorkflow() error {
 		"mathieudutour/github-tag-action@v6.2",
 		"ncipollo/release-action@v1",
 		"bodyFile: changelog/${{ env.LATEST_TAG }}.md",
-		"bash ./scripts/build.sh pack release",
+		"bash ./build.sh pack release",
 		"check_native_build.sh",
 		"bash scripts/check_bundle_resources.sh",
 		"gen_release_assets.go aggregate",
@@ -1010,14 +1010,14 @@ func checkWorkflow() error {
 	if strings.Contains(text, "--clobber") || strings.Contains(text, "gcc-aarch64-linux-gnu") || strings.Contains(text, "gh release create") || strings.Contains(text, "--draft") || strings.Contains(text, "candidate-") || strings.Contains(text, "stage_candidate_assets") || strings.Contains(text, "refs/heads/main") {
 		return errors.New("workflow must not reintroduce cross-compile or the previous draft-publish redesign")
 	}
-	if strings.Contains(text, "bash ./scripts/build.sh test") || strings.Contains(text, "bash ./scripts/build.sh\n") {
-		return errors.New("Actions must not run default build.sh all or a second test-mode pack")
+	if strings.Contains(text, "bash ./scripts/build.sh") || strings.Contains(text, "bash ./scripts/linux_release_pack.sh") || strings.Contains(text, "bash ./build.sh all") || strings.Contains(text, "bash ./build.sh pack test") {
+		return errors.New("Actions must call root build.sh pack release, not a stage script directly, all, or a test-mode pack")
 	}
 	return nil
 }
 
 func checkGitTagEntry() error {
-	b, err := os.ReadFile("scripts/git_tag.sh")
+	b, err := os.ReadFile("git_tag.sh")
 	if err != nil {
 		return err
 	}
@@ -1033,7 +1033,7 @@ func checkGitTagEntry() error {
 		`git push ${remote} v${next_version_no}`,
 		`release_delete_local_tag_if_present "v${pre_del_version_no}"`,
 		`handle_input "$@"`,
-		`./scripts/gen_api_docs.sh "${NEXT_VERSION}"`,
+		`./gen_api_docs.sh "${NEXT_VERSION}"`,
 		`bb_build/pre_build_config_template.yaml`,
 		`bash ./scripts/gen_pre_build_config.sh all`,
 	} {
@@ -1072,11 +1072,11 @@ func checkGitTagNoArgFixture() error {
 			panic(err)
 		}
 	}
-	src, err := os.ReadFile("scripts/git_tag.sh")
+	src, err := os.ReadFile("git_tag.sh")
 	if err != nil {
 		return err
 	}
-	if err = os.WriteFile(filepath.Join(repo, "scripts/git_tag.sh"), src, 0755); err != nil {
+	if err = os.WriteFile(filepath.Join(repo, "git_tag.sh"), src, 0755); err != nil {
 		return err
 	}
 	cleanupSource, err := os.ReadFile("scripts/release_cleanup.sh")
@@ -1089,7 +1089,7 @@ func checkGitTagNoArgFixture() error {
 	write("bb_build/gen_pre_build_config_linux_arm64.yaml", "project:\n  version: v0.0.1\n", 0644)
 	write("bb_config/config.go", "package bb_config\nconst (\n\tProjectVersion  = \"v0.0.1\"\n)\n", 0644)
 	write("scripts/gen_pre_build_config.sh", "#!/bin/bash\nset -e\nsed -i -e 's/^\\(  version: \\)v0.0.1$/\\1v0.0.2/' bb_build/gen_pre_build_config_linux_amd64.yaml bb_build/gen_pre_build_config_linux_arm64.yaml\n", 0755)
-	write("scripts/gen_api_docs.sh", "#!/bin/bash\nset -e\nprintf 'methods for %s\\n' \"$1\" > bb_docs/api_methods.md\n", 0755)
+	write("gen_api_docs.sh", "#!/bin/bash\nset -e\nprintf 'methods for %s\\n' \"$1\" > bb_docs/api_methods.md\n", 0755)
 	write("bin/go", `#!/bin/bash
 set -euo pipefail
 if [[ "$1" != run || "$2" != scripts/gen_release_assets.go ]]; then
@@ -1139,7 +1139,7 @@ esac
 		}
 	}
 	pathEnv := "PATH=" + filepath.Join(repo, "bin") + string(os.PathListSeparator) + os.Getenv("PATH")
-	out, err := run(repo, []string{pathEnv}, "bash", "./scripts/git_tag.sh", "--publish", "v0.0.1")
+	out, err := run(repo, []string{pathEnv}, "bash", "./git_tag.sh", "--publish", "v0.0.1")
 	if err != nil {
 		return fmt.Errorf("unexpected failure on invalid flag: %s", out)
 	}
@@ -1150,13 +1150,13 @@ esac
 		return err
 	}
 	before := strings.TrimSpace(string(out))
-	if out, err = run(repo, []string{pathEnv}, "bash", "./scripts/git_tag.sh", "-get_pre_del_tag_name"); err != nil {
+	if out, err = run(repo, []string{pathEnv}, "bash", "./git_tag.sh", "-get_pre_del_tag_name"); err != nil {
 		return fmt.Errorf("pre-delete name failed: %s", out)
 	}
 	if !strings.Contains(string(out), "0.0.0") {
 		return fmt.Errorf("pre-delete name mismatch: %s", out)
 	}
-	out, err = run(repo, []string{pathEnv}, "bash", "./scripts/git_tag.sh")
+	out, err = run(repo, []string{pathEnv}, "bash", "./git_tag.sh")
 	if err != nil {
 		return fmt.Errorf("no-arg git_tag.sh fixture failed: %s", out)
 	}

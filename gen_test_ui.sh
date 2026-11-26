@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-project_path=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+project_path=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 web_path="${project_path}/bb_test_ui/web"
 bun_tmp_path="${project_path}/tmp/test-ui-bun-tmp"
 bun_cache_path="${project_path}/tmp/test-ui-bun-cache"

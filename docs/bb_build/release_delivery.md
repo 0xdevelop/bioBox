@@ -1,6 +1,6 @@
 # 当前交付：三个公开附件与既有资源离线模式
 
-更新：2026-11-24（UTC+8）。当前工作树为 AT-1（`bb_` 体系与根目录收敛重构，本地未提交）；**没有运行 `scripts/git_tag.sh`，没有 commit / push / 打 tag / 发布 / 替换或删除已发布资产**。历史安装/GPU 记录与重构前 `v0.0.2` / `v0.0.3` 资产边界均不得当作重构后新包验收。
+更新：2026-11-24（UTC+8）。当前工作树为 AT-1（`bb_` 体系与根目录收敛重构，本地未提交）；**没有运行 `./git_tag.sh`，没有 commit / push / 打 tag / 发布 / 替换或删除已发布资产**。历史安装/GPU 记录与重构前 `v0.0.2` / `v0.0.3` 资产边界均不得当作重构后新包验收。
 
 ## 发布清单
 
@@ -10,11 +10,11 @@
 - `bb_service_linux_arm64_release_v<version>.zip`
 - `SHA256SUMS`：仅两行，覆盖上述两包，不再套娃校验其他清单。
 
-**基线区分**：重构前 `v0.0.3`（与 `latest` 移动 tag）已在提交 `37fb324` 发布（旧包名 `protenix_service_linux_{amd64,arm64}_release_v0.0.3.zip` + `SHA256SUMS`）；`main` 当前 HEAD 为 `2473e4e20b41ecf750000b751ec1069f9e7bcc62`（`Update LICENSE`，BSD→MIT，父提交 `37fb324`）。当前工作树配置版本来自 `2473e4e` 基线（`v0.0.3`）；不预设下一具体版本号，后续若经审查并获门禁与发版授权，原有**无参** `scripts/git_tag.sh` 会按模板基于当前配置版本递增，预期新公开附件为 `bb_service_linux_amd64_release_v<version>.zip`、`bb_service_linux_arm64_release_v<version>.zip`、`SHA256SUMS`。GitHub 自动 Source code 不属于自造附件；不会删除历史 `v0.0.2` / `v0.0.3` 资产来假装新发布已经收缩。
+**基线区分**：重构前 `v0.0.3`（与 `latest` 移动 tag）已在提交 `37fb324` 发布（旧包名 `protenix_service_linux_{amd64,arm64}_release_v0.0.3.zip` + `SHA256SUMS`）；`main` 当前 HEAD 为 `2473e4e20b41ecf750000b751ec1069f9e7bcc62`（`Update LICENSE`，BSD→MIT，父提交 `37fb324`）。当前工作树配置版本来自 `2473e4e` 基线（`v0.0.3`）；不预设下一具体版本号，后续若经审查并获门禁与发版授权，原有**无参** `./git_tag.sh` 会按模板基于当前配置版本递增，预期新公开附件为 `bb_service_linux_amd64_release_v<version>.zip`、`bb_service_linux_arm64_release_v<version>.zip`、`SHA256SUMS`。GitHub 自动 Source code 不属于自造附件；不会删除历史 `v0.0.2` / `v0.0.3` 资产来假装新发布已经收缩。
 
-`scripts/build.sh pack` 仍生成每架构的 protenix / pxdesign 独立包及整合包；两套独立 venv、安装/升级/回退脚本不删除。`arch` 在本架构检查三包并产生五项 Actions job 间内部中转文件（仅用于跨 runner 汇聚，不是交付附件）；`aggregate` 要求两架构十项内部材料，校验六包、BUILD_INFO、ELF/CGo、来源 commit 后，仅复制两个整合包并生成一份校验文件到全新空目录；`verify` 要求恰好三项并再次检查两包和校验；`uploaded` 也只接受三项远端名字/大小（不是远端内容重新下载证明）。
+`./build.sh pack` 仍生成每架构的 protenix / pxdesign 独立包及整合包；两套独立 venv、安装/升级/回退脚本不删除。`arch` 在本架构检查三包并产生五项 Actions job 间内部中转文件（仅用于跨 runner 汇聚，不是交付附件）；`aggregate` 要求两架构十项内部材料，校验六包、BUILD_INFO、ELF/CGo、来源 commit 后，仅复制两个整合包并生成一份校验文件到全新空目录；`verify` 要求恰好三项并再次检查两包和校验；`uploaded` 也只接受三项远端名字/大小（不是远端内容重新下载证明）。
 
-Release workflow 只上传 `tmp/release-assets/*`，不再把它复制回有内部/旧包的 `build/upload_tmp_dir`。非空输出目录/多余 stale 文件均拒绝。三段 release → Build（内含双原生 runner）→ RemoveOldRelease 不改，`scripts/git_tag.sh` 的无参入口/自动版本不改、无新参数；本轮只增量修复缺失旧tag/release时的幂等清理，真实错误仍失败。v0.0.2在本地和远端清理处均显式保留。
+Release workflow 只上传 `tmp/release-assets/*`，不再把它复制回有内部/旧包的 `build/upload_tmp_dir`。非空输出目录/多余 stale 文件均拒绝。三段 release → Build（内含双原生 runner）→ RemoveOldRelease 不改，`./git_tag.sh` 的无参入口/自动版本不改、无新参数；本轮只增量修复缺失旧tag/release时的幂等清理，真实错误仍失败。v0.0.2在本地和远端清理处均显式保留。
 
 独立包改为内部产物，并未以删除独立安装路径来减少附件。但现有独立包没有随包原生资源协调入口时仍会明确失败，不能回退旧 curl。**独立安装完整闭环仍未验证，也不因保留脚本就宣称已修好**；需要独立交付时必须验证协调入口与配置绑定，而不是直接重新挂附件。
 
@@ -89,7 +89,7 @@ L1工程：本地单测/race/build/发版契约检查；L2：唯一下载owner�
 
 仍缺：基于最终提交的新双架构Actions包、从公开资产下载复核、正式根全新环境重建/安装、root/systemd常驻、真实v1/no-MSA与preview/no-MSA任务产物、卸载闭环；独立runtime协调入口/完整安装兼容性也未验收。未发现仓库外部审查完成证据，只有已标边界的本地源码/测试审查。本轮已修复模板/实例清理的不存在no-op：12项离线stub命令回归覆盖不存在、存在、权限/网络/服务器/删除错误；实例另验证v0.0.2保护分支。没有执行真实清理。工作流已恢复为原模板三段触发（tag `v*` / `workflow_dispatch` → `release` → `Build`（内含 `build_native` 双原生构建、内部中转汇总与包内容/资源门禁 smoke）→ `RemoveOldRelease`），不使用分支候选 artifact 发布路线。
 
-所以“实现与本地检查完成”不等于“允许现在声称正式发版验收完成”。本切片在主端收回证据前不执行 `scripts/git_tag.sh`；受保护config_local仅hash，bb_sources/show_yeah未改；原未提交README验收计划链接和计划文件保留、不混提交。
+所以“实现与本地检查完成”不等于“允许现在声称正式发版验收完成”。本切片在主端收回证据前不执行 `./git_tag.sh`；受保护config_local仅hash，bb_sources/show_yeah未改；原未提交README验收计划链接和计划文件保留、不混提交。
 
 ## AT-1 接续快照（DevBuild → DevFull 独立只读审查，2026-11-24 UTC+8）
 

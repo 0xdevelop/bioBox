@@ -1,7 +1,7 @@
 //go:build ignore
 
 // gen_api_docs.go 是 build-tag 隔离的文档生成器（与 tools.go 同款隔离方式，不属于任何包、
-// 不进任何构建），只由scripts/gen_api_docs.sh 经 `go run scripts/gen_api_docs.go [version]` 调用。
+// 不进任何构建），只由 gen_api_docs.sh 经 `go run gen_api_docs.go [version]` 调用。
 // 它从 bb_api_supported_methods 方法注册表生成对外文档 bb_docs/api_methods.md；生成物禁止手改。
 package main
 
@@ -86,7 +86,7 @@ func writeMethodsDoc(methods []bb_api_supported_methods.SupportedMethod, version
 	var doc strings.Builder
 	fmt.Fprintf(
 		&doc,
-		"> 本文件由 `scripts/gen_api_docs.sh` 从方法注册表生成（%s，共 %d 个方法），禁止手改；新增方法后重新执行生成。\n",
+		"> 本文件由 `gen_api_docs.sh` 从方法注册表生成（%s，共 %d 个方法），禁止手改；新增方法后重新执行生成。\n",
 		version, len(methods),
 	)
 

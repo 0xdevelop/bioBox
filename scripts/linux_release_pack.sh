@@ -1,9 +1,7 @@
 #!/bin/bash
 # 只构建，不 bump 版本、不打 tag、不 push、不装系统服务。
-# 用法：
-#   ./scripts/build.sh [--help]
-#   ./scripts/build.sh [all|pack|protenix|pxdesign] [release|test|debug] [linux_amd64|linux_arm64|both|*.yaml]
-# 默认 TARGET=all：双 arch 发布包 + bb_prefix/protenix + bb_prefix/pxdesign（两套独立 venv）。
+# Linux 发行打包阶段。总入口是根目录 ./build.sh pack。
+#   ./build.sh pack [release|test|debug] [linux_amd64|linux_arm64|both|*.yaml]
 # 发布包（每个 arch）：
 #   独立单产品包 protenix_/pxdesign_linux_<arch>_<mode>_<version>.zip：install_<app>.sh，默认 ~/.local/share/<app>
 #   整合包 bioBox_linux_<arch>_<mode>_<version>.zip：root 跑 install_bioBox.sh，
@@ -25,18 +23,12 @@ export PREFIX_ROOT PROTENIX_PREFIX PXDESIGN_PREFIX
 usage() {
   cat <<'EOF'
 Usage:
-  ./scripts/build.sh [--help]
-  ./scripts/build.sh [all|pack|protenix|pxdesign] [release|test|debug] [linux_amd64|linux_arm64|both|*.yaml]
+  ./build.sh pack [release|test|debug] [linux_amd64|linux_arm64|both|*.yaml]
 
-Targets (default: all):
-  all       双 arch 发布包 + bb_prefix/protenix + bb_prefix/pxdesign
-  pack      只打发布包到 build/upload_tmp_dir/：
+Packs Linux release zips into build/upload_tmp_dir/：
             <app>_linux_<arch>_<mode>_<version>.zip（独立单产品包，protenix / pxdesign）
             bioBox_linux_<arch>_<mode>_<version>.zip（整合包：服务二进制 + install 脚本 +
             systemd 单元 + conf/config.yaml + runtime/{protenix,pxdesign}）
-  protenix  只安装/校验 bb_prefix/protenix（uv + Python 3.14 + torch cu130）
-  pxdesign  只安装/校验 bb_prefix/pxdesign（独立 venv；复用 scripts/suites/pxdesign/install_prefix_pxdesign.sh）
-
 Idempotency:
   已就绪则跳过。强制重做：FORCE_PROTENIX=1 / FORCE_PXDESIGN=1 / FORCE_PACK=1
   或 RECREATE_VENV=1 传给 protenix 安装脚本。
@@ -45,14 +37,14 @@ Prefix:
   PREFIX_ROOT=<dir>     安装到 <dir>/{protenix,pxdesign}（默认 <repo>/bb_prefix）
 
 Notes:
-  - 不做发布（发版走 scripts/git_tag.sh / Actions）
+  - 不做发布（发版走根目录 git_tag.sh / Actions）
   - 不合并两个 prefix venv；不用 Docker / conda / Python 3.11
   - 版本号来自 bb_build/gen_pre_build_config_*.yaml（由 scripts/gen_pre_build_config.sh 生成）
   - BUILD_INFO：工作区相对 HEAD dirty 时 commit 带 -dirty 后缀，并写 dirty=1
   - 交付 zip 前应先提交再 FORCE_PACK=1 打包，使 BUILD_INFO.commit == HEAD
   - 服务二进制用 cgo（SQLite）：目标 arch 与本机不同时需交叉编译器，
     默认 x86_64-linux-gnu-gcc / aarch64-linux-gnu-gcc，可用 CC_linux_amd64 / CC_linux_arm64 指定
-  - 前端与 test_ui 由 scripts/gen_frontend.sh、scripts/gen_test_ui.sh 现场构建（需 bun）
+  - 前端与 test_ui 由根目录 gen_frontend.sh、gen_test_ui.sh 现场构建（需 bun）
 EOF
 }
 
@@ -76,7 +68,7 @@ ensure_zip() {
 }
 
 # --- arg parse ---
-TARGET="all"
+TARGET="pack"
 RUN_MODE_ARG="release"
 ARCH_ARGS=()
 
@@ -87,12 +79,11 @@ fi
 
 if [[ $# -gt 0 ]]; then
   case "$1" in
-    all|pack|protenix|pxdesign)
-      TARGET="$1"
+    pack)
       shift
       ;;
     release|test|debug)
-      # ./scripts/build.sh release linux_arm64（release.yml 用法）→ 等同 pack
+      # ./build.sh release linux_arm64（release.yml 旧位置用法）→ 等同 pack
       TARGET="pack"
       RUN_MODE_ARG="$1"
       shift
@@ -159,18 +150,6 @@ resolve_config() {
   esac
 }
 
-host_arch_selector() {
-  local host_arch
-  host_arch="$(uname -m)"
-  case "${host_arch}" in
-    x86_64|amd64) echo "linux_amd64" ;;
-    aarch64|arm64) echo "linux_arm64" ;;
-    *)
-      echo "${TAG} cannot infer arch from ${host_arch}" >&2
-      exit 1
-      ;;
-  esac
-}
 
 # 解析要打包的 gen yaml 列表（pack / all 用）
 GO_CONFIGS=()
@@ -301,15 +280,22 @@ SERVICE_WEB_READY=0
 # 前端与 test_ui 的 dist 不进仓，go:embed 需要现场构建（每次 build.sh 只构建一次）
 ensure_service_web() {
   [[ "${SERVICE_WEB_READY}" == "1" ]] && return 0
-  ( cd "${project_path}" && bash ./scripts/gen_test_ui.sh && bash ./scripts/gen_frontend.sh )
+  ( cd "${project_path}" && bash ./gen_test_ui.sh && bash ./gen_frontend.sh )
   SERVICE_WEB_READY=1
 }
 
 service_cc() {
-  local host
-  host="$(host_arch_selector)"
-  if [[ "${host}" == "${GOOS_TARGET}_${GOARCH_TARGET}" ]]; then
-    echo "${CC:-gcc}"
+  local host_os host_arch
+  host_os="$(go env GOHOSTOS)"
+  host_arch="$(go env GOHOSTARCH)"
+  if [[ "${host_os}" == "${GOOS_TARGET}" && "${host_arch}" == "${GOARCH_TARGET}" ]]; then
+    if [[ -n "${CC:-}" ]]; then
+      echo "${CC}"
+    elif [[ "${GOOS_TARGET}" == "linux" ]]; then
+      echo "gcc"
+    else
+      echo "cc"
+    fi
     return 0
   fi
   local var="CC_${GOOS_TARGET}_${GOARCH_TARGET}" cc
@@ -453,101 +439,6 @@ build_pack() {
   ls -la build/upload_tmp_dir/*_"${RUN_MODE_ARG}"_*.zip
 }
 
-protenix_prefix_ready() {
-  local p="${PROTENIX_PREFIX}"
-  local venv="${p}/venv"
-  [[ "${FORCE_PROTENIX:-0}" == "1" ]] && return 1
-  [[ "${RECREATE_VENV:-0}" == "1" ]] && return 1
-  [[ -x "${venv}/bin/protenix" ]] || return 1
-  [[ -x "${venv}/bin/python" ]] || return 1
-  local pyv
-  pyv="$("${venv}/bin/python" -c 'import sys;print("%d.%d.%d"%sys.version_info[:3])')"
-  [[ "${pyv}" == 3.14.* ]] || return 1
-  local model="protenix_base_default_v1.0.0"
-  if [[ -f "${p}/conf/protenix.env" ]]; then
-    local m
-    m="$(sed -n 's/^PROTENIX_MODEL=//p' "${p}/conf/protenix.env" | tail -n1 | tr -d '"')"
-    [[ -n "${m}" ]] && model="${m}"
-  fi
-  model="${PROTENIX_MODEL:-${model}}"
-  local data_root="${p}/data"
-  if [[ -f "${p}/conf/protenix.env" ]]; then
-    local d
-    d="$(sed -n 's/^PROTENIX_ROOT_DIR=//p' "${p}/conf/protenix.env" | tail -n1 | tr -d '"')"
-    [[ -n "${d}" ]] && data_root="${d}"
-  fi
-  [[ -s "${data_root}/checkpoint/${model}.pt" ]] || return 1
-  [[ -f "${p}/conf/pip-freeze.txt" ]] || return 1
-  return 0
-}
-
-build_protenix() {
-  echo "${TAG} PREFIX_ROOT=${PREFIX_ROOT} PROTENIX_PREFIX=${PROTENIX_PREFIX}"
-  if protenix_prefix_ready; then
-    echo "${TAG} skip protenix prefix (venv+CLI+weights ready at ${PROTENIX_PREFIX})"
-    return 0
-  fi
-  local src="${project_path}/build_srcs/protenix"
-  [[ -d "${src}" ]] || { echo "${TAG} missing ${src}; run git submodule update --init --recursive" >&2; exit 1; }
-  echo "${TAG} install ${PROTENIX_PREFIX}"
-  PROTENIX_SRC="${src}" PROTENIX_SRC_MODE=git \
-    SRC_SHA="$(git -C "${src}" rev-parse HEAD)" \
-    PROTENIX_OVERRIDES="${project_path}/bb_suites/protenix/deps.txt" \
-    bash "${project_path}/scripts/suites/protenix/install_prefix_protenix.sh"
-  protenix_prefix_ready || { echo "${TAG} FAIL: protenix prefix not ready after install" >&2; exit 1; }
-}
-
-pxdesign_prefix_ready() {
-  local p="${PXDESIGN_PREFIX}"
-  local venv="${p}/venv"
-  [[ "${FORCE_PXDESIGN:-0}" == "1" ]] && return 1
-  [[ -x "${venv}/bin/pxdesign" ]] || return 1
-  [[ -x "${venv}/bin/python" ]] || return 1
-  local pyv
-  pyv="$("${venv}/bin/python" -c 'import sys;print("%d.%d.%d"%sys.version_info[:3])')"
-  [[ "${pyv}" == 3.14.* ]] || return 1
-  [[ -f "${p}/conf/pip-freeze.txt" ]] || return 1
-  [[ -s "${p}/release_data/checkpoint/pxdesign_v0.1.0.pt" ]] || return 1
-  [[ -s "${p}/tool_weights/af2/params_model_1.npz" ]] || return 1
-  return 0
-}
-
-build_pxdesign() {
-  echo "${TAG} PREFIX_ROOT=${PREFIX_ROOT} PXDESIGN_PREFIX=${PXDESIGN_PREFIX}"
-  if pxdesign_prefix_ready; then
-    echo "${TAG} skip pxdesign prefix (independent venv+CLI+weights ready at ${PXDESIGN_PREFIX})"
-    return 0
-  fi
-  local src="${project_path}/build_srcs/pxdesign"
-  [[ -d "${src}" ]] || { echo "${TAG} missing ${src}; run git submodule update --init --recursive" >&2; exit 1; }
-  echo "${TAG} install ${PXDESIGN_PREFIX} (independent venv; not merged with protenix)"
-  PXDESIGN_SRC="${src}" PXDESIGN_SRC_MODE=git \
-    SRC_SHA="$(git -C "${src}" rev-parse HEAD)" \
-    PXDESIGN_OVERRIDES="${project_path}/bb_suites/pxdesign/deps.txt" \
-    bash "${project_path}/scripts/suites/pxdesign/install_prefix_pxdesign.sh"
-  pxdesign_prefix_ready || { echo "${TAG} FAIL: pxdesign prefix not ready after install" >&2; exit 1; }
-}
-
-echo "${TAG} target=${TARGET} mode=${RUN_MODE_ARG} PREFIX_ROOT=${PREFIX_ROOT}"
-case "${TARGET}" in
-  pack)
-    build_pack
-    ;;
-  protenix)
-    build_protenix
-    ;;
-  pxdesign)
-    build_pxdesign
-    ;;
-  all)
-    build_pack
-    build_protenix
-    build_pxdesign
-    ;;
-  *)
-    echo "${TAG} unknown target: ${TARGET}" >&2
-    exit 2
-    ;;
-esac
-
-echo "${TAG} done target=${TARGET}"
+echo "${TAG} linux release pack mode=${RUN_MODE_ARG}"
+build_pack
+echo "${TAG} done linux release pack"

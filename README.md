@@ -9,11 +9,11 @@
 
 ## 仓库目录结构
 
-- 根目录为 `bioBox` Go 服务源码（`main.go`、`resource_cmd.go`、`go.mod`、`bb_ability/`、`bb_api/`、`bb_cli_proc/`、`bb_common/`、`bb_config/`、`bb_custom_cmd/`、`bb_docs/`、`bb_frontend/`、`bb_policy/`、`bb_runtime_resource/`、`bb_storage/`、`bb_test_ui/`、`example_files/`）。
+- 根目录为 `bioBox` Go 服务源码（`main.go`、`resource_cmd.go`、`go.mod`、`bb_ability/`、`bb_api/`、`bb_cli_proc/`、`bb_common/`、`bb_config/`、`bb_custom_cmd/`、`bb_docs/`、`bb_frontend/`、`bb_policy/`、`bb_runtime_resource/`、`bb_storage/`、`bb_test_ui/`、`example_files/`）。`bb_ability` 注册领域能力；`bb_cli_proc` 是这两个计算能力共用的进程执行基础设施，不放进 `bb_ability`。
 - `bb_build/`：构建与预构建配置模板及双架构清单（`pre_build_config_template.yaml`、`gen_pre_build_config_linux_{amd64,arm64}.yaml`）。
 - `build_srcs/`：上游源码 git submodule（`protenix`、`pxdesign`），不修改内部源码。
-- `bb_suites/`：各计算套件依赖覆盖、包装入口与运行期补丁（`protenix/`、`pxdesign/`）。
-- `scripts/`：构建、发版、代码/文档生成、套件前缀安装与测试脚本（`build.sh`、`git_tag.sh`、`gen_*.sh`、`suites/`、`tests/`）。
+- `bb_suites/`：Protenix / PXDesign 的依赖覆盖、包装入口、安装脚本与补丁，不是 Go 领域包。
+- `scripts/`：只留 Linux 打包、前缀安装和检查。`gen_frontend.sh`、`gen_proto.sh`、`git_tag.sh` 在仓库根。根目录 `build.sh` 是总入口。
 - `docs/`：按归属分为 `docs/bb_service/`（服务与 API）、`docs/bb_build/`（构建、发版与验收记录）、`docs/bb_upstream/`（上游资源与单包说明）。
 
 ## 交付物
@@ -130,20 +130,33 @@ UV=/path/to/uv ./install_bioBox.sh
 
 ## 本地构建与开发调试
 
+`./build.sh` 默认按本机编译主包；`./build.sh pack`、`./build.sh protenix`、`./build.sh pxdesign` 分别进入 Linux 发行打包和两个前缀安装。
+
 ```bash
 git clone git@github.com:0xdevelop/bioBox.git && cd bioBox
 git submodule update --init --recursive
+./build.sh --help
+./build.sh                          # 本机 release
+./build.sh test                     # 本机 test
 ./scripts/gen_pre_build_config.sh all
-FORCE_PACK=1 ./scripts/build.sh pack        # 双 arch → build/upload_tmp_dir/ 下的单产品包与整合包
-./scripts/build.sh pack linux_arm64         # 只打一个 arch
+FORCE_PACK=1 ./build.sh pack        # 双 arch Linux 包 → build/upload_tmp_dir/
+./build.sh pack release linux_arm64
 ```
 
-- 需要 Go（`go.mod` 指定版本）、bun（现场构建前端与 test_ui）、zip。服务二进制用 cgo（SQLite），打非本机 arch 时需交叉编译器（默认 `x86_64-linux-gnu-gcc` / `aarch64-linux-gnu-gcc`，可用 `CC_linux_amd64` / `CC_linux_arm64` 指定）。
-- 本地开发运行：示例配置在 `example_files/config_example.yaml`（可复制为被 gitignore 的 `example_files/config_local.yaml`），默认端口：JSON-RPC `13001`、MCP `13002`、test_ui `13003`、WebSocket `13004`、gRPC `13005`、frontend `13006`。`./scripts/gen_frontend.sh && ./scripts/gen_test_ui.sh && go run .`（或 `go build -o bb_service .`）。
+- 无参数、`release`、`test`、`debug` 不打 Linux 双架构包，也不安装 CUDA 前缀。SQLite 沿用本机 CGO，脚本不把 `CGO_ENABLED` 设成 0，也不改 `GOOS`。
+- `pack` / `all` / `protenix` / `pxdesign` 仍是 Linux 发行与 CUDA 13 前缀安装。Actions 调用 `bash ./build.sh pack release linux_<arch>`。在 macOS 上打 Linux 包会要求对应交叉编译器。
+- 不经过 `build.sh` 时用 `go build -o bioBox .`。`bioBox.exe` 只在 Windows 上执行根 `./build.sh` 时生成，不是这条手工命令的产物。仓库不另加 Windows 脚本。
+- 需要 Go（`go.mod` 指定版本）、bun（现场构建前端与 test_ui）、打 zip 时还要 zip。打非本机 Linux arch 时交叉编译器默认 `x86_64-linux-gnu-gcc` / `aarch64-linux-gnu-gcc`，可用 `CC_linux_amd64` / `CC_linux_arm64` 指定。
+- 配置读可执行文件目录下的 `conf/config.yaml`。文件不存在时生成缺省配置。`example_files/config_example.yaml` 是示例，可复制成被 gitignore 的 `example_files/config_local.yaml` 作人工参考；进程不自动读它。默认端口：JSON-RPC `13001`、MCP `13002`、test_ui `13003`、WebSocket `13004`、gRPC `13005`、frontend `13006`。
+- GoLand 共享配置 `.run/bioBox-debug.run.xml` 的 Run kind 是 Package，编译主包 `github.com/0xdevelop/bioBox`，工作目录 `$PROJECT_DIR$`。启动前用 bun 构建 `bb_test_ui/web` 和 `bb_frontend`。
 - 发布包交付前先提交、再 `FORCE_PACK=1`，让 `BUILD_INFO.txt` 的 commit 对齐 HEAD。
-- 发版入口是无参 `./scripts/git_tag.sh`（模板三段：`release` → `Build` → `RemoveOldRelease`）。Actions 在该结构内用 `ubuntu-24.04`（amd64）和 `ubuntu-24.04-arm`（arm64）做原生构建与六包内部完整性校验，最终仅发布两整合包 + `SHA256SUMS`；`scripts/build.sh` 只负责构建。见[模板审计与恢复说明](docs/bb_build/release_template_audit.md)及[原生双架构说明](docs/bb_build/native_release.md)。
+- 发版入口是无参 `./git_tag.sh`（模板三段：`release` → `Build` → `RemoveOldRelease`）。Actions 在该结构内用 `ubuntu-24.04`（amd64）和 `ubuntu-24.04-arm`（arm64）做原生构建与六包内部完整性校验，最终仅发布两整合包 + `SHA256SUMS`；根 `./build.sh pack` 负责 Linux 打包。见[模板审计与恢复说明](docs/bb_build/release_template_audit.md)及[原生双架构说明](docs/bb_build/native_release.md)。
 
-`./scripts/build.sh` 子命令：`pack` 只打发布包（不跑 GPU/pip）；`protenix` / `pxdesign` 只在仓库内 `bb_prefix/` 装/校验开发用运行时（uv + Python 3.14 + torch cu130，GPU 验证用，不是正式安装）；`all`（默认）先打包再装两个 prefix。幂等：已就绪的步骤跳过；`FORCE_PACK=1` / `FORCE_PROTENIX=1` / `FORCE_PXDESIGN=1` 强制重做。
+`pack` 只打发布包（不跑 GPU/pip）。`protenix` / `pxdesign` 只在仓库内 `bb_prefix/` 装/校验开发用运行时（uv + Python 3.14 + torch cu130，GPU 验证用，不是正式安装）。`all` 先打包再装两个 prefix。幂等：已就绪的步骤跳过；`FORCE_PACK=1` / `FORCE_PROTENIX=1` / `FORCE_PXDESIGN=1` 强制重做。无参数的根 `./build.sh` 不调用这两条安装路径。
+
+这台 Mac 上 Protenix 与 pxdesign 的计算不能跑，模型推理没有在本机运行。使用层（API、任务、debug web UI）不依赖本机已经跑通模型；这不是本机已经启动并验证过使用层。依据：`scripts/suites/protenix/install_prefix_protenix.sh` 与 `scripts/suites/pxdesign/install_prefix_pxdesign.sh` 要求 CUDA 13（`nvcc`、torch cu130、CUDA 可用）；`build_srcs/protenix` 与 `build_srcs/pxdesign` 是未检出的空目录；本仓没有这两个程序的本机二进制。Linux 的 `pack` / `protenix` / `pxdesign` 保留。
+
+`tmp/`、`build/`、`bb_prefix/`、前端 `dist/` 和 `node_modules/` 都是可再生成产物，不进 git，也不能当成配置或权重事实。本次不删除 `tmp/`。CI 的 bun 只写 `oven-sh/setup-bun@v2` 的 `bun-version: latest`，仓库没有钉死次版本。本机 bun 1.4.5，`tmp/build-host.log` 里 `bun install v1.4.5` 安装后编过前端。
 
 ## 任务查询与只读步进
 
@@ -152,7 +165,7 @@ FORCE_PACK=1 ./scripts/build.sh pack        # 双 arch → build/upload_tmp_dir/
 ## 当前套件与版本机制边界
 
 - 当前仅包含两套硬编码套件：`protenix`（默认 `v1`、`use_msa=false`；`cli_cfg.protenix.version_runtimes.v2.binary` 默认为空并拒绝未配置启动）与 `pxdesign`（固定 `PINNED_PROTENIX_REF=d18aa1daadd02a001b32bc7fa2278fc8a2f8f025`、`preview`、`use_msa=false`）。
-- 暂未建立任意多套件或同名多版本目录轴；扩充新套件需同步更新 `bb_build/pre_build_config_template.yaml`、`bb_suites/<suite>/`、`scripts/suites/<suite>/`、`scripts/build.sh`、`example_files/install_bioBox.sh` 与 `scripts/install_common.sh`。
+- 暂未建立任意多套件或同名多版本目录轴；扩充新套件需同步更新 `bb_build/pre_build_config_template.yaml`、`bb_suites/<suite>/`、`scripts/suites/<suite>/`、`scripts/linux_release_pack.sh`、`scripts/suites/protenix/install_prefix_protenix.sh`、`scripts/suites/pxdesign/install_prefix_pxdesign.sh`、`example_files/install_bioBox.sh` 与 `scripts/install_common.sh`。
 
 ## 两套 Python 环境不可合并
 

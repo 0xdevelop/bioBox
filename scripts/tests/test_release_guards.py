@@ -6,7 +6,7 @@ with tempfile.TemporaryDirectory(dir=repo/"tmp",prefix="protected-test-") as d:
  for name in ["git","gh"]:
   p=bin/name;p.write_text('#!/bin/bash\nprintf "%s\\n" "$*" >> "$CALL_LOG"\nexit 91\n');p.chmod(0o755)
  env={"PATH":str(bin)+os.pathsep+os.environ["PATH"],"CALL_LOG":str(log),"APP_OLD_VERSION":"v0.0.2","GITHUB_REPOSITORY":"0xdevelop/bioBox"}
- src=(repo/"scripts/git_tag.sh").read_text()
+ src=(repo/"git_tag.sh").read_text()
  local=re.search(r'    if \[\[ "v\$\{pre_del_version_no\}" == v0\.0\.2 \]\]; then.*?    fi',src,re.S).group(0)
  wf=(repo/".github/workflows/release.yml").read_text()
  remote=re.search(r'          if \[\[ "\$APP_OLD_VERSION" == v0\.0\.2 \]\]; then.*?          fi',wf,re.S).group(0)

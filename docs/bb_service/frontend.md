@@ -30,10 +30,10 @@ frontend_cfg:
 
 `bb_frontend/package.json` 的 `build` 使用 Bun 原生构建 TypeScript/CSS，无第三方前端依赖。`bb_frontend/dist/` 不入仓，由 `//go:embed` 随 Go 二进制发布，部署时不依赖 Bun 或源码目录。
 
-GoLand 共享 Run/Debug 配置和 `scripts/build.sh` 均在 Go 编译前构建 `bb_test_ui/web` 和 `bb_frontend`。命令行运行：
+GoLand 共享 Run/Debug 配置（Run kind = Package，编译整个主包）和根 `./build.sh` 均在 Go 编译前构建 `bb_test_ui/web` 和 `bb_frontend`。命令行运行：
 
 ```bash
-./scripts/gen_test_ui.sh && ./scripts/gen_frontend.sh && go run .
+./gen_test_ui.sh && ./gen_frontend.sh && go run .
 ```
 
 共享配置中的 `NpmBeforeRunTask` 是 JetBrains 固定任务标识，两个构建任务均通过 `package-manager: bun` 明确使用 Bun。GoLand 的构建输出位于启动前任务控制台；服务启动日志中的 `Frontend Run On` 仅在 `frontend_cfg.enabled` 时出现。

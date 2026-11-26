@@ -9,13 +9,13 @@
 - 受保护方法使用任务属主的凭证；API key 放在 `Authorization: Bearer <api_key>`，一次调用只带一种凭证，不再在 arguments 放另一份。不要把密钥写入输入文件、日志、截图或共享命令记录。
 - **release 不加载 test_ui**，即使配置 `test_ui_cfg.enabled: true` 也不会提供 `/flow_debug.html` 或 test_ui 的 `/docs_api`。正式服务可直接调用以下任务 API，不依赖调试页。
 
-| 二进制运行模式 | 相对工作目录读取的配置 | test_ui 条件 |
+| 二进制运行模式 | 配置文件 | test_ui 条件 |
 |---|---|---|
-| debug | `example_files/config_local.yaml` | `test_ui_cfg.enabled: true`，有效的 bind_address 与 port |
-| test | `conf/config.yaml` | 同上 |
-| release | `conf/config.yaml` | 不加载 |
+| debug | 可执行文件目录下的 `conf/config.yaml` | `test_ui_cfg.enabled: true`，有效的 bind_address 与 port |
+| test | 同上 | 同上 |
+| release | 同上 | 不加载 |
 
-模式在构建时确定，不是 URL 参数或配置开关；服务子项目的 `bash scripts/build.sh test` 生成 test 模式产物，构建前置条件见[服务说明](../../README.md#本地构建与开发调试)。不要用 release 二进制尝试“打开调试模式”。
+模式在构建时确定，不是 URL 参数或配置开关。`./build.sh test` 生成本机 test 模式主程序；`./build.sh pack test linux_<arch>` 才是 Linux 打包且运行模式为 test。构建前置条件见[服务说明](../../README.md#本地构建与开发调试)。不要用 release 二进制尝试“打开调试模式”。进程不自动读取 `example_files/config_local.yaml`。
 
 ### 隔离运行调试页
 
