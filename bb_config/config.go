@@ -33,7 +33,7 @@ const (
 	// DefaultSessionIssuer / DefaultSessionAudience preserve JWT compatibility with published v0.0.3 clients.
 	DefaultSessionIssuer   = "protenix_service"
 	DefaultSessionAudience = "protenix_service"
-	apiPortDefault         = 7095
+	apiPortDefault         = 17168
 )
 
 var (
@@ -52,10 +52,10 @@ type FileConfig struct {
 	LegacyMysql *bb_storage_config.LegacyMysqlConfig `yaml:"mysql_cfg" json:"mysql_cfg" toml:"mysql_cfg"`
 	ApiCfg      *bb_api_config.ApiConfig             `toml:"api_cfg" yaml:"api_cfg" json:"api_cfg" comment:"API configurations"`
 	FrontendCfg *bb_frontend_config.FrontendConfig   `yaml:"frontend_cfg" json:"frontend_cfg" toml:"frontend_cfg" comment:"前端页面服务配置"`
-	TestUICfg   *TestUIConfig                     `yaml:"test_ui_cfg" json:"test_ui_cfg" toml:"test_ui_cfg" comment:"开发测试台"`
+	TestUICfg   *TestUIConfig                        `yaml:"test_ui_cfg" json:"test_ui_cfg" toml:"test_ui_cfg" comment:"开发测试台"`
 	AuthCfg     *bb_api_auth_config.AuthConfig       `yaml:"auth_cfg" json:"auth_cfg" toml:"auth_cfg" comment:"Auth configurations"`
 	PolicyCfg   *bb_policy_config.PolicyConfig       `yaml:"policy_cfg" json:"policy_cfg" toml:"policy_cfg" comment:"Policy scheduling configurations"`
-	CliCfg      *CLIConfig                        `yaml:"cli_cfg" json:"cli_cfg" toml:"cli_cfg" comment:"原生 CLI 接线（protenix-run / pxdesign-run）"`
+	CliCfg      *CLIConfig                           `yaml:"cli_cfg" json:"cli_cfg" toml:"cli_cfg" comment:"原生 CLI 接线（protenix-run / pxdesign-run）"`
 }
 
 func buildYAMLCommentMap(cfg interface{}, parentPath string) yaml.CommentMap {
@@ -303,7 +303,6 @@ func generateDefaultConfig() *FileConfig {
 	authGateEnabledDefault := true
 	emailEnabledDefault := false
 	sendIntervalDefault := 60
-	aport := 13001
 	// 生成的缺省配置只监听本机；对外部署由运维改成 0.0.0.0，不在代码里兜底。
 	bindLocal := "127.0.0.1"
 	fileCfg := &FileConfig{
@@ -312,19 +311,19 @@ func generateDefaultConfig() *FileConfig {
 			APICfgJsonRPC: &bb_api_config_jsonRPC.APIConfigJsonRPC{
 				Enabled:           true,
 				BindAddress:       bindLocal,
-				Port:              aport,
+				Port:              apiPortDefault,
 				EncryptionEnabled: false,
 			},
 			APICfgMCP: &bb_api_config_mcp.APIConfigMCP{
 				Enabled:          true,
 				BindAddress:      bindLocal,
-				Port:             aport + 1,
+				Port:             apiPortDefault + 1,
 				MCPTransportType: bb_api_config_mcp.MCPTransportTypeStreamableHTTP,
 			},
 			APICfgWebSocket: &bb_api_config_websocket.APIConfigWebSocket{
 				Enabled:     true,
 				BindAddress: bindLocal,
-				Port:        aport + 3,
+				Port:        apiPortDefault + 3,
 				AllowedOrigins: []string{
 					"127.0.0.1:*",
 					"localhost:*",
@@ -333,18 +332,18 @@ func generateDefaultConfig() *FileConfig {
 			APICfgGRPC: &bb_api_config_grpc.APIConfigGRPC{
 				Enabled:     true,
 				BindAddress: bindLocal,
-				Port:        aport + 4,
+				Port:        apiPortDefault + 4,
 			},
 		},
 		FrontendCfg: &bb_frontend_config.FrontendConfig{
 			Enabled:     true,
 			BindAddress: bindLocal,
-			Port:        aport + 5,
+			Port:        apiPortDefault + 5,
 		},
 		TestUICfg: &TestUIConfig{
 			Enabled:     true,
 			BindAddress: bindLocal,
-			Port:        aport + 2,
+			Port:        apiPortDefault + 2,
 		},
 		PolicyCfg: &bb_policy_config.PolicyConfig{
 			MaxWorkers:                   1,
