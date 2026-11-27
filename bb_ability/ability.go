@@ -3,6 +3,8 @@ package bb_ability
 
 import (
 	"context"
+	"github.com/0xdevelop/bioBox/bb_ability/bb_ability_adapter_protenix"
+	"github.com/0xdevelop/bioBox/bb_ability/bb_ability_adapter_pxdesign"
 	"github.com/0xdevelop/bioBox/bb_ability/bb_ability_resource"
 
 	"github.com/0xdevelop/bioBox/bb_ability/bb_ability_protenix"
@@ -38,6 +40,8 @@ func LoadAbilityAPIMethods() {
 	bb_ability_user_profile.LoadAPIMethods()
 	bb_ability_task.LoadAPIMethods()
 	bb_ability_resource.LoadAPIMethods()
+	bb_ability_adapter_protenix.Load()
+	bb_ability_adapter_pxdesign.Load()
 	bb_ability_protenix.LoadAPIMethods()
 	bb_ability_pxdesign.LoadAPIMethods()
 }

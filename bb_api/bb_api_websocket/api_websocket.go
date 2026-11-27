@@ -12,6 +12,7 @@ import (
 
 	"github.com/0xdevelop/bioBox/bb_api/bb_api_auth/bb_api_auth_session"
 	"github.com/0xdevelop/bioBox/bb_api/bb_api_common"
+	"github.com/0xdevelop/bioBox/bb_api/bb_api_config"
 	"github.com/0xdevelop/bioBox/bb_api/bb_api_executer"
 	"github.com/0xdevelop/bioBox/bb_api/bb_api_jsonRPC/bb_api_jsonRPC_protocol"
 	"github.com/0xdevelop/bioBox/bb_api/bb_api_jsonRPC/bb_api_jsonRPC_request"
@@ -176,9 +177,7 @@ func processWebSocketRequest(
 	return responsePayload, false, err
 }
 
-func StartAPIServiceWithWebSocket(
-	apiCfgWebSocket *bb_api_config_websocket.APIConfigWebSocket,
-) {
+func StartAPIServiceWithWebSocket(apiCfgWebSocket *bb_api_config_websocket.APIConfigWebSocket) {
 	if apiCfgWebSocket == nil {
 		gtbox_log.LogErrorf("WebSocket API config is nil")
 		return
@@ -194,7 +193,7 @@ func StartAPIServiceWithWebSocket(
 	}
 
 	addr := net.JoinHostPort(apiCfgWebSocket.BindAddress, strconv.Itoa(apiCfgWebSocket.Port))
-	listener, err := net.Listen("tcp", addr)
+	listener, err := net.Listen("tcp4", addr)
 	if err != nil {
 		gtbox_log.LogErrorf("Failed to start WebSocket server: %v", err)
 		return
@@ -208,8 +207,16 @@ func StartAPIServiceWithWebSocket(
 	}
 	webSocketCancel = cancel
 	webSocketHTTPServer = server
+
+	addr_show := addr
+	is_pub_serving := false
+
+	if apiCfgWebSocket.BindAddress == "0.0.0.0" {
+		addr_show = net.JoinHostPort("127.0.0.1", strconv.Itoa(apiCfgWebSocket.Port))
+		is_pub_serving = true
+	}
 	go func() {
-		gtbox_log.LogInfof("WebSocket server Run On  [ws://%s]", addr)
+		gtbox_log.LogInfof("WebSocket server Run On  [ws://%s] Remote On[ws://%s] Pub Serving [%v]", addr_show, net.JoinHostPort(bb_api_config.LatestActiveIPWithLocal, strconv.Itoa(apiCfgWebSocket.Port)), is_pub_serving)
 		if serveErr := server.Serve(listener); serveErr != nil &&
 			!errors.Is(serveErr, http.ErrServerClosed) {
 			gtbox_log.LogErrorf(

@@ -111,14 +111,14 @@ type proxyResponse struct {
 	ProtocolError bool                `json:"protocolError,omitempty"`
 }
 
-// LoadTestWeb 启动开发测试台。test_ui_cfg.enabled 为 false 时不启动。
+// LoadTestWeb 按 test_ui_cfg.enabled 监听调试台。关闭时不监听，不移除 embed。
 func LoadTestWeb() {
 	loadTestWebOnce.Do(func() {
-		if bb_config.GlobalConfig == nil || bb_config.GlobalConfig.TestUICfg == nil || !bb_config.GlobalConfig.TestUICfg.Enabled {
+		if bb_config.GlobalConfig == nil || !bb_config.TestUIEnabled() {
 			return
 		}
 		uiCfg := bb_config.GlobalConfig.TestUICfg
-		if strings.TrimSpace(uiCfg.BindAddress) == "" || uiCfg.Port < 1 || uiCfg.Port > 65535 {
+		if uiCfg == nil || strings.TrimSpace(uiCfg.BindAddress) == "" || uiCfg.Port < 1 || uiCfg.Port > 65535 {
 			gtbox_log.LogErrorf("Failed to start test UI: test_ui_cfg.bind_address and port are required")
 			return
 		}
@@ -129,7 +129,9 @@ func LoadTestWeb() {
 			return
 		}
 
-		listener, err := listen(uiCfg.BindAddress, uiCfg.Port)
+		addr := net.JoinHostPort(uiCfg.BindAddress, strconv.Itoa(uiCfg.Port))
+
+		listener, err := net.Listen("tcp4", addr)
 		if err != nil {
 			gtbox_log.LogErrorf("Failed to start test UI: %v", err)
 			return
@@ -151,9 +153,15 @@ func LoadTestWeb() {
 			WriteTimeout:      70 * time.Second,
 			IdleTimeout:       60 * time.Second,
 		}
+		addr_show := addr
+		is_pub_serving := false
+		if uiCfg.BindAddress == "0.0.0.0" {
+			addr_show = net.JoinHostPort("127.0.0.1", strconv.Itoa(uiCfg.Port))
+			is_pub_serving = true
+		}
 
 		go func() {
-			gtbox_log.LogInfof("Test UI Run On  [http://%s]", listener.Addr().String())
+			gtbox_log.LogInfof("Test UI Run On  [http://%s] Remote On[http://%s] Pub Serving [%v]", addr_show, net.JoinHostPort(bb_api_config.LatestActiveIPWithLocal, strconv.Itoa(uiCfg.Port)), is_pub_serving)
 			if serveErr := server.Serve(listener); serveErr != nil &&
 				!errors.Is(serveErr, http.ErrServerClosed) {
 				gtbox_log.LogErrorf("Test UI stopped unexpectedly: %v", serveErr)
@@ -663,7 +671,7 @@ func dialLoopback(ctx context.Context, address string) (net.Conn, error) {
 		return nil, errors.New("only loopback targets are allowed")
 	}
 	dialer := net.Dialer{Timeout: 10 * time.Second}
-	return dialer.DialContext(ctx, "tcp", address)
+	return dialer.DialContext(ctx, "tcp4", address)
 }
 
 func mergeGRPCMetadata(headers metadata.MD, trailers metadata.MD) map[string][]string {

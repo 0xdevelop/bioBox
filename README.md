@@ -7,6 +7,16 @@
 - **独立使用**：单产品包，`install_<app>.sh` 装到 `~/.local/share/<app>`（`<APP>_PREFIX` 可改），不需要 sudo。
 - **与 Go 服务一起安装**：整合包，root 跑 `install_bioBox.sh`，按 Go 模板 install 体系把服务和两个运行时统一装到 `/bioBox`（运行时目录由脚本显式传入，不读独立模式的默认值）。
 
+## 运行流程
+
+这是承载关系说明，不是业务前端。程序级 runtime（选配置、监听、调度、容错）承载挂上去的业务。存储不单列成步骤。API 执行器不指向存储。
+
+bioBox 在这层上面挂 Protenix（v1 / v2）和 pxdesign。两条各自先做同一套前置检查，参数和阈值不同，符合才调用。
+
+test_ui 是多协议 API 调试台。`bb_frontend` 是带登录的业务 Web，通过 MCP 提交两种计算并查询任务状态。内嵌页面使用当前主机和服务配置的 MCP 端口。
+
+图：[docs/biobox_runtime.html](docs/biobox_runtime.html)。同关系说明：[docs/biobox_runtime.md](docs/biobox_runtime.md)。
+
 ## 仓库目录结构
 
 - 根目录为 `bioBox` Go 服务源码（`main.go`、`resource_cmd.go`、`go.mod`、`bb_ability/`、`bb_api/`、`bb_cli_proc/`、`bb_common/`、`bb_config/`、`bb_custom_cmd/`、`bb_docs/`、`bb_frontend/`、`bb_policy/`、`bb_runtime_resource/`、`bb_storage/`、`bb_test_ui/`、`example_files/`）。`bb_ability` 注册领域能力；`bb_cli_proc` 是这两个计算能力共用的进程执行基础设施，不放进 `bb_ability`。
@@ -126,7 +136,7 @@ UV=/path/to/uv ./install_bioBox.sh
 | `/bioBox/runtime/uv/` | uv 托管的 Python 解释器（venv 依赖它）与 uv 缓存 |
 | `/etc/systemd/system/bioBox.service` | systemd 单元 |
 
-服务通过 `conf/config.yaml` 的 `cli_cfg` 调用 `/bioBox/runtime/<app>/bin/<app>-run`。`protenix` 的 v2 需要授权权重，`cli_cfg.protenix.version_runtimes.v2.binary` 默认为空（未配置时直接拒绝，不回退 v1）。
+同机整合安装时，两条 `host` 留空，服务在本机 exec `/bioBox/runtime/<app>/bin/<app>-run`。分机时给那一条填 `host`（本机 ssh 的目标，如 `user@gpu-a`），`binary` 写那台机器上的路径；可以只填一条，或填两台不同机器。远程依赖本机 `ssh`。`protenix` 的 v2 需要授权权重，`cli_cfg.protenix.version_runtimes.v2.binary` 默认为空（未配置时直接拒绝，不回退 v1）。
 
 ## 本地构建与开发调试
 
@@ -147,14 +157,14 @@ FORCE_PACK=1 ./build.sh pack        # 双 arch Linux 包 → build/upload_tmp_di
 - `pack` / `all` / `protenix` / `pxdesign` 仍是 Linux 发行与 CUDA 13 前缀安装。Actions 调用 `bash ./build.sh pack release linux_<arch>`。在 macOS 上打 Linux 包会要求对应交叉编译器。
 - 不经过 `build.sh` 时用 `go build -o bioBox .`。`bioBox.exe` 只在 Windows 上执行根 `./build.sh` 时生成，不是这条手工命令的产物。仓库不另加 Windows 脚本。
 - 需要 Go（`go.mod` 指定版本）、bun（现场构建前端与 test_ui）、打 zip 时还要 zip。打非本机 Linux arch 时交叉编译器默认 `x86_64-linux-gnu-gcc` / `aarch64-linux-gnu-gcc`，可用 `CC_linux_amd64` / `CC_linux_arm64` 指定。
-- 配置读可执行文件目录下的 `conf/config.yaml`。文件不存在时生成缺省配置。`example_files/config_example.yaml` 是示例，可复制成被 gitignore 的 `example_files/config_local.yaml` 作人工参考；进程不自动读它。默认端口：JSON-RPC `13001`、MCP `13002`、test_ui `13003`、WebSocket `13004`、gRPC `13005`、frontend `13006`。
-- GoLand 共享配置 `.run/bioBox-debug.run.xml` 的 Run kind 是 Package，编译主包 `github.com/0xdevelop/bioBox`，工作目录 `$PROJECT_DIR$`。启动前用 bun 构建 `bb_test_ui/web` 和 `bb_frontend`。
+- debug 读 `example_files/config_local.yaml`；test 与 release 读可执行文件目录下的 `conf/config.yaml`。文件不存在时生成缺省配置。`example_files/config_example.yaml` 是示例，可复制成被 gitignore 的 `config_local.yaml`。默认端口：JSON-RPC `13001`、MCP `13002`、test_ui `13003`、WebSocket `13004`、gRPC `13005`、frontend `13006`。
+- Mac 上选 `bioBox-debug` 调本地 Go 服务。联调 Spark 上的 GPU 时选 `bioBox-remote-debug`，断点仍在 Mac 的 GoLand 中，Go 进程、SQLite 和两套计算工具都在 Spark。两个配置都在编译 Go 主包前构建测试台和业务 Web。
 - 发布包交付前先提交、再 `FORCE_PACK=1`，让 `BUILD_INFO.txt` 的 commit 对齐 HEAD。
 - 发版入口是无参 `./git_tag.sh`（模板三段：`release` → `Build` → `RemoveOldRelease`）。Actions 在该结构内用 `ubuntu-24.04`（amd64）和 `ubuntu-24.04-arm`（arm64）做原生构建与六包内部完整性校验，最终仅发布两整合包 + `SHA256SUMS`；根 `./build.sh pack` 负责 Linux 打包。见[模板审计与恢复说明](docs/bb_build/release_template_audit.md)及[原生双架构说明](docs/bb_build/native_release.md)。
 
 `pack` 只打发布包（不跑 GPU/pip）。`protenix` / `pxdesign` 只在仓库内 `bb_prefix/` 装/校验开发用运行时（uv + Python 3.14 + torch cu130，GPU 验证用，不是正式安装）。`all` 先打包再装两个 prefix。幂等：已就绪的步骤跳过；`FORCE_PACK=1` / `FORCE_PROTENIX=1` / `FORCE_PXDESIGN=1` 强制重做。无参数的根 `./build.sh` 不调用这两条安装路径。
 
-这台 Mac 上 Protenix 与 pxdesign 的计算不能跑，模型推理没有在本机运行。使用层（API、任务、debug web UI）不依赖本机已经跑通模型；这不是本机已经启动并验证过使用层。依据：`scripts/suites/protenix/install_prefix_protenix.sh` 与 `scripts/suites/pxdesign/install_prefix_pxdesign.sh` 要求 CUDA 13（`nvcc`、torch cu130、CUDA 可用）；`build_srcs/protenix` 与 `build_srcs/pxdesign` 是未检出的空目录；本仓没有这两个程序的本机二进制。Linux 的 `pack` / `protenix` / `pxdesign` 保留。
+Protenix 与 pxdesign 封装各自独立。同机时两条 `host` 留空，本机 exec。硬件紧时可以只把其中一条或两条分到别的机器：对应 `cli_cfg` 的 `host` 填 ssh 目标，计算在那台机器上跑。本机没有 CUDA 不影响这边的封装。ssh 不存在、连不上或远端命令失败，只让这一条计算失败。安装脚本、run 包装和 API 方法都保留。
 
 `tmp/`、`build/`、`bb_prefix/`、前端 `dist/` 和 `node_modules/` 都是可再生成产物，不进 git，也不能当成配置或权重事实。本次不删除 `tmp/`。CI 的 bun 只写 `oven-sh/setup-bun@v2` 的 `bun-version: latest`，仓库没有钉死次版本。本机 bun 1.4.5，`tmp/build-host.log` 里 `bun install v1.4.5` 安装后编过前端。
 
@@ -169,7 +179,7 @@ FORCE_PACK=1 ./build.sh pack        # 双 arch Linux 包 → build/upload_tmp_di
 
 ## 两套 Python 环境不可合并
 
-`protenix` 用最新上游；`pxdesign` 链依赖官方钉死的 Protenix v0.5.0+pxd。两者始终是独立 venv：独立模式各自安装；整合模式在 `/bioBox/runtime/` 下由同一个 install 流程安装、升级、卸载。
+`protenix` 用最新上游；`pxdesign` 链依赖官方钉死的 Protenix v0.5.0+pxd。两者始终是独立 venv：独立模式各自安装；同机整合安装放在 `/bioBox/runtime/`，这不是两条命令必须在同一台机器上的配置约束。
 
 更多实现口径见 [系统设计](docs/bb_service/design.md)；机器验收记录见 `docs/bb_build/acceptance_*.md`。
 

@@ -4,7 +4,7 @@
 
 ## 运行栈
 
-- 宿主：CUDA 13、Python 3.14、Node 24 LTS（编排侧）
+- Protenix 与 pxdesign 封装各自独立。`cli_cfg` 里各自有可选 `host`：空则本机 exec，非空则用本机 ssh 在那台机器上跑，两条可以不同。本机没有 CUDA 不影响封装。CUDA 13 与 Python 3.14 是计算那台机器的安装条件，Node 24 LTS 在编排侧。
 - torch：仅从 `https://download.pytorch.org/whl/cu130` 安装 cp314 轮子（当前验证 2.14.1+cu130）
 - 不用 Docker / conda / micromamba；不用 Python 3.11 回退
 
@@ -31,7 +31,7 @@
 
 - 独立模式（单产品包 `install_<app>.sh`）：安装目录默认 `~/.local/share/<app>`（`<APP>_PREFIX` 覆盖），不需要 sudo
 - 整合模式：服务与两个运行时是同一套服务、同一个 zip：root 跑 `install_bioBox.sh`（模板 install 体系，`APP_DIR=/bioBox`），它调用包内 `runtime/<app>/install_<app>.sh` 并显式传入 `<APP>_PREFIX`，运行时固定装到 `/bioBox/runtime/<app>`，uv 托管的 Python 与缓存在 `/bioBox/runtime/uv/`
-- Python 环境和权重不打进 zip：安装时用 uv/pip 现场建 venv，权重由 `bioBox resource prepare` 按配置清单校验/受控下载（`WEIGHTS_REUSE_FROM` 已退役），zip 只带源码快照、依赖覆盖、补丁和脚本
+- Python 环境和权重不打进 zip：安装时用 uv/pip 现场建 venv。调用前由服务层统一前置检查按该组件已配置阈值核对权重和运行环境；缺文件时走 API 方法 `resource.prepare`，不把 `resource` 加回 `main`。`WEIGHTS_REUSE_FROM` 已退役。zip 只带源码快照、依赖覆盖、补丁和脚本
 - `releases/<版本>/` 每版一套 venv；`current` / `previous` 符号链接，`update` 先构建新版本、校验通过再原子切换，失败不动旧版本；`rollback` 切回 `previous`
 - `conf/`（配置）、`data/`（权重）在 `update` 时保留；单个运行时 `install_<app>.sh uninstall` 默认保留、`--purge` 才删；`install_bioBox.sh` 菜单 3 整体卸载会删除整个 `/bioBox`（含权重）
 

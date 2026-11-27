@@ -3,9 +3,6 @@
 package bb_cli_proc
 
 import (
-	"os"
-	"strconv"
-	"strings"
 	"syscall"
 	"time"
 )
@@ -75,36 +72,6 @@ func processGroupHasMembers(pgid int) bool {
 	if pgid <= 0 {
 		return false
 	}
-	entries, err := os.ReadDir("/proc")
-	if err != nil {
-		return processExists(pgid)
-	}
-	for _, entry := range entries {
-		if !entry.IsDir() {
-			continue
-		}
-		pid, convErr := strconv.Atoi(entry.Name())
-		if convErr != nil || pid <= 0 {
-			continue
-		}
-		body, readErr := os.ReadFile("/proc/" + entry.Name() + "/stat")
-		if readErr != nil {
-			continue
-		}
-		// /proc/pid/stat: pid (comm) state ppid pgrp ...
-		text := string(body)
-		closeParen := strings.LastIndex(text, ")")
-		if closeParen < 0 || closeParen+1 >= len(text) {
-			continue
-		}
-		fields := strings.Fields(text[closeParen+1:])
-		if len(fields) < 3 {
-			continue
-		}
-		groupID, convErr := strconv.Atoi(fields[2])
-		if convErr == nil && groupID == pgid {
-			return true
-		}
-	}
-	return false
+	err := syscall.Kill(-pgid, 0)
+	return err == nil || err == syscall.EPERM
 }

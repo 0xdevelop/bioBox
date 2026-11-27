@@ -13,6 +13,10 @@ fi
 
 mkdir -p "${bun_tmp_path}" "${bun_cache_path}"
 
+if ! command -v go >/dev/null 2>&1 && [[ -x "${HOME}/.local/go/bin/go" ]]; then
+    export PATH="${HOME}/.local/go/bin:${PATH}"
+fi
+
 echo "build frontend"
 (
     cd "${frontend_path}"

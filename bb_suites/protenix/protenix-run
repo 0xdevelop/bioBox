@@ -6,10 +6,7 @@
 set -euo pipefail
 
 PREFIX="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/.." && pwd)"
-# Verification only: this wrapper never starts or confirms a weight download.
-SERVICE_BIN="${PREFIX}/../../bioBox"
-[[ -x "${SERVICE_BIN}" ]] || { echo "[protenix-run] native resource coordinator missing; refusing Python" >&2; exit 4; }
-"${SERVICE_BIN}" resource --runtime "${PREFIX}/bin/protenix-run" verify protenix.v1 >/dev/null || { echo "[protenix-run] resources not verified ready; query resource.status / confirm resource.prepare first" >&2; exit 4; }
+# 权重与运行环境由服务在 exec/ssh 之前核对。本包装只启动已通过检查的 Python。
 
 ENV_FILE="${PREFIX}/conf/protenix.env"
 # Ignore inherited owned-resource roots; only this runtime config is authoritative.

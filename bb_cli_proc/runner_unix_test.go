@@ -14,6 +14,18 @@ import (
 	"time"
 )
 
+func TestRemoteShellCommandPassesEnvironment(t *testing.T) {
+	const value = "space and 'quote'"
+	command := remoteShellCommand(Spec{
+		Path: "printenv", Args: []string{"BIOBOX_CHECK_ARG"},
+		Env: map[string]string{"BIOBOX_CHECK_ARG": value},
+	})
+	output, err := exec.Command("sh", "-c", command).CombinedOutput()
+	if err != nil || string(output) != value+"\n" {
+		t.Fatalf("remote environment: %q (%v)", output, err)
+	}
+}
+
 func TestRunCompletesWithoutCancel(t *testing.T) {
 	work := t.TempDir()
 	result, err := Run(context.Background(), Spec{
@@ -111,6 +123,8 @@ func TestSignalWrapperOnlyLeavesChildRunning(t *testing.T) {
 
 func TestRunReapsLeftoversWhenWrapperDies(t *testing.T) {
 	work := t.TempDir()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 	childPIDFile := filepath.Join(work, "child.pid")
 	heartbeat := filepath.Join(work, "heartbeat.txt")
 	done := make(chan struct{})
@@ -118,7 +132,7 @@ func TestRunReapsLeftoversWhenWrapperDies(t *testing.T) {
 	var runErr error
 	go func() {
 		defer close(done)
-		result, runErr = Run(context.Background(), Spec{
+		result, runErr = Run(ctx, Spec{
 			Path: wrapperPath(t),
 			Env: map[string]string{
 				"CHILD_SCRIPT":   childPath(t),
@@ -130,7 +144,10 @@ func TestRunReapsLeftoversWhenWrapperDies(t *testing.T) {
 		})
 	}()
 	childPID := waitForPIDFile(t, childPIDFile)
-	wrapperPID := waitForWrapperPID(t, childPID)
+	wrapperPID, err := syscall.Getpgid(childPID)
+	if err != nil || wrapperPID <= 1 || wrapperPID == syscall.Getpgrp() {
+		t.Fatalf("unexpected test process group for child %d: %d (%v)", childPID, wrapperPID, err)
+	}
 	if err := signalProcess(wrapperPID, syscall.SIGTERM); err != nil {
 		t.Fatalf("signal wrapper: %v", err)
 	}
@@ -246,26 +263,6 @@ func waitForPIDFile(t *testing.T, path string) int {
 		time.Sleep(20 * time.Millisecond)
 	}
 	t.Fatalf("timed out waiting for pid file %s", path)
-	return 0
-}
-
-func waitForWrapperPID(t *testing.T, childPID int) int {
-	t.Helper()
-	deadline := time.Now().Add(3 * time.Second)
-	for time.Now().Before(deadline) {
-		body, err := os.ReadFile(filepath.Join("/proc", strconv.Itoa(childPID), "stat"))
-		if err == nil {
-			fields := strings.Fields(string(body))
-			if len(fields) > 3 {
-				ppid, convErr := strconv.Atoi(fields[3])
-				if convErr == nil && ppid > 1 && processExists(ppid) {
-					return ppid
-				}
-			}
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
-	t.Fatalf("timed out resolving wrapper pid for child %d", childPID)
 	return 0
 }
 

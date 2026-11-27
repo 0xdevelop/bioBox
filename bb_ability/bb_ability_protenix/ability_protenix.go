@@ -5,8 +5,7 @@ package bb_ability_protenix
 import (
 	"context"
 	"errors"
-	"github.com/0xdevelop/bioBox/bb_common/bb_app_path"
-	"github.com/0xdevelop/bioBox/bb_runtime_resource"
+	"github.com/0xdevelop/bioBox/bb_ability/bb_ability_adapter_protenix"
 	"os"
 	"path/filepath"
 	"strings"
@@ -22,9 +21,6 @@ import (
 )
 
 const MethodProtenix = "protenix"
-
-var errCLINotConfigured = errors.New("protenix CLI binary is not configured")
-var errV2CLINotConfigured = errors.New("protenix v2 CLI binary is not configured")
 
 func LoadAPIMethods() {
 	bb_ability_task.RegisterBusinessSteps(MethodProtenix,
@@ -145,20 +141,20 @@ func buildProtenixSpec(ctx context.Context, input interface{}) (*bb_cli_proc.Spe
 	if err != nil {
 		return nil, "", "", err
 	}
-	cliCfg, binary, err := configuredBinary(version)
+	rt, err := bb_ability_adapter_protenix.Resolve(version)
 	if err != nil {
 		return nil, "", "", err
 	}
-	root, err := bb_app_path.ExecutableDir()
+	flags, err := appendProtenixOptionalFlags(nil, params)
 	if err != nil {
 		return nil, "", "", err
 	}
-	preparedResources, err := bb_runtime_resource.Compile("protenix", binary.Binary, root, binary.ExtraEnv, binary.Resources)
-	if err != nil {
+	if err = bb_ability_adapter_protenix.Check(ctx, rt, append([]string{"pred"}, flags...)); err != nil {
 		return nil, "", "", err
 	}
-	if version != "v1" && filepath.Base(binary.Binary) == "protenix-run" {
-		return nil, "", "", bb_runtime_resource.ErrUnsupported
+	cliCfg := bb_config.GlobalConfig.CliCfg
+	if strings.TrimSpace(cliCfg.WorkRoot) == "" {
+		cliCfg.WorkRoot = "./data/cli_jobs"
 	}
 	inputPath, _ := bb_api_auth_common.RequiredString(params, "input")
 	taskID := executionTaskID(ctx)
@@ -167,22 +163,19 @@ func buildProtenixSpec(ctx context.Context, input interface{}) (*bb_cli_proc.Spe
 		return nil, "", "", err
 	}
 	outDir := filepath.Join(jobDir, "output")
-	args := []string{"pred", "--input", stagedInput, "--out_dir", outDir}
-	args, err = appendProtenixOptionalFlags(args, params)
-	if err != nil {
-		return nil, "", "", err
-	}
+	args := append([]string{"pred", "--input", stagedInput, "--out_dir", outDir}, flags...)
 	grace := time.Duration(cliCfg.CancelGraceSeconds) * time.Second
 	if grace <= 0 {
 		grace = 10 * time.Second
 	}
 	return &bb_cli_proc.Spec{
-		Resources:   preparedResources,
-		ResourceSet: "protenix." + version,
+		Resources:   rt.Resources,
+		ResourceSet: rt.SetID,
 		Name:        MethodProtenix,
-		Path:        binary.Binary,
+		Path:        rt.Binary,
+		Host:        rt.Host,
 		Args:        args,
-		Env:         binary.ExtraEnv,
+		Env:         rt.ExtraEnv,
 		Dir:         jobDir,
 		LogPath:     filepath.Join(jobDir, "run.log"),
 		Grace:       grace,
@@ -224,6 +217,9 @@ func appendProtenixOptionalFlags(args []string, params map[string]interface{}) (
 		return nil, err
 	} else if ok {
 		args = bb_cli_proc.AppendBoolFlag(args, "--use_msa", value)
+	} else {
+		// 调用方只交输入文件时，受管包装仍要求显式 --use_msa false。
+		args = bb_cli_proc.AppendBoolFlag(args, "--use_msa", false)
 	}
 	if value, ok, err := bb_cli_proc.OptionalBool(params, "use_default_params"); err != nil {
 		return nil, err
@@ -242,53 +238,6 @@ func requestedVersion(params map[string]interface{}) (string, error) {
 		return versionText, nil
 	}
 	return "v1", nil
-}
-
-func configuredBinary(version string) (*bb_config.CLIConfig, *bb_config.CLIBinaryConfig, error) {
-	if bb_config.GlobalConfig == nil || bb_config.GlobalConfig.CliCfg == nil || bb_config.GlobalConfig.CliCfg.Protenix == nil {
-		return nil, nil, errCLINotConfigured
-	}
-	cliCfg := bb_config.GlobalConfig.CliCfg
-	if strings.TrimSpace(cliCfg.WorkRoot) == "" {
-		cliCfg.WorkRoot = "./data/cli_jobs"
-	}
-	binary, err := runtimeForVersion(cliCfg.Protenix, version)
-	if err != nil {
-		return nil, nil, err
-	}
-	return cliCfg, binary, nil
-}
-
-func runtimeForVersion(base *bb_config.CLIBinaryConfig, version string) (*bb_config.CLIBinaryConfig, error) {
-	if override := versionRuntime(base, version); override != nil && strings.TrimSpace(override.Binary) != "" {
-		resources := base.Resources
-		if override.Resources != nil {
-			resources = override.Resources
-		}
-		env := base.ExtraEnv
-		if override.ExtraEnv != nil {
-			env = override.ExtraEnv
-		}
-		return &bb_config.CLIBinaryConfig{
-			Binary:    strings.TrimSpace(override.Binary),
-			Resources: resources,
-			ExtraEnv:  env,
-		}, nil
-	}
-	if version == "v2" {
-		return nil, errV2CLINotConfigured
-	}
-	if base == nil || strings.TrimSpace(base.Binary) == "" {
-		return nil, errCLINotConfigured
-	}
-	return base, nil
-}
-
-func versionRuntime(base *bb_config.CLIBinaryConfig, version string) *bb_config.CLIRuntimeConfig {
-	if base == nil || base.VersionRuntimes == nil {
-		return nil
-	}
-	return base.VersionRuntimes[version]
 }
 
 func executionTaskID(ctx context.Context) string {

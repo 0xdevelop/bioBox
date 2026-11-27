@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/0xdevelop/bioBox/bb_api/bb_api_common"
+	"github.com/0xdevelop/bioBox/bb_api/bb_api_config"
 	"github.com/0xdevelop/bioBox/bb_api/bb_api_jsonRPC/bb_api_config_jsonRPC"
 	"github.com/0xdevelop/bioBox/bb_api/bb_api_jsonRPC/bb_api_jsonRPC_handler"
 	"github.com/george012/gtbox/gtbox_log"
@@ -43,8 +44,15 @@ func StartAPIServiceWithJsonRPC(apiCfgJsonRPC *bb_api_config_jsonRPC.APIConfigJs
 		Addr:    addr,
 		Handler: muxRouter,
 	}
+
+	addr_show := addr
+	is_pub_serving := false
+	if apiCfgJsonRPC.BindAddress == "0.0.0.0" {
+		addr_show = net.JoinHostPort("127.0.0.1", strconv.Itoa(apiCfgJsonRPC.Port))
+		is_pub_serving = true
+	}
 	go func() {
-		gtbox_log.LogInfof("API server Run On  [http://%s]", addr)
+		gtbox_log.LogInfof("API server Run On  [http://%s] Remote On[http://%s] Pub Serving [%v]", addr_show, net.JoinHostPort(bb_api_config.LatestActiveIPWithLocal, strconv.Itoa(apiCfgJsonRPC.Port)), is_pub_serving)
 		if err := httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			gtbox_log.LogErrorf("Failed to start HTTP server: %v\n", err)
 		}

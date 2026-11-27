@@ -8,7 +8,7 @@
 与 [bioBox 业务挂载说明](biobox_runtime.html) 是同一张可点击的图。
 点节点看详情。
 存储不单列成步骤，API 执行器不指向存储。
-test_ui 和 frontend 在调用方一侧：test_ui 可选多种协议，frontend 只走 JSON-RPC。
+测试台可选多种协议。业务 Web 通过 MCP 调用已注册方法。
 前置检查通过才调用 Protenix（v1 / v2）或 pxdesign（现阶段一种）。
 
 ## 程序级 runtime
@@ -159,8 +159,8 @@ pxdesign 再按正文里的相对路径拷伴随文件。
 非空时本机 ssh 到该 host，在那台机器上执行这条 binary。
 两条的 host 可以不同。
 检查不过不会走到 exec，也不会 ssh。
-作业目录仍由本机按 `work_root` 准备。
-分机时远端要能看见同一个路径。
+bioBox 在自己所在的机器检查运行环境和资源，并在 `work_root` 暂存输入、读取产物。
+分机时，预检所用文件与作业目录须在两端以相同路径可见。Mac 的 GoLand 远程调试 Spark 时，以上操作都在 Spark 完成。
 
 Protenix 包装加载 `conf/protenix.env` 和 venv 后执行 Python，
 子命令只接受 `pred`。`--use_msa` 必须是 false。
@@ -207,19 +207,9 @@ show_yeah 不是这个 frontend。
 
 `FrontendServicesStart` 按 `frontend_cfg.enabled` 提供这个页面。
 缺省开。显式 false 不监听，embed 仍在二进制里。
-它只走 JSON-RPC：`POST` 到页面填写的地址，正文是 `tools/call`。
-默认地址 `http://127.0.0.1:13001/`。
-Bearer 由页面填写。没有第二种协议可选。
+内嵌页面按当前页面主机名和实例配置的 MCP 端口发送 `tools/call`。在页面登录后，后续调用通过 Bearer 携带会话凭证。
 
-Protenix 表单提交方法名 `protenix`。
-必填 input、out_dir，version 缺省 v1，
-另有 model_name、seeds、cycle、step、sample、dtype、
-use_msa、use_default_params。
-pxdesign 表单提交方法名 `pxdesign`。
-必填 input、dump_dir，preset 缺省 preview，
-另有 use_msa、N_sample、N_step、N_max_runs、dtype、
-eta_max、eta_min、eta_type。
-两条各有自己的输出区。
+两个表单各自接受输入文件。页面先将文件传到本实例，再分别调用 `protenix` 或 `pxdesign`。每个表单都有自己的任务状态和输出区。
 
 受理返回 `task_id` 之后，
 该条每 2 秒调用 `task.get`，

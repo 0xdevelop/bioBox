@@ -34,6 +34,8 @@ ai_write/
 bb_test_ui/web/node_modules/
 bb_test_ui/web/dist/
 bb_frontend/dist/
+bb_frontend/src/generated_test_data.ts
+/example_files/test_data_pxdesign.json
 bb_frontend/node_modules/
 
 # 本地验收配置（含密钥，勿提交）与运行数据/日志
@@ -42,3 +44,4 @@ example_files/config_local_auth_bridge.yaml
 /data/
 logs/
 *.log
+.archify/

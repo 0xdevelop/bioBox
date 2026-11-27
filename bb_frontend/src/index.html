@@ -1,15 +1,44 @@
 <!doctype html>
-<html lang="en">
+<html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Example frontend</title>
+    <meta name="biobox-mcp-port" content="{{BIOBOX_MCP_PORT}}" />
+    <title>bioBox</title>
     <link rel="stylesheet" href="/index.css" />
     <script type="module" src="/index.js"></script>
   </head>
   <body>
-    <main>
-      <h1 id="frontend-example"></h1>
-    </main>
+    <section id="login-screen" class="login-screen">
+      <form class="job" id="login-form">
+        <h2>登录</h2>
+        <label>email <input name="email" type="email" autocomplete="username" /></label>
+        <label>password <input name="password" type="password" autocomplete="current-password" /></label>
+        <button id="login-submit" type="submit">登录</button>
+        <p id="login-state"></p>
+      </form>
+    </section>
+    <div id="business" class="app" hidden>
+      <section class="stage" id="stage" aria-label="任务转盘">
+        <canvas id="flywheel"></canvas>
+      </section>
+      <section class="work">
+        <form class="job" id="protenix-form">
+          <h2>Protenix</h2>
+          <p class="file-name" id="protenix-file-name"></p>
+          <label>改选文件 <input name="file" type="file" /></label>
+          <button id="submit-protenix" type="submit">启动 Protenix</button>
+          <pre id="protenix-output"></pre>
+        </form>
+        <form class="job" id="pxdesign-form">
+          <h2>PXDesign</h2>
+          <p class="file-name" id="pxdesign-file-name"></p>
+          <label>选择输入文件 <input name="file" type="file" /></label>
+          <button id="submit-pxdesign" type="submit">启动 pxdesign</button>
+          <pre id="pxdesign-output"></pre>
+        </form>
+      </section>
+      <button id="logout-submit" type="button">退出</button>
+    </div>
   </body>
 </html>

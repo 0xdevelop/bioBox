@@ -6,7 +6,7 @@
 
 注册为 `Async: true`。受理走 `AcceptAsyncTask` → `bb_storage.GormDB` 主库（本实例 SQLite）→ Policy → 同一 Execute，不安装 MySQL/Redis。
 
-`Execute` 会按所选版本的 runtime 组装命令：把输入拷贝到 `work_root/<task_id>/input/`，输出写到同任务 `output/`，在新进程组中启动该版本的官方包装命令。`v1` 未配置时返回 `protenix CLI binary is not configured`，`v2` 未配置时返回 `protenix v2 CLI binary is not configured`，都不会猜路径或启动进程。结果摘要包含退出码、是否取消、CIF 数量和是否存在 ERR 目录；原生预测是否成功不能只看退出码。
+`Execute` 先由 `bb_ability_adapter_protenix.Resolve` 按 v1 或 v2 取出已配置阈值，再由 `Check` 调用 `bb_cli_proc.ConfirmCommandReady`。权重和运行环境符合才暂存输入并调用；不符合则返回错误，要求先做 `resource.prepare`，不启动这一条。通过后把输入拷到 `work_root/<task_id>/input/`，输出写到同任务 `output/`。`host` 为空则本机 exec，非空则本机 ssh。`main` 没有 `resource` 参数。`v1` 未配置时返回 `protenix CLI binary is not configured`，`v2` 未配置时返回 `protenix v2 CLI binary is not configured`，都不会猜路径或启动进程。结果摘要包含退出码、是否取消、CIF 数量和是否存在 ERR 目录；原生预测是否成功不能只看退出码。
 
 取消：`task.cancel` 支持属主取消 queued/running。running 先持久化 `cancel_requested`，传递 Execute context 到现有 `bb_cli_proc.Run`；SIGTERM/SIGKILL 作用于任务整组，清理后才落 done/cancelled。短脚本 HTTP 测试覆盖取消其一而另一任务完成，不等于全部原生 GPU 工作流取消已验收。
 

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/0xdevelop/bioBox/bb_api/bb_api_auth/bb_api_auth_session"
+	"github.com/0xdevelop/bioBox/bb_api/bb_api_config"
 	"github.com/0xdevelop/bioBox/bb_api/bb_api_executer"
 	"github.com/0xdevelop/bioBox/bb_api/bb_api_grpc/bb_api_config_grpc"
 	bb_api_grpc_protobuf "github.com/0xdevelop/bioBox/bb_api/bb_api_grpc/bb_protobuf"
@@ -121,7 +122,7 @@ func StartAPIServiceWithGRPC(apiCfgGRPC *bb_api_config_grpc.APIConfigGRPC) {
 	}
 
 	addr := net.JoinHostPort(apiCfgGRPC.BindAddress, strconv.Itoa(apiCfgGRPC.Port))
-	listener, err := net.Listen("tcp", addr)
+	listener, err := net.Listen("tcp4", addr)
 	if err != nil {
 		gtbox_log.LogErrorf("Failed to start gRPC server: %v", err)
 		return
@@ -129,8 +130,17 @@ func StartAPIServiceWithGRPC(apiCfgGRPC *bb_api_config_grpc.APIConfigGRPC) {
 
 	server := newGRPCServer()
 	grpcServer = server
+
+	addr_show := addr
+	is_pub_serving := false
+
+	if apiCfgGRPC.BindAddress == "0.0.0.0" {
+		addr_show = net.JoinHostPort("127.0.0.1", strconv.Itoa(apiCfgGRPC.Port))
+		is_pub_serving = true
+
+	}
 	go func() {
-		gtbox_log.LogInfof("gRPC server Run On  [tcp://%s]", addr)
+		gtbox_log.LogInfof("gRPC server Run On  [tcp://%s] Remote On[tcp://%s] Pub Serving [%v]", addr_show, net.JoinHostPort(bb_api_config.LatestActiveIPWithLocal, strconv.Itoa(apiCfgGRPC.Port)), is_pub_serving)
 		if serveErr := server.Serve(listener); serveErr != nil &&
 			!errors.Is(serveErr, grpc.ErrServerStopped) {
 			gtbox_log.LogErrorf(

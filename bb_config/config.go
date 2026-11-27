@@ -9,15 +9,15 @@ import (
 	"strings"
 
 	"github.com/0xdevelop/bioBox/bb_api/bb_api_auth/bb_api_auth_config"
-	"github.com/0xdevelop/bioBox/bb_frontend/bb_frontend_config"
-	"github.com/0xdevelop/bioBox/bb_policy/bb_policy_config"
-
 	"github.com/0xdevelop/bioBox/bb_api/bb_api_config"
 	"github.com/0xdevelop/bioBox/bb_api/bb_api_grpc/bb_api_config_grpc"
 	"github.com/0xdevelop/bioBox/bb_api/bb_api_jsonRPC/bb_api_config_jsonRPC"
 	"github.com/0xdevelop/bioBox/bb_api/bb_api_mcp/bb_api_config_mcp"
 	"github.com/0xdevelop/bioBox/bb_api/bb_api_websocket/bb_api_config_websocket"
+	"github.com/0xdevelop/bioBox/bb_frontend/bb_frontend_config"
+	"github.com/0xdevelop/bioBox/bb_policy/bb_policy_config"
 	"github.com/0xdevelop/bioBox/bb_storage/bb_storage_config"
+	"github.com/george012/gtbox"
 	"github.com/george012/gtbox/gtbox_log"
 	"github.com/goccy/go-json"
 	"github.com/goccy/go-yaml"
@@ -42,9 +42,33 @@ var (
 )
 
 type TestUIConfig struct {
-	Enabled     bool   `yaml:"enabled" json:"enabled" toml:"enabled"`
+	Enabled     *bool  `yaml:"enabled" json:"enabled" toml:"enabled" comment:"是否提供调试台；缺省非 release 开、release 关；显式 true/false 覆盖缺省"`
 	BindAddress string `yaml:"bind_address" json:"bind_address" toml:"bind_address" comment:"监听地址（必填）：127.0.0.1 仅本机；0.0.0.0 对外"`
 	Port        int    `yaml:"port" json:"port" toml:"port"`
+}
+
+// TestUIEnabled 报告是否监听调试台。enabled 缺席时非 release 为开、release 为关；显式值覆盖该缺省。
+func TestUIEnabled() bool {
+	if GlobalConfig != nil && GlobalConfig.TestUICfg != nil && GlobalConfig.TestUICfg.Enabled != nil {
+		return *GlobalConfig.TestUICfg.Enabled
+	}
+	return testUIEnabledDefault()
+}
+
+// FrontendEnabled 报告是否监听前端静态页。enabled 缺席时为开；显式值覆盖该缺省。
+func FrontendEnabled() bool {
+	if GlobalConfig == nil {
+		return true
+	}
+	return bb_frontend_config.FrontendPageEnabled(GlobalConfig.FrontendCfg)
+}
+
+func testUIEnabledDefault() bool {
+	return CurrentApp == nil || CurrentApp.CurrentRunMode != gtbox.RunModeRelease
+}
+
+func configBool(v bool) *bool {
+	return &v
 }
 
 type FileConfig struct {
@@ -55,7 +79,7 @@ type FileConfig struct {
 	TestUICfg   *TestUIConfig                        `yaml:"test_ui_cfg" json:"test_ui_cfg" toml:"test_ui_cfg" comment:"开发测试台"`
 	AuthCfg     *bb_api_auth_config.AuthConfig       `yaml:"auth_cfg" json:"auth_cfg" toml:"auth_cfg" comment:"Auth configurations"`
 	PolicyCfg   *bb_policy_config.PolicyConfig       `yaml:"policy_cfg" json:"policy_cfg" toml:"policy_cfg" comment:"Policy scheduling configurations"`
-	CliCfg      *CLIConfig                           `yaml:"cli_cfg" json:"cli_cfg" toml:"cli_cfg" comment:"原生 CLI 接线（protenix-run / pxdesign-run）"`
+	CliCfg      *CLIConfig                           `yaml:"cli_cfg" json:"cli_cfg" toml:"cli_cfg" comment:"protenix 与 pxdesign 各写各的命令。host 都空则同机本机 exec；可以只填一条，或填两台不同机器。远程依赖本机 ssh"`
 }
 
 func buildYAMLCommentMap(cfg interface{}, parentPath string) yaml.CommentMap {
@@ -307,6 +331,16 @@ func generateDefaultConfig() *FileConfig {
 	bindLocal := "127.0.0.1"
 	fileCfg := &FileConfig{
 		StorageCfg: bb_storage_config.Default("./data/bioBox.db"),
+		FrontendCfg: &bb_frontend_config.FrontendConfig{
+			Enabled:     configBool(true),
+			BindAddress: bindLocal,
+			Port:        apiPortDefault + 5,
+		},
+		TestUICfg: &TestUIConfig{
+			Enabled:     configBool(testUIEnabledDefault()),
+			BindAddress: bindLocal,
+			Port:        apiPortDefault + 2,
+		},
 		ApiCfg: &bb_api_config.ApiConfig{
 			APICfgJsonRPC: &bb_api_config_jsonRPC.APIConfigJsonRPC{
 				Enabled:           true,
@@ -334,16 +368,6 @@ func generateDefaultConfig() *FileConfig {
 				BindAddress: bindLocal,
 				Port:        apiPortDefault + 4,
 			},
-		},
-		FrontendCfg: &bb_frontend_config.FrontendConfig{
-			Enabled:     true,
-			BindAddress: bindLocal,
-			Port:        apiPortDefault + 5,
-		},
-		TestUICfg: &TestUIConfig{
-			Enabled:     true,
-			BindAddress: bindLocal,
-			Port:        apiPortDefault + 2,
 		},
 		PolicyCfg: &bb_policy_config.PolicyConfig{
 			MaxWorkers:                   1,

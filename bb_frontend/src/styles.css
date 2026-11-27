@@ -1,24 +1,151 @@
 :root {
-  font-family: system-ui, sans-serif;
-  color: #1e293b;
-  background: #f8fafc;
+  color-scheme: dark;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: #e7e1d5;
+  background: #12151c;
+  --bg: #12151c;
+  --panel: #1c212b;
+  --ink: #e7e1d5;
+  --mute: #8d93a3;
+  --hair: #2c3442;
+  --hot: #e0a15a;
+}
+
+* {
+  box-sizing: border-box;
 }
 
 body {
   margin: 0;
 }
 
-main {
-  display: grid;
-  min-height: 100svh;
-  place-items: center;
-  padding: 24px;
-  box-sizing: border-box;
+[hidden] {
+  display: none !important;
 }
 
-h1 {
+.login-screen {
+  min-height: 100svh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+
+.login-screen form {
+  width: min(360px, 100%);
+}
+
+.app {
+  min-height: 100svh;
+  display: grid;
+  grid-template-rows: minmax(420px, 1fr) auto auto;
+}
+
+.stage {
+  position: relative;
+  min-height: 420px;
+  overflow: hidden;
+  background: var(--bg);
+}
+
+.stage canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.work {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  padding: 12px;
+  background: #0e1218;
+  border-top: 1px solid var(--hair);
+}
+
+.file-name {
   margin: 0;
-  font-size: clamp(20px, 4vw, 32px);
-  font-weight: 500;
-  text-align: center;
+  font-size: 12px;
+  color: var(--ink);
+}
+
+.job {
+  display: grid;
+  gap: 8px;
+  align-content: start;
+  margin: 0;
+  padding: 12px;
+  background: var(--panel);
+  border: 1px solid var(--hair);
+}
+
+h2 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 650;
+  letter-spacing: 0.08em;
+  color: var(--hot);
+}
+
+#pxdesign-form h2 {
+  color: #7eb6d6;
+}
+
+label {
+  display: grid;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--mute);
+}
+
+.check {
+  grid-template-columns: auto 1fr;
+  align-items: center;
+}
+
+input,
+select,
+button {
+  font: inherit;
+  color: var(--ink);
+  background: #141922;
+  border: 1px solid var(--hair);
+  padding: 6px 8px;
+}
+
+button {
+  cursor: pointer;
+  background: #2a241c;
+  color: var(--hot);
+}
+
+#pxdesign-form button {
+  background: #182430;
+  color: #7eb6d6;
+}
+
+#logout-submit {
+  margin: 0 12px 12px;
+  justify-self: start;
+}
+
+pre,
+#login-state {
+  margin: 0;
+  min-height: 7em;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 11px;
+  color: var(--ink);
+}
+
+#login-state {
+  min-height: 1.4em;
+}
+
+@media (max-width: 900px) {
+  .work {
+    grid-template-columns: 1fr;
+  }
 }

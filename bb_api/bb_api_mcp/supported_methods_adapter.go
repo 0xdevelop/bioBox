@@ -4,7 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net"
 	"net/http"
+	"strconv"
+	"strings"
 
 	"github.com/0xdevelop/bioBox/bb_api/bb_api_auth/bb_api_auth_session"
 	"github.com/0xdevelop/bioBox/bb_api/bb_api_executer"
@@ -34,8 +37,68 @@ func newMCPHTTPHandler() http.Handler {
 	// 之后的请求才携带，initialize 请求不带；在这里做写死版本号的等值判断会把
 	// 握手本身挡在外面，标准客户端第一步就收到非 MCP 响应（官方 TS SDK 表现为
 	// `Unexpected content type: null`）。版本协商是 SDK 的职责；非 MCP 的误访问
-	// 由路由 GET 分支的 HomeHandler 接住（路由已限定 `POST /{$}` 才进本 handler）。
-	return crossOriginProtection.Handler(handler)
+	// 由路由 GET 分支的 HomeHandler 接住；浏览器的 OPTIONS 预检在此单独处理。
+	origins := frontendPageOrigins()
+	for _, origin := range origins {
+		if err := crossOriginProtection.AddTrustedOrigin(origin); err != nil {
+			continue
+		}
+	}
+	return allowFrontendPage(origins, crossOriginProtection.Handler(handler))
+}
+
+func frontendPageOrigins() []string {
+	cfg := bb_config.GlobalConfig
+	if cfg == nil || cfg.FrontendCfg == nil || !bb_config.FrontendEnabled() || cfg.FrontendCfg.Port < 1 || cfg.FrontendCfg.Port > 65535 {
+		return nil
+	}
+	port := strconv.Itoa(cfg.FrontendCfg.Port)
+	bind := strings.TrimSpace(cfg.FrontendCfg.BindAddress)
+	hosts := []string{bind}
+	switch bind {
+	case "":
+		return nil
+	case "127.0.0.1", "localhost":
+		hosts = []string{"127.0.0.1", "localhost"}
+	case "0.0.0.0", "::":
+		hosts = []string{"127.0.0.1", "localhost"}
+		addresses, _ := net.InterfaceAddrs()
+		for _, address := range addresses {
+			network, ok := address.(*net.IPNet)
+			if ok && network.IP.To4() != nil && !network.IP.IsLoopback() {
+				hosts = append(hosts, network.IP.String())
+			}
+		}
+	}
+	origins := make([]string, 0, len(hosts))
+	for _, host := range hosts {
+		origins = append(origins, "http://"+net.JoinHostPort(host, port))
+	}
+	return origins
+}
+
+func allowFrontendPage(origins []string, next http.Handler) http.Handler {
+	allowed := map[string]bool{}
+	for _, origin := range origins {
+		allowed[origin] = true
+	}
+	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		origin := request.Header.Get("Origin")
+		writer.Header().Add("Vary", "Origin")
+		if origin != "" && allowed[origin] {
+			writer.Header().Set("Access-Control-Allow-Origin", origin)
+			writer.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type, Accept, Mcp-Protocol-Version, Mcp-Method, Mcp-Name")
+			writer.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
+			if request.Method == http.MethodOptions {
+				writer.WriteHeader(http.StatusNoContent)
+				return
+			}
+		}
+		if request.Method == http.MethodOptions {
+			return
+		}
+		next.ServeHTTP(writer, request)
+	})
 }
 
 func newMCPServer() *mcp.Server {

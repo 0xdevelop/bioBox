@@ -111,10 +111,6 @@ func main() {
 	} else {
 		bb_config.CurrentApp.AppConfigFilePath = "./conf/config.yaml"
 	}
-
-	// 配置加载失败即停：继续往下跑只会把「配置里缺哪一段」的现场，变成十几行之后
-	// 某个 nil 解引用的 panic 堆栈（2026-08-20 实测——outside 那份配置少了 mysql_cfg，
-	// 报出来的是 main.go 的 invalid memory address，跟真正的原因隔着十几行）。
 	bb_config.SyncConfigFile(func(err error) {
 		if err != nil {
 			gtbox_log.LogErrorf("配置加载失败，进程终止：%v", err)
@@ -149,22 +145,24 @@ func main() {
 	stopPolicy := bb_policy.PolicyServicesStart()
 	defer stopPolicy()
 	defer bb_api.StopApiServices()
-	if bb_config.CurrentApp.CurrentRunMode != gtbox.RunModeRelease {
+	if bb_config.TestUIEnabled() {
 		bb_test_ui.LoadTestWeb()
 	}
-	frontendServer, err := bb_frontend.FrontendServicesStart(bb_config.GlobalConfig.FrontendCfg)
-	if err != nil {
-		gtbox_log.LogErrorf("frontend start failed: %v", err)
-		return
-	}
-	if frontendServer != nil {
-		defer func() {
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
-			if err := frontendServer.Shutdown(ctx); err != nil {
-				gtbox_log.LogErrorf("frontend shutdown failed: %v", err)
-			}
-		}()
+	if bb_config.FrontendEnabled() {
+		frontendServer, err := bb_frontend.FrontendServicesStart(bb_config.GlobalConfig.FrontendCfg)
+		if err != nil {
+			gtbox_log.LogErrorf("frontend start failed: %v", err)
+			return
+		}
+		if frontendServer != nil {
+			defer func() {
+				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				defer cancel()
+				if err := frontendServer.Shutdown(ctx); err != nil {
+					gtbox_log.LogErrorf("frontend shutdown failed: %v", err)
+				}
+			}()
+		}
 	}
 	bb_common.LoadSigHandle(nil, nil)
 

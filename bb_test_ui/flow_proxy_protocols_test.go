@@ -633,7 +633,7 @@ func waitLoopback(t *testing.T, addr string) {
 	t.Helper()
 	deadline := time.Now().Add(3 * time.Second)
 	for time.Now().Before(deadline) {
-		conn, err := net.DialTimeout("tcp", addr, 50*time.Millisecond)
+		conn, err := net.DialTimeout("tcp4", addr, 50*time.Millisecond)
 		if err == nil {
 			_ = conn.Close()
 			return

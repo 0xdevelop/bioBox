@@ -3,6 +3,10 @@ import { join } from "node:path";
 
 const frontendDir = join(import.meta.dir, "..");
 const frontendDist = join(frontendDir, "dist");
+const frontendPackage = await Bun.file(join(frontendDir, "package.json")).json();
+const mcpURL = frontendPackage.mcp.trim();
+
+await Bun.$`go run gen_frontend_test_data.go`.cwd(join(frontendDir, ".."));
 
 await rm(frontendDist, { recursive: true, force: true });
 await mkdir(frontendDist, { recursive: true });
@@ -13,6 +17,9 @@ const frontendBuild = await Bun.build({
   target: "browser",
   minify: true,
   naming: "[name].[ext]",
+  define: {
+    BIOBOX_MCP_URL: JSON.stringify(mcpURL),
+  },
 });
 
 if (!frontendBuild.success) {

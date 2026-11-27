@@ -15067,16 +15067,16 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
         config_select: ["debug 用 example_files/config_local.yaml", "其他模式用 conf/config.yaml", "按配置把已启用的服务听起来"],
         caller: ["外部调用带上本协议的凭证", "打到已监听的协议", "不负责选择程序用哪份配置"],
         debug_ui: ["非 release 且 enabled 才提供页面", "页面里可以选多种协议", "调的是同一批已注册方法"],
-        frontend: ["enabled 才提供标准化页面", "只走一种协议", "不在页面里改选协议"],
+        frontend: ["启用时提供业务页面", "页面使用当前主机和配置的 MCP 端口", "登录后通过 MCP 提交任务和查看状态"],
         jsonrpc: ["配置里 Enabled 才监听", "绑在本协议自己的地址和端口", "只拆开协议外壳", "把 tools/call 交给 APIExecuter"],
         mcp: ["配置里 Enabled 才监听", "绑在本协议自己的地址和端口", "只拆开协议外壳", "把 tools/call 交给 APIExecuter"],
         websocket: ["配置里 Enabled 才监听", "绑在本协议自己的地址和端口", "只拆开协议外壳", "把 tools/call 交给 APIExecuter"],
         grpc: ["配置里 Enabled 才监听", "绑在本协议自己的地址和端口", "只拆开协议外壳", "把 tools/call 交给 APIExecuter"],
         executer: ["多路调用同时进入", "只收 tools/call，取出 name 和 arguments", "非公开方法先鉴权，并去掉 jwt_token", "异步方法写入排队区并返回 task_id，同步方法直接 Execute"],
         policy: ["按空闲名额从排队区派发", "一条 Worker 只认领一条任务", "调用该任务注册的同一个 Execute", "执行完释放名额"],
-        resource_prep: ["读取这一条的权重和运行环境", "对照这条配置的阈值", "符合才允许往下调用", "不符合就停下，并要求先做 resource.prepare"],
-        protenix_wrap: ["校验参数，按 v1 或 v2 选择已配置 runtime", "输入暂存到隔离作业目录", "进入包装进程，包装里先核对资源", "进程结束后检查作业目录里的产物"],
-        pxdesign_wrap: ["校验参数，选择已配置的 runtime", "输入暂存到隔离作业目录", "进入包装进程，包装里先核对资源", "进程结束后检查作业目录里的产物"]
+        resource_prep: ["bioBox 检查这套工具的权重和运行环境", "分机时，两端须以相同路径访问预检文件和作业目录", "检查通过后进入包装进程", "资源缺失时先做 resource.prepare"],
+        protenix_wrap: ["按 v1 或 v2 选择已配置的运行环境", "输入暂存到隔离作业目录", "在配置的机器上执行命令", "进程结束后检查作业目录里的产物"],
+        pxdesign_wrap: ["选择已配置的运行环境", "输入暂存到隔离作业目录", "在配置的机器上执行命令", "进程结束后检查作业目录里的产物"]
       };
       var chip = document.getElementById("focus-chip");
       var stepList = document.getElementById("biobox-steps");

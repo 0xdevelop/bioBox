@@ -6,8 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/0xdevelop/bioBox/bb_common/bb_app_path"
-	"github.com/0xdevelop/bioBox/bb_runtime_resource"
+	"github.com/0xdevelop/bioBox/bb_ability/bb_ability_adapter_pxdesign"
 	"os"
 	"path/filepath"
 	"strings"
@@ -23,8 +22,6 @@ import (
 )
 
 const MethodPXDesign = "pxdesign"
-
-var errCLINotConfigured = errors.New("pxdesign CLI binary is not configured")
 
 func LoadAPIMethods() {
 	bb_ability_task.RegisterBusinessSteps(MethodPXDesign,
@@ -140,17 +137,20 @@ func buildPXDesignSpec(ctx context.Context, input interface{}) (*bb_cli_proc.Spe
 	if !ok {
 		return nil, "", "", bb_api_error_code.ErrInvalidArguments
 	}
-	cliCfg, binary, err := configuredBinary()
+	rt, err := bb_ability_adapter_pxdesign.Resolve()
 	if err != nil {
 		return nil, "", "", err
 	}
-	root, err := bb_app_path.ExecutableDir()
+	flags, err := appendPXDesignOptionalFlags(nil, params)
 	if err != nil {
 		return nil, "", "", err
 	}
-	preparedResources, err := bb_runtime_resource.Compile("pxdesign", binary.Binary, root, binary.ExtraEnv, binary.Resources)
-	if err != nil {
+	if err = bb_ability_adapter_pxdesign.Check(ctx, rt, append([]string{"pipeline"}, flags...)); err != nil {
 		return nil, "", "", err
+	}
+	cliCfg := bb_config.GlobalConfig.CliCfg
+	if strings.TrimSpace(cliCfg.WorkRoot) == "" {
+		cliCfg.WorkRoot = "./data/cli_jobs"
 	}
 	inputPath, _ := bb_api_auth_common.RequiredString(params, "input")
 	taskID := executionTaskID(ctx)
@@ -162,22 +162,19 @@ func buildPXDesignSpec(ctx context.Context, input interface{}) (*bb_cli_proc.Spe
 		return nil, "", "", err
 	}
 	outDir := filepath.Join(jobDir, "output")
-	args := []string{"pipeline", "--input", stagedInput, "--dump_dir", outDir}
-	args, err = appendPXDesignOptionalFlags(args, params)
-	if err != nil {
-		return nil, "", "", err
-	}
+	args := append([]string{"pipeline", "--input", stagedInput, "--dump_dir", outDir}, flags...)
 	grace := time.Duration(cliCfg.CancelGraceSeconds) * time.Second
 	if grace <= 0 {
 		grace = 10 * time.Second
 	}
 	return &bb_cli_proc.Spec{
-		Resources:   preparedResources,
-		ResourceSet: "pxdesign.preview",
+		Resources:   rt.Resources,
+		ResourceSet: rt.SetID,
 		Name:        MethodPXDesign,
-		Path:        binary.Binary,
+		Path:        rt.Binary,
+		Host:        rt.Host,
 		Args:        args,
-		Env:         binary.ExtraEnv,
+		Env:         rt.ExtraEnv,
 		Dir:         jobDir,
 		LogPath:     filepath.Join(jobDir, "run.log"),
 		Grace:       grace,
@@ -189,11 +186,15 @@ func appendPXDesignOptionalFlags(args []string, params map[string]interface{}) (
 		return nil, err
 	} else if ok {
 		args = bb_cli_proc.AppendFlag(args, "--use_msa", fmt.Sprint(value))
+	} else {
+		args = bb_cli_proc.AppendFlag(args, "--use_msa", "false")
 	}
 	if value, ok, err := bb_cli_proc.OptionalString(params, "preset"); err != nil {
 		return nil, err
 	} else if ok {
 		args = bb_cli_proc.AppendFlag(args, "--preset", value)
+	} else {
+		args = bb_cli_proc.AppendFlag(args, "--preset", "preview")
 	}
 	if value, ok, err := bb_cli_proc.OptionalInt(params, "N_sample"); err != nil {
 		return nil, err
@@ -231,21 +232,6 @@ func appendPXDesignOptionalFlags(args []string, params map[string]interface{}) (
 		args = bb_cli_proc.AppendFlag(args, "--eta_type", value)
 	}
 	return args, nil
-}
-
-func configuredBinary() (*bb_config.CLIConfig, *bb_config.CLIBinaryConfig, error) {
-	if bb_config.GlobalConfig == nil || bb_config.GlobalConfig.CliCfg == nil || bb_config.GlobalConfig.CliCfg.PXDesign == nil {
-		return nil, nil, errCLINotConfigured
-	}
-	cliCfg := bb_config.GlobalConfig.CliCfg
-	if strings.TrimSpace(cliCfg.WorkRoot) == "" {
-		cliCfg.WorkRoot = "./data/cli_jobs"
-	}
-	binary := cliCfg.PXDesign
-	if strings.TrimSpace(binary.Binary) == "" {
-		return nil, nil, errCLINotConfigured
-	}
-	return cliCfg, binary, nil
 }
 
 func executionTaskID(ctx context.Context) string {

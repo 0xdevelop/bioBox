@@ -1,0 +1,26 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="bioBox-remote-debug" type="GoApplicationRunConfiguration" factoryName="Go Application">
+    <module name="bioBox" />
+    <target name="certa@192.168.167.251:22" />
+    <working_directory value="$PROJECT_DIR$" />
+    <kind value="PACKAGE" />
+    <package value="github.com/0xdevelop/bioBox" />
+    <directory value="$PROJECT_DIR$" />
+    <filePath value="$PROJECT_DIR$" />
+    <option name="build_on_remote_target" value="true" />
+    <pty_enabled value="true" />
+    <method v="2">
+      <option name="NpmBeforeRunTask" enabled="true">
+        <package-json value="$PROJECT_DIR$/bb_test_ui/web/package.json" />
+        <command value="run" />
+        <scripts>
+          <script value="build" />
+        </scripts>
+        <node-interpreter value="project" />
+        <package-manager value="bun" />
+        <envs />
+      </option>
+      <option name="RunConfigurationTask" enabled="true" run_configuration_name="gen-frontend" run_configuration_type="ShConfigurationType" />
+    </method>
+  </configuration>
+</component>

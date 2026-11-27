@@ -57,7 +57,10 @@ func TestOfficialManifestCompletenessAndRelativeSymlinkRoots(t *testing.T) {
 }
 
 func TestRoleManifestFollowsSingleConfiguredRootValue(t *testing.T) {
-	app := t.TempDir()
+	app, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
 	prefix := filepath.Join(app, "runtime/protenix")
 	os.MkdirAll(filepath.Join(prefix, "conf"), 0700)
 	binary := filepath.Join(prefix, "bin/protenix-run")

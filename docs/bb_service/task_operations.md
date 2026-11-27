@@ -7,13 +7,13 @@
 - 所有协议通过固定业务方法名调用：`protenix`、`pxdesign`、`task.get`、`task.list`、`task.cancel`、`task.artifacts`、`task.artifact`。JSON-RPC 使用 HTTP `POST /`，请求为 `tools/call → name → arguments`，不要拼出 `/v1/protenix`、`/task/get` 等路径。
 - 版本、模型、preset 只放在 arguments。Protenix 未传版本时为 `v1`；未配置 v2 runtime 时拒绝，不回退为 v1，也不能把配置路径当成已有授权权重。
 - 受保护方法使用任务属主的凭证；API key 放在 `Authorization: Bearer <api_key>`，一次调用只带一种凭证，不再在 arguments 放另一份。不要把密钥写入输入文件、日志、截图或共享命令记录。
-- **release 不加载 test_ui**，即使配置 `test_ui_cfg.enabled: true` 也不会提供 `/flow_debug.html` 或 test_ui 的 `/docs_api`。正式服务可直接调用以下任务 API，不依赖调试页。
+- `test_ui_cfg.enabled` 缺席时，非 release 缺省开、release 缺省关；显式 `false` 不调用 `LoadTestWeb`。显式 `true` 覆盖该缺省。正式服务可以直接调用任务 API，不依赖调试页。
 
 | 二进制运行模式 | 配置文件 | test_ui 条件 |
 |---|---|---|
-| debug | 可执行文件目录下的 `conf/config.yaml` | `test_ui_cfg.enabled: true`，有效的 bind_address 与 port |
-| test | 同上 | 同上 |
-| release | 同上 | 不加载 |
+| debug | `example_files/config_local.yaml` | `enabled` 缺席则开；显式 false 不调用 `LoadTestWeb` |
+| test | `conf/config.yaml` | 同上 |
+| release | `conf/config.yaml` | `enabled` 缺席则关；显式 true 才监听 |
 
 模式在构建时确定，不是 URL 参数或配置开关。`./build.sh test` 生成本机 test 模式主程序；`./build.sh pack test linux_<arch>` 才是 Linux 打包且运行模式为 test。构建前置条件见[服务说明](../../README.md#本地构建与开发调试)。不要用 release 二进制尝试“打开调试模式”。进程不自动读取 `example_files/config_local.yaml`。
 

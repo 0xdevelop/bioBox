@@ -13,8 +13,12 @@ import (
 	"github.com/0xdevelop/bioBox/bb_frontend/bb_frontend_config"
 )
 
+func frontendEnabled(v bool) *bool {
+	return &v
+}
+
 func TestFrontendDisabledAndOccupiedPort(t *testing.T) {
-	for _, cfg := range []*bb_frontend_config.FrontendConfig{nil, {Enabled: false}} {
+	for _, cfg := range []*bb_frontend_config.FrontendConfig{nil, {Enabled: frontendEnabled(false)}} {
 		server, err := FrontendServicesStart(cfg)
 		if err != nil || server != nil {
 			t.Fatalf("disabled frontend: server=%v err=%v", server, err)
@@ -26,7 +30,7 @@ func TestFrontendDisabledAndOccupiedPort(t *testing.T) {
 	}
 	defer listener.Close()
 	server, err := FrontendServicesStart(&bb_frontend_config.FrontendConfig{
-		Enabled: true, BindAddress: "127.0.0.1", Port: listener.Addr().(*net.TCPAddr).Port,
+		Enabled: frontendEnabled(true), BindAddress: "127.0.0.1", Port: listener.Addr().(*net.TCPAddr).Port,
 	})
 	if server != nil {
 		_ = server.Close()
@@ -46,7 +50,7 @@ func TestFrontendHTTPAndShutdown(t *testing.T) {
 		t.Fatal(err)
 	}
 	server, err := FrontendServicesStart(&bb_frontend_config.FrontendConfig{
-		Enabled: true, BindAddress: "127.0.0.1", Port: port,
+		Enabled: frontendEnabled(true), BindAddress: "127.0.0.1", Port: port,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -57,8 +61,8 @@ func TestFrontendHTTPAndShutdown(t *testing.T) {
 		method, path, contentType, body string
 		empty                           bool
 	}{
-		{method: "GET", path: "/", contentType: "text/html", body: "frontend-example"},
-		{method: "GET", path: "/index.js", contentType: "javascript", body: "this is example frontend"},
+		{method: "GET", path: "/", contentType: "text/html", body: "submit-protenix"},
+		{method: "GET", path: "/index.js", contentType: "javascript", body: "tools/call"},
 		{method: "GET", path: "/index.css", contentType: "text/css", body: "font-family"},
 		{method: "HEAD", path: "/", contentType: "text/html", empty: true},
 		{method: "GET", path: "/src/index.ts", empty: true},

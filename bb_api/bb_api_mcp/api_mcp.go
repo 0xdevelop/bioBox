@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/0xdevelop/bioBox/bb_api/bb_api_common"
+	"github.com/0xdevelop/bioBox/bb_api/bb_api_config"
 	"github.com/0xdevelop/bioBox/bb_api/bb_api_mcp/bb_api_config_mcp"
 	"github.com/george012/gtbox/gtbox_log"
 )
@@ -45,11 +46,13 @@ func StartAPIServiceWithMCP(apiCfgMCP *bb_api_config_mcp.APIConfigMCP) {
 	muxRouter := http.NewServeMux()
 	muxRouter.HandleFunc("GET /{$}", bb_api_common.HomeHandler)
 	muxRouter.HandleFunc("GET /robots.txt", bb_api_common.RobotsHandler)
-	muxRouter.Handle("POST /{$}", newMCPHTTPHandler())
+	mcpHTTP := newMCPHTTPHandler()
+	muxRouter.Handle("POST /{$}", mcpHTTP)
+	muxRouter.Handle("OPTIONS /{$}", mcpHTTP)
 	muxRouter.HandleFunc("/", bb_api_common.HomeHandler)
 
 	addr := net.JoinHostPort(apiCfgMCP.BindAddress, strconv.Itoa(apiCfgMCP.Port))
-	listener, err := net.Listen("tcp", addr)
+	listener, err := net.Listen("tcp4", addr)
 	if err != nil {
 		gtbox_log.LogErrorf("Failed to start MCP server: %v", err)
 		return
@@ -61,8 +64,16 @@ func StartAPIServiceWithMCP(apiCfgMCP *bb_api_config_mcp.APIConfigMCP) {
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 	mcpHTTPServer = server
+
+	addr_show := addr
+	is_pub_serving := false
+	if apiCfgMCP.BindAddress == "0.0.0.0" {
+		addr_show = net.JoinHostPort("127.0.0.1", strconv.Itoa(apiCfgMCP.Port))
+		is_pub_serving = true
+
+	}
 	go func() {
-		gtbox_log.LogInfof("MCP server Run On  [http://%s]", addr)
+		gtbox_log.LogInfof("MCP server Run On  [http://%s] Remote On[http://%s] Pub Serving [%v]", addr_show, net.JoinHostPort(bb_api_config.LatestActiveIPWithLocal, strconv.Itoa(apiCfgMCP.Port)), is_pub_serving)
 		if serveErr := server.Serve(listener); serveErr != nil &&
 			!errors.Is(serveErr, http.ErrServerClosed) {
 			gtbox_log.LogErrorf("MCP server stopped unexpectedly: %v", serveErr)
