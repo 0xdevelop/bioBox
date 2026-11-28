@@ -104,13 +104,13 @@ func main() {
 
 	defer bb_common.PanicHandler()
 
-	// All run modes use the executable-owned configuration selected in setupApp.
-
-	if bb_config.CurrentApp.CurrentRunMode == gtbox.RunModeDebug {
-		bb_config.CurrentApp.AppConfigFilePath = "./example_files/config_local.yaml"
-	} else {
-		bb_config.CurrentApp.AppConfigFilePath = "./conf/config.yaml"
-	}
+	// debug 读 CWD 相对 ./example_files/config_local.yaml，供 GoLand 远程调试使用。
+	// test/release 沿用 setupApp 已算出的 ExecutableDir()/conf/config.yaml，
+	// 不再用 CWD 相对 ./conf/config.yaml 覆盖。
+	bb_config.CurrentApp.AppConfigFilePath = configFilePathForRunMode(
+		bb_config.CurrentApp.CurrentRunMode,
+		bb_config.CurrentApp.AppConfigFilePath,
+	)
 	bb_config.SyncConfigFile(func(err error) {
 		if err != nil {
 			gtbox_log.LogErrorf("配置加载失败，进程终止：%v", err)

@@ -78,11 +78,6 @@ func landCLIInput(suite, originalName string, body []byte) (string, error) {
 }
 
 func cliInputDir(suite string) string {
-	if suite == "pxdesign" {
-		if current := runtimeCurrentDir(suite); current != "" {
-			return current
-		}
-	}
 	root := "data/frontend_inputs"
 	if bb_config.GlobalConfig != nil && bb_config.GlobalConfig.CliCfg != nil {
 		if workRoot := strings.TrimSpace(bb_config.GlobalConfig.CliCfg.WorkRoot); workRoot != "" {
@@ -90,31 +85,4 @@ func cliInputDir(suite string) string {
 		}
 	}
 	return filepath.Join(root, suite)
-}
-
-func runtimeCurrentDir(suite string) string {
-	if bb_config.GlobalConfig == nil || bb_config.GlobalConfig.CliCfg == nil {
-		return ""
-	}
-	var binary string
-	switch suite {
-	case "protenix":
-		if bb_config.GlobalConfig.CliCfg.Protenix != nil {
-			binary = bb_config.GlobalConfig.CliCfg.Protenix.Binary
-		}
-	case "pxdesign":
-		if bb_config.GlobalConfig.CliCfg.PXDesign != nil {
-			binary = bb_config.GlobalConfig.CliCfg.PXDesign.Binary
-		}
-	}
-	binary = strings.TrimSpace(binary)
-	if binary == "" {
-		return ""
-	}
-	current := filepath.Join(filepath.Dir(filepath.Dir(binary)), "current")
-	info, err := os.Stat(current)
-	if err != nil || !info.IsDir() {
-		return ""
-	}
-	return current
 }

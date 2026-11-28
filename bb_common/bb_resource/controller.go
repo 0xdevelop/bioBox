@@ -133,7 +133,7 @@ func (c Controller) Status(ctx context.Context, id string) (Snapshot, error) {
 	}
 	all := true
 	for i, f := range cfg.Files {
-		if err = verifyContext(ctx, f.Path, f); err != nil {
+		if err = verifyWithIdentity(ctx, f.Path, f, identityStampLoc{Root: c.Root, Token: token}); err != nil {
 			if !os.IsNotExist(err) {
 				s.State = "invalid"
 				return s, err
@@ -186,7 +186,7 @@ func (c Controller) Prepare(ctx context.Context, id, confirmation string) (Snaps
 	// A known-corrupt later file must not cause an earlier missing file to download.
 	allReady := true
 	for _, f := range cfg.Files {
-		if e := verifyContext(ctx, f.Path, f); e != nil {
+		if e := verifyWithIdentity(ctx, f.Path, f, identityStampLoc{Root: c.Root, Token: token}); e != nil {
 			if !os.IsNotExist(e) {
 				s.State = "invalid"
 				return s, e
@@ -218,7 +218,7 @@ func (c Controller) Prepare(ctx context.Context, id, confirmation string) (Snaps
 	// A preceding owner may already have completed the exact set.
 	ready := true
 	for _, f := range cfg.Files {
-		if e := verifyContext(ctx, f.Path, f); e != nil {
+		if e := verifyWithIdentity(ctx, f.Path, f, identityStampLoc{Root: c.Root, Token: token}); e != nil {
 			ready = false
 			break
 		}

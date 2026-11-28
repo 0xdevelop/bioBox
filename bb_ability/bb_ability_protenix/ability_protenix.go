@@ -35,8 +35,9 @@ func LoadAPIMethods() {
 		InputSchema: bb_api_auth_common.InputSchema(
 			map[string]interface{}{
 				"version":            schemaWithDesc(bb_api_auth_common.EnumStringSchema("v1", "v2"), "产品版本（v1/v2），不是 URL 路径。缺省 v1。用于选择 cli_cfg.protenix.version_runtimes 中的独立 runtime；v1 未单独配置时回退到 cli_cfg.protenix.binary。v2 必须单独配置，不会使用 v1 的 binary，且还需要授权权重。不作为 CLI 开关传入。"),
-				"input":              schemaWithDesc(bb_api_auth_common.StringSchema("", 1, 4096), "输入 JSON 文件或目录。对应 CLI -i/--input。"),
-				"out_dir":            schemaWithDesc(bb_api_auth_common.StringSchema("", 1, 4096), "调用方给出的结果目录名；实际写入隔离作业目录下的 output/，不直接改原输入。对应 CLI -o/--out_dir。"),
+				"input":              schemaWithDesc(bb_api_auth_common.StringSchema("", 1, 4096), "兼容旧调用：输入 JSON 文件或目录路径。对应 CLI -i/--input。与 input_data 二选一，不可同时传入。"),
+				"input_data":         schemaWithDesc(map[string]interface{}{"type": []interface{}{"object", "array"}}, "标准 JSON 预测定义（对象或数组）。bioBox 会写入作业目录 input/input.json 再传给 protenix-run。与 input 二选一，不可同时传入。"),
+				"out_dir":            schemaWithDesc(bb_api_auth_common.StringSchema("", 1, 4096), "调用方给出的结果目录名；可选。调用方给出的结果目录名；缺省 output。实际写入隔离作业目录下的 output/，不直接改原输入。对应 CLI -o/--out_dir。"),
 				"model_name":         schemaWithDesc(bb_api_auth_common.StringSchema("", 1, 256), "模型检查点名。对应 CLI -n/--model_name，例如 protenix_base_default_v1.0.0。"),
 				"seeds":              schemaWithDesc(bb_api_auth_common.StringSchema("", 1, 256), "逗号分隔随机种子。对应 CLI -s/--seeds。"),
 				"cycle":              schemaWithDesc(integerSchema(), "Pairformer cycle 数。对应 CLI -c/--cycle。"),
@@ -46,7 +47,6 @@ func LoadAPIMethods() {
 				"use_msa":            schemaWithDesc(booleanSchema(), "是否使用 MSA。对应 CLI --use_msa。"),
 				"use_default_params": schemaWithDesc(booleanSchema(), "是否使用模型推荐默认参数。对应 CLI --use_default_params。"),
 			},
-			"input", "out_dir",
 		),
 		Execute: Execute,
 	})
@@ -156,9 +156,8 @@ func buildProtenixSpec(ctx context.Context, input interface{}) (*bb_cli_proc.Spe
 	if strings.TrimSpace(cliCfg.WorkRoot) == "" {
 		cliCfg.WorkRoot = "./data/cli_jobs"
 	}
-	inputPath, _ := bb_api_auth_common.RequiredString(params, "input")
 	taskID := executionTaskID(ctx)
-	jobDir, stagedInput, err := bb_cli_proc.StageInput(cliCfg.WorkRoot, taskID, inputPath)
+	jobDir, stagedInput, err := bb_cli_proc.SelectStagedInput(cliCfg.WorkRoot, taskID, params)
 	if err != nil {
 		return nil, "", "", err
 	}
@@ -272,10 +271,7 @@ func validateProtenixArgs(input interface{}) error {
 	if !ok {
 		return bb_api_error_code.ErrInvalidArguments
 	}
-	if _, ok = bb_api_auth_common.RequiredString(params, "input"); !ok {
-		return bb_api_error_code.ErrInvalidArguments
-	}
-	if _, ok = bb_api_auth_common.RequiredString(params, "out_dir"); !ok {
+	if err := bb_cli_proc.InputSourceError(params); err != nil {
 		return bb_api_error_code.ErrInvalidArguments
 	}
 	if version, exists := params["version"]; exists {

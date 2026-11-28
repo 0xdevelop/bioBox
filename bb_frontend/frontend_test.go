@@ -62,7 +62,7 @@ func TestFrontendHTTPAndShutdown(t *testing.T) {
 		empty                           bool
 	}{
 		{method: "GET", path: "/", contentType: "text/html", body: "submit-protenix"},
-		{method: "GET", path: "/index.js", contentType: "javascript", body: "tools/call"},
+		{method: "GET", path: "/index.js", contentType: "javascript", body: "input_data"},
 		{method: "GET", path: "/index.css", contentType: "text/css", body: "font-family"},
 		{method: "HEAD", path: "/", contentType: "text/html", empty: true},
 		{method: "GET", path: "/src/index.ts", empty: true},

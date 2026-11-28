@@ -35,19 +35,20 @@ func LoadAPIMethods() {
 		Async:       true,
 		InputSchema: bb_api_auth_common.InputSchema(
 			map[string]interface{}{
-				"input":      schemaWithDesc(bb_api_auth_common.StringSchema("", 1, 4096), "输入 YAML/JSON 文件。对应 CLI -i/--input。"),
-				"dump_dir":   schemaWithDesc(bb_api_auth_common.StringSchema("", 1, 4096), "调用方给出的结果目录名；实际写入隔离作业目录下的 output/。对应 CLI -o/--dump_dir。"),
-				"use_msa":    schemaWithDesc(map[string]interface{}{"type": "boolean"}, "是否使用 MSA；受管离线 preview 必须显式 false，未接管分支拒绝启动。"),
-				"preset":     schemaWithDesc(bb_api_auth_common.EnumStringSchema("preview", "extended", "custom"), "流水线预设。对应 CLI --preset。"),
-				"N_sample":   schemaWithDesc(integerSchema(), "扩散样本数。对应 CLI --N_sample。"),
-				"N_step":     schemaWithDesc(integerSchema(), "扩散步数。对应 CLI --N_step。"),
-				"N_max_runs": schemaWithDesc(integerSchema(), "最大 design run 数。对应 CLI --N_max_runs。"),
-				"dtype":      schemaWithDesc(bb_api_auth_common.EnumStringSchema("fp32", "bf16"), "推理 dtype。对应 CLI --dtype。"),
-				"eta_max":    schemaWithDesc(numberSchema(), "eta 调度最大值。对应 CLI --eta_max。"),
-				"eta_min":    schemaWithDesc(numberSchema(), "eta 调度最小值。对应 CLI --eta_min。"),
-				"eta_type":   schemaWithDesc(bb_api_auth_common.StringSchema("", 1, 64), "eta 调度类型。对应 CLI --eta_type。"),
+				"input":       schemaWithDesc(bb_api_auth_common.StringSchema("", 1, 4096), "兼容旧调用：输入 YAML/JSON 文件路径。对应 CLI -i/--input。与 input_data 二选一，不可同时传入。"),
+				"input_data":  schemaWithDesc(map[string]interface{}{"type": "object"}, "标准 JSON 任务定义。bioBox 会写入作业目录 input/input.json 再传给 pxdesign-run。与 input 二选一，不可同时传入。"),
+				"attachments": schemaWithDesc(attachmentSchema(), "可选附件，落到作业目录 input/ 下，供任务定义中的相对路径引用。可为对象（相对路径 -> {content, encoding}）或数组（{path, content, encoding}）。encoding 为 utf8 或 base64。禁止绝对路径与 .. 穿越。"),
+				"dump_dir":    schemaWithDesc(bb_api_auth_common.StringSchema("", 1, 4096), "可选。调用方给出的结果目录名；缺省 output。实际写入隔离作业目录下的 output/。对应 CLI -o/--dump_dir。"),
+				"use_msa":     schemaWithDesc(map[string]interface{}{"type": "boolean"}, "是否使用 MSA；受管离线 preview 必须显式 false，未接管分支拒绝启动。"),
+				"preset":      schemaWithDesc(bb_api_auth_common.EnumStringSchema("preview", "extended", "custom"), "流水线预设。对应 CLI --preset。"),
+				"N_sample":    schemaWithDesc(integerSchema(), "扩散样本数。对应 CLI --N_sample。"),
+				"N_step":      schemaWithDesc(integerSchema(), "扩散步数。对应 CLI --N_step。"),
+				"N_max_runs":  schemaWithDesc(integerSchema(), "最大 design run 数。对应 CLI --N_max_runs。"),
+				"dtype":       schemaWithDesc(bb_api_auth_common.EnumStringSchema("fp32", "bf16"), "推理 dtype。对应 CLI --dtype。"),
+				"eta_max":     schemaWithDesc(numberSchema(), "eta 调度最大值。对应 CLI --eta_max。"),
+				"eta_min":     schemaWithDesc(numberSchema(), "eta 调度最小值。对应 CLI --eta_min。"),
+				"eta_type":    schemaWithDesc(bb_api_auth_common.StringSchema("", 1, 64), "eta 调度类型。对应 CLI --eta_type。"),
 			},
-			"input", "dump_dir",
 		),
 		Execute: Execute,
 	})
@@ -152,14 +153,20 @@ func buildPXDesignSpec(ctx context.Context, input interface{}) (*bb_cli_proc.Spe
 	if strings.TrimSpace(cliCfg.WorkRoot) == "" {
 		cliCfg.WorkRoot = "./data/cli_jobs"
 	}
-	inputPath, _ := bb_api_auth_common.RequiredString(params, "input")
 	taskID := executionTaskID(ctx)
-	jobDir, stagedInput, err := bb_cli_proc.StageInput(cliCfg.WorkRoot, taskID, inputPath)
+	jobDir, stagedInput, err := bb_cli_proc.SelectStagedInput(cliCfg.WorkRoot, taskID, params)
 	if err != nil {
 		return nil, "", "", err
 	}
-	if err = bb_cli_proc.StageRelativeSidecars(jobDir, inputPath, stagedInput); err != nil {
-		return nil, "", "", err
+	if inputPath, ok := bb_api_auth_common.RequiredString(params, "input"); ok {
+		if err = bb_cli_proc.StageRelativeSidecars(jobDir, inputPath, stagedInput); err != nil {
+			return nil, "", "", err
+		}
+	}
+	if attachments, ok := params["attachments"]; ok && attachments != nil {
+		if err = bb_cli_proc.StageAttachments(filepath.Join(jobDir, "input"), attachments); err != nil {
+			return nil, "", "", err
+		}
 	}
 	outDir := filepath.Join(jobDir, "output")
 	args := append([]string{"pipeline", "--input", stagedInput, "--dump_dir", outDir}, flags...)
@@ -266,11 +273,13 @@ func validatePXDesignArgs(input interface{}) error {
 	if !ok {
 		return bb_api_error_code.ErrInvalidArguments
 	}
-	if _, ok = bb_api_auth_common.RequiredString(params, "input"); !ok {
+	if err := bb_cli_proc.InputSourceError(params); err != nil {
 		return bb_api_error_code.ErrInvalidArguments
 	}
-	if _, ok = bb_api_auth_common.RequiredString(params, "dump_dir"); !ok {
-		return bb_api_error_code.ErrInvalidArguments
+	if raw, exists := params["input_data"]; exists && raw != nil {
+		if _, isObject := raw.(map[string]interface{}); !isObject {
+			return bb_api_error_code.ErrInvalidArguments
+		}
 	}
 	if preset, exists := params["preset"]; exists {
 		presetText, isString := preset.(string)
@@ -290,6 +299,23 @@ func validatePXDesignArgs(input interface{}) error {
 func schemaWithDesc(schema map[string]interface{}, description string) map[string]interface{} {
 	schema["description"] = description
 	return schema
+}
+
+func attachmentSchema() map[string]interface{} {
+	item := map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"path":     map[string]interface{}{"type": "string"},
+			"content":  map[string]interface{}{"type": "string"},
+			"encoding": map[string]interface{}{"type": "string", "enum": []string{"utf8", "base64"}},
+		},
+	}
+	return map[string]interface{}{
+		"oneOf": []interface{}{
+			map[string]interface{}{"type": "object", "additionalProperties": item},
+			map[string]interface{}{"type": "array", "items": item},
+		},
+	}
 }
 
 func integerSchema() map[string]interface{} {

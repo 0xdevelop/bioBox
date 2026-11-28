@@ -157,7 +157,7 @@ FORCE_PACK=1 ./build.sh pack        # 双 arch Linux 包 → build/upload_tmp_di
 - `pack` / `all` / `protenix` / `pxdesign` 仍是 Linux 发行与 CUDA 13 前缀安装。Actions 调用 `bash ./build.sh pack release linux_<arch>`。在 macOS 上打 Linux 包会要求对应交叉编译器。
 - 不经过 `build.sh` 时用 `go build -o bioBox .`。`bioBox.exe` 只在 Windows 上执行根 `./build.sh` 时生成，不是这条手工命令的产物。仓库不另加 Windows 脚本。
 - 需要 Go（`go.mod` 指定版本）、bun（现场构建前端与 test_ui）、打 zip 时还要 zip。打非本机 Linux arch 时交叉编译器默认 `x86_64-linux-gnu-gcc` / `aarch64-linux-gnu-gcc`，可用 `CC_linux_amd64` / `CC_linux_arm64` 指定。
-- debug 读 `example_files/config_local.yaml`；test 与 release 读可执行文件目录下的 `conf/config.yaml`。文件不存在时生成缺省配置。`example_files/config_example.yaml` 是示例，可复制成被 gitignore 的 `config_local.yaml`。默认端口：JSON-RPC `13001`、MCP `13002`、test_ui `13003`、WebSocket `13004`、gRPC `13005`、frontend `13006`。
+- debug 读 `example_files/config_local.yaml`；test 与 release 读可执行文件目录下的 `conf/config.yaml`。文件不存在时生成缺省配置。`example_files/config_example.yaml` 是示例，可复制成被 gitignore 的 `config_local.yaml`。默认端口：JSON-RPC `17168`、MCP `17169`、test_ui `17170`、WebSocket `17171`、gRPC `17172`、frontend `17173`。`example_files` 里出现的 `13001` 起是示例文件中的旧端口，不是代码生成的缺省值。
 - Mac 上选 `bioBox-debug` 调本地 Go 服务。联调 Spark 上的 GPU 时选 `bioBox-remote-debug`，断点仍在 Mac 的 GoLand 中，Go 进程、SQLite 和两套计算工具都在 Spark。两个配置都在编译 Go 主包前构建测试台和业务 Web。
 - 发布包交付前先提交、再 `FORCE_PACK=1`，让 `BUILD_INFO.txt` 的 commit 对齐 HEAD。
 - 发版入口是无参 `./git_tag.sh`（模板三段：`release` → `Build` → `RemoveOldRelease`）。Actions 在该结构内用 `ubuntu-24.04`（amd64）和 `ubuntu-24.04-arm`（arm64）做原生构建与六包内部完整性校验，最终仅发布两整合包 + `SHA256SUMS`；根 `./build.sh pack` 负责 Linux 打包。见[模板审计与恢复说明](docs/bb_build/release_template_audit.md)及[原生双架构说明](docs/bb_build/native_release.md)。

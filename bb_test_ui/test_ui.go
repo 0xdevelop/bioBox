@@ -301,10 +301,10 @@ func handleFlowDebugPage(writer http.ResponseWriter, request *http.Request) {
 
 func handleConfig(writer http.ResponseWriter, _ *http.Request) {
 	webCfg := webConfig{
-		JSONRPCEndpoint:   "http://127.0.0.1:13001",
-		MCPEndpoint:       "http://127.0.0.1:13002",
-		WebSocketEndpoint: "ws://127.0.0.1:13004",
-		GRPCEndpoint:      "grpc://127.0.0.1:13005",
+		JSONRPCEndpoint:   "http://127.0.0.1:17168",
+		MCPEndpoint:       "http://127.0.0.1:17169",
+		WebSocketEndpoint: "ws://127.0.0.1:17171",
+		GRPCEndpoint:      "grpc://127.0.0.1:17172",
 		Project: projectInfo{
 			Name:     bb_config.ProjectName,
 			Version:  bb_config.ProjectVersion,

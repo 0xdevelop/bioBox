@@ -92,6 +92,9 @@ func Run(ctx context.Context, spec Spec) (*Result, error) {
 		}
 		return nil, fmt.Errorf("cli binary path is required")
 	}
+	if host := strings.TrimSpace(spec.Host); host != "" {
+		return nil, errRemoteHostUnsupported(spec.Name, host)
+	}
 	if err := ConfirmCommandReady(ctx, spec); err != nil {
 		return nil, err
 	}
@@ -143,6 +146,13 @@ func Run(ctx context.Context, spec Spec) (*Result, error) {
 		return nil, err
 	}
 	result := &Result{PID: cmd.Process.Pid, PGID: cmd.Process.Pid, LogPath: spec.LogPath}
+	if dir := strings.TrimSpace(spec.Dir); dir != "" {
+		if err = WriteJobProcessGroup(dir, cmd.Process.Pid); err != nil {
+			_ = signalProcessGroup(cmd.Process.Pid, killSignal())
+			_ = cmd.Wait()
+			return nil, fmt.Errorf("record process group: %w", err)
+		}
+	}
 	done := make(chan error, 1)
 	go func() {
 		done <- cmd.Wait()

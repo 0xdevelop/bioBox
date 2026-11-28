@@ -2,6 +2,8 @@ import "./styles.css";
 import { callTool, clearSession, hasSession, landCLIInput, restoreSession, saveSession } from "./api.ts";
 import { pxdesignDefaultFile, protenixDefaultFile } from "./generated_test_data.ts";
 import { mountFlywheel, type FlywheelLane } from "./flywheel.ts";
+import { planSubmit } from "./submit_args.ts";
+import { asRecord, isTaskDone, taskFromPayload } from "./task_view.ts";
 
 type DefaultFile = { name: string; text: string };
 type JobName = "protenix" | "pxdesign";
@@ -101,13 +103,6 @@ function textValue(form: HTMLFormElement, name: string): string {
   return field.value.trim();
 }
 
-function asRecord(value: unknown): Record<string, unknown> | null {
-  if (typeof value === "object" && value !== null && !Array.isArray(value)) {
-    return value as Record<string, unknown>;
-  }
-  return null;
-}
-
 const hiddenResultKeys = new Set(["jwt_token", "refresh_token", "password", "api_key"]);
 
 function redact(value: unknown): unknown {
@@ -129,8 +124,7 @@ function redact(value: unknown): unknown {
 }
 
 function formatTask(value: unknown): string {
-  const body = asRecord(redact(value));
-  const task = asRecord(body?.task) ?? body;
+  const task = taskFromPayload(redact(value));
   if (task === null) {
     return JSON.stringify(value, null, 2);
   }
@@ -174,8 +168,7 @@ async function watchTask(job: JobView, output: HTMLElement, taskId: string, tick
     const text = outcome.isError ? JSON.stringify(redact(outcome.value), null, 2) : formatTask(outcome.value);
     output.textContent = text;
     job.lines = text.split("\n").slice(0, 8);
-    const task = asRecord(asRecord(outcome.value)?.task);
-    if (outcome.isError || task?.run_status === "done") {
+    if (outcome.isError || isTaskDone(outcome.value)) {
       return;
     }
     await new Promise((resolve) => {
@@ -197,19 +190,23 @@ async function submitJob(job: JobView, output: HTMLElement, file: File | null): 
   const ticket = job.ticket + 1;
   job.ticket = ticket;
   try {
-    output.textContent = "写入输入文件";
-    job.lines = ["writing file"];
-    const inputPath = await landCLIInput(job.method, file);
+    output.textContent = "读取输入";
+    job.lines = ["reading input"];
+    const fileText = await file.text();
+    const plan = planSubmit(fileText);
+    const args: Record<string, unknown> = {};
+    if (plan.kind === "input_data") {
+      Object.assign(args, plan.args);
+      output.textContent = file.name;
+    } else {
+      output.textContent = "写入输入文件";
+      const inputPath = await landCLIInput(job.method, file);
+      args.input = inputPath;
+      output.textContent = inputPath;
+    }
     if (job.ticket !== ticket) {
       return;
     }
-    const args: Record<string, unknown> = { input: inputPath };
-    if (job.method === "protenix") {
-      args.out_dir = "out";
-    } else {
-      args.dump_dir = "out";
-    }
-    output.textContent = inputPath;
     job.lines = ["submitting", file.name];
     const outcome = await callTool(job.method, args);
     if (job.ticket !== ticket) {

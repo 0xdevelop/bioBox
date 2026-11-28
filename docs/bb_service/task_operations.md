@@ -12,10 +12,10 @@
 | 二进制运行模式 | 配置文件 | test_ui 条件 |
 |---|---|---|
 | debug | `example_files/config_local.yaml` | `enabled` 缺席则开；显式 false 不调用 `LoadTestWeb` |
-| test | `conf/config.yaml` | 同上 |
-| release | `conf/config.yaml` | `enabled` 缺席则关；显式 true 才监听 |
+| test | 可执行文件目录下的 `conf/config.yaml` | 同上 |
+| release | 可执行文件目录下的 `conf/config.yaml` | `enabled` 缺席则关；显式 true 才监听 |
 
-模式在构建时确定，不是 URL 参数或配置开关。`./build.sh test` 生成本机 test 模式主程序；`./build.sh pack test linux_<arch>` 才是 Linux 打包且运行模式为 test。构建前置条件见[服务说明](../../README.md#本地构建与开发调试)。不要用 release 二进制尝试“打开调试模式”。进程不自动读取 `example_files/config_local.yaml`。
+模式在构建时确定，不是 URL 参数或配置开关。`./build.sh test` 生成本机 test 模式主程序；`./build.sh pack test linux_<arch>` 才是 Linux 打包且运行模式为 test。构建前置条件见[服务说明](../../README.md#本地构建与开发调试)。不要用 release 二进制尝试“打开调试模式”。debug 才会读取 CWD 相对的 `./example_files/config_local.yaml`；test 与 release 读取可执行文件目录下的 `conf/config.yaml`（由启动时的 ExecutableDir 解析，不再用 CWD 相对的 `./conf/config.yaml` 覆盖）。
 
 ### 隔离运行调试页
 
@@ -32,12 +32,12 @@ cp example_files/config_example.yaml tmp/task-debug/conf/config.yaml
 
 启动前在这个**独立副本**中确认：
 
-1. `test_ui_cfg.enabled: true`，`bind_address: "127.0.0.1"`，port 是未占用的有效端口（示例 13003）。所有启用的 API 监听也设为 `127.0.0.1` 并选不冲突的端口；frontend 不需要时显式 `enabled: false`。不要为调试把监听扩大到公网。
+1. `test_ui_cfg.enabled: true`，`bind_address: "127.0.0.1"`，port 是未占用的有效端口（示例 17170）。所有启用的 API 监听也设为 `127.0.0.1` 并选不冲突的端口；frontend 不需要时显式 `enabled: false`。不要为调试把监听扩大到公网。
 2. `storage_cfg.primary: sqlite`，SQLite 启用且路径指向临时独立库；其他存储显式 `enabled: false`。**不要让临时进程与正式进程共用队列库**。身份与 API key 属于各自服务的库，不能把正式服务的 key 当成临时库里的身份。
 3. `cli_cfg.work_root` 指向本仓 `tmp/task-debug/` 下的独立作业目录。需要执行真实业务才配置已安装的 runtime 路径；binary 为空时业务拒绝启动，不会自动安装或下载。未打算推理时，不要提交任务；页面探测只检查调用链，不运行推理。
 4. 保留鉴权；按实际服务的认证配置提供有效属主凭证，不要用 `auth_cfg.enabled: false` 代替身份。运行模式与 test_ui 开关不改变业务鉴权。
 
-打开运行该进程的机器上的 `http://127.0.0.1:<test_ui-port>/flow_debug.html`；13003 只是示例，不保证当前机器已启动。跨机器访问只使用已有授权安全连接；浏览器自身的 localhost 不是远端机器。
+打开运行该进程的机器上的 `http://127.0.0.1:<test_ui-port>/flow_debug.html`；17170 只是示例，不保证当前机器已启动。跨机器访问只使用已有授权安全连接；浏览器自身的 localhost 不是远端机器。
 
 如果只想通过临时调试页查看已有正式任务，在页面填写**正式服务已经启用的回环协议地址**，使用正式服务的属主 key；test_ui 代理只允许回环目标。不要为此把临时进程接到正式队列库。结束后停止临时进程，再清理自己的 `tmp/task-debug/`，不要删正式库或正式作业目录。
 

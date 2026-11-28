@@ -7,6 +7,8 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -15,6 +17,7 @@ import (
 	"github.com/0xdevelop/bioBox/bb_api/bb_api_auth/bb_api_auth_session"
 	"github.com/0xdevelop/bioBox/bb_api/bb_api_error_code"
 	"github.com/0xdevelop/bioBox/bb_api/bb_api_supported_methods"
+	"github.com/0xdevelop/bioBox/bb_cli_proc"
 	"github.com/0xdevelop/bioBox/bb_common"
 	"github.com/0xdevelop/bioBox/bb_config"
 	"github.com/0xdevelop/bioBox/bb_policy/bb_policy_config"
@@ -495,6 +498,15 @@ func RequeueOrphanedTasks(ctx context.Context) error {
 
 	requeued := 0
 	for _, orphan := range orphans {
+		if leftoverAlive, pgid := leftoverProcessGroup(orphan.TaskID); leftoverAlive {
+			if orphan.CancelRequested {
+				if sigErr := bb_cli_proc.SignalTermProcessGroup(pgid); sigErr != nil {
+					gtbox_log.LogWarnf("orphan cancel signal failed: task_id=%s pgid=%d err=%v", orphan.TaskID, pgid, sigErr)
+				}
+			}
+			// Leave the still-running job in place. Do not requeue or force-kill.
+			continue
+		}
 		if orphan.CancelRequested {
 			now := time.Now().UTC()
 			if _, updErr := markTaskDoneWithStep(db, orphan.TaskID,
@@ -580,6 +592,25 @@ func RequeueOrphanedTasks(ctx context.Context) error {
 		gtbox_log.LogInfof("async task requeue: %d orphaned task(s) back to queued", requeued)
 	}
 	return nil
+}
+
+func leftoverProcessGroup(taskID string) (bool, int) {
+	if strings.TrimSpace(taskID) == "" {
+		return false, 0
+	}
+	workRoot, err := configuredWorkRoot()
+	if err != nil {
+		return false, 0
+	}
+	jobDir := filepath.Join(workRoot, taskID)
+	pgid, err := bb_cli_proc.ReadJobProcessGroup(jobDir)
+	if err != nil {
+		return false, 0
+	}
+	if !bb_cli_proc.ProcessGroupAliveInDir(pgid, jobDir) {
+		return false, pgid
+	}
+	return true, pgid
 }
 
 // ExpireTimedOutTasks 把已超过整体生命周期（从 created_at 起算）的排队任务落 system_error。
