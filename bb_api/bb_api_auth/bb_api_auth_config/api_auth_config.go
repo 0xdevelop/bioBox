@@ -35,6 +35,7 @@ type AuthConfig struct {
 	Verification *VerificationConfig `yaml:"verification" json:"verification" toml:"verification" comment:"Verification code policy"`
 	Session      *SessionConfig      `yaml:"session" json:"session" toml:"session" comment:"JWT and refresh session policy"`
 	Bridge       *BridgeConfig       `yaml:"bridge" json:"bridge" toml:"bridge" comment:"bridge 形态配置（auth_type=bridge 时必填）"`
+	AdminUsers   []string            `yaml:"admin_users" json:"admin_users" toml:"admin_users" comment:"管理员明单（用户名或邮箱，忽略大小写）；这些账号在注册、登录或启动检查时确保为 admin。清单为空且库中尚无 admin 时，第一个成功注册的用户成为 admin"`
 }
 
 type BridgeConfig struct {
@@ -313,4 +314,37 @@ func CurrentSessionConfig() (*SessionConfig, error) {
 		return nil, errors.New("session config is invalid")
 	}
 	return config, nil
+}
+
+// CurrentAdminIdentities 返回规范化后的管理员明单（小写、去空）。
+func CurrentAdminIdentities() []string {
+	if CurrentCfgAuth == nil {
+		return nil
+	}
+	identities := make([]string, 0, len(CurrentCfgAuth.AdminUsers))
+	seen := make(map[string]struct{}, len(CurrentCfgAuth.AdminUsers))
+	for _, raw := range CurrentCfgAuth.AdminUsers {
+		identity := strings.ToLower(strings.TrimSpace(raw))
+		if identity == "" {
+			continue
+		}
+		if _, exists := seen[identity]; exists {
+			continue
+		}
+		seen[identity] = struct{}{}
+		identities = append(identities, identity)
+	}
+	return identities
+}
+
+// IdentityInAdminList 判断用户名或邮箱是否在管理员明单中。
+func IdentityInAdminList(userName string, email string) bool {
+	name := strings.ToLower(strings.TrimSpace(userName))
+	mail := strings.ToLower(strings.TrimSpace(email))
+	for _, identity := range CurrentAdminIdentities() {
+		if identity == name || (mail != "" && identity == mail) {
+			return true
+		}
+	}
+	return false
 }

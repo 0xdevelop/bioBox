@@ -51,4 +51,8 @@ var (
 		Code:    VerifyCodeDeliveryFailed,
 		Message: "verification code delivery failed",
 	}
+	ErrLastAdmin = &Error{
+		Code:    InvalidArguments,
+		Message: "cannot demote the last admin",
+	}
 )

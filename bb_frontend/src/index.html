@@ -18,27 +18,89 @@
         <p id="login-state"></p>
       </form>
     </section>
-    <div id="business" class="app" hidden>
-      <section class="stage" id="stage" aria-label="任务转盘">
-        <canvas id="flywheel"></canvas>
-      </section>
-      <section class="work">
-        <form class="job" id="protenix-form">
-          <h2>Protenix</h2>
-          <p class="file-name" id="protenix-file-name"></p>
-          <label>改选文件 <input name="file" type="file" /></label>
-          <button id="submit-protenix" type="submit">启动 Protenix</button>
-          <pre id="protenix-output"></pre>
-        </form>
-        <form class="job" id="pxdesign-form">
-          <h2>PXDesign</h2>
-          <p class="file-name" id="pxdesign-file-name"></p>
-          <label>选择输入文件 <input name="file" type="file" /></label>
-          <button id="submit-pxdesign" type="submit">启动 pxdesign</button>
-          <pre id="pxdesign-output"></pre>
-        </form>
-      </section>
-      <button id="logout-submit" type="button">退出</button>
+    <div id="app-shell" hidden>
+      <header class="topbar">
+        <nav class="nav" aria-label="页面">
+          <a href="/business" id="nav-business">业务</a>
+          <a href="/manage" id="nav-manage" hidden>管理</a>
+        </nav>
+        <button id="logout-submit" type="button">退出</button>
+      </header>
+      <div id="page-business" class="app" hidden>
+        <section class="stage" id="stage" aria-label="任务转盘">
+          <canvas id="flywheel"></canvas>
+        </section>
+        <section class="work">
+          <form class="job" id="protenix-form">
+            <h2>Protenix</h2>
+            <p class="file-name" id="protenix-file-name"></p>
+            <label>改选文件 <input name="file" type="file" /></label>
+            <button id="submit-protenix" type="submit">启动 Protenix</button>
+            <pre id="protenix-output"></pre>
+          </form>
+          <form class="job" id="pxdesign-form">
+            <h2>PXDesign</h2>
+            <p class="file-name" id="pxdesign-file-name"></p>
+            <label>选择输入文件 <input name="file" type="file" /></label>
+            <button id="submit-pxdesign" type="submit">启动 pxdesign</button>
+            <pre id="pxdesign-output"></pre>
+          </form>
+        </section>
+        <section class="history" id="task-history" aria-label="我的任务">
+          <div class="history-head">
+            <h2>我的任务</h2>
+            <button id="refresh-tasks" type="button">刷新</button>
+          </div>
+          <p class="hint">只列出当前登录账号的任务，最多 50 条。</p>
+          <div id="task-list" class="task-list"></div>
+          <pre id="task-detail"></pre>
+        </section>
+      </div>
+      <div id="page-manage" class="manage" hidden>
+        <h2>管理</h2>
+        <p id="manage-access" class="access-msg"></p>
+        <p><a href="/business" id="manage-back">返回业务</a></p>
+        <section id="manage-instance" class="job">
+          <h3>本实例</h3>
+          <p class="hint">以下为页面注入的只读说明，不是管理 API 返回的数据。</p>
+          <dl id="manage-instance-dl" class="instance-dl"></dl>
+        </section>
+        <div id="manage-tools" hidden>
+          <section class="job" id="manage-users">
+            <div class="history-head">
+              <h3>用户</h3>
+              <button id="refresh-users" type="button">刷新</button>
+            </div>
+            <div id="user-list" class="task-list"></div>
+          </section>
+          <section class="job" id="manage-tasks">
+            <div class="history-head">
+              <h3>全站任务</h3>
+              <button id="refresh-admin-tasks" type="button">刷新</button>
+            </div>
+            <p class="hint">最多一次 200 条，默认 100 条。</p>
+            <div id="admin-task-list" class="task-list"></div>
+            <pre id="admin-task-detail"></pre>
+          </section>
+          <section class="job" id="manage-resources">
+            <h3>资源</h3>
+            <p class="hint">resource.status / resource.prepare 仅 admin 可调用。</p>
+            <label>集合 <select id="resource-set"></select></label>
+            <div class="task-actions">
+              <button id="resource-status" type="button">查询状态</button>
+              <button id="resource-prepare" type="button">准备</button>
+            </div>
+            <pre id="resource-detail"></pre>
+          </section>
+          <section class="job" id="manage-sessions">
+            <div class="history-head">
+              <h3>会话</h3>
+              <button id="refresh-sessions" type="button">刷新</button>
+            </div>
+            <div id="session-list" class="task-list"></div>
+          </section>
+        </div>
+      </div>
     </div>
   </body>
 </html>

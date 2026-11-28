@@ -45,7 +45,10 @@ User 域持有 User model、用户查询和密码处理。Auth 只调用 User �
 - `bind_phone`：可选绑定手机号，未绑定为 `NULL`，唯一。
 - `password_hash`：密码哈希，JSON 序列化排除（`json:"-"`），不得进入任何响应。
 - `email_verified_at` / `phone_verified_at`：各自与 `bind_email` / `bind_phone` 同生共死——绑定事务一起写入，解绑一起清空，换绑重新验证后写新值。登录判断只看 bind 字段非空，验证时间仅作审计。
+- `role`：仅 `user` 或 `admin`，默认 `user`。现有用户在迁移后回填为 `user`。角色以数据库为准，不信任客户端自称。
 - 以及 `gorm.Model` 默认的 `created_at`、`updated_at`、`deleted_at`。
+
+`auth_cfg.admin_users` 是可选的管理员明单（用户名或邮箱，忽略大小写）。名单中的账号在注册、登录或启动检查时确保为 admin。名单为空且库中还没有 admin 时：已有用户在启动初始化中把最早的账号提升为 admin；否则第一个成功注册的用户成为 admin（均为条件更新，避免并发产生两个首个 admin）。`admin.user.set_role` 可提升或降权，但禁止撤销最后一个 admin。
 
 不创建 UserProfile model 或表。手机号只有验证完成后才能写入 `bind_phone`。
 

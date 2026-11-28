@@ -750,6 +750,11 @@ func TaskCancel(ctx context.Context, input interface{}) (interface{}, error) {
 	if err != nil {
 		return nil, err
 	}
+	return cancelTaskByID(ctx, taskID, user.UserID)
+}
+
+// cancelTaskByID 取消指定任务。ownerID 非空时只取消该属主的任务；空字符串表示按 task_id 取消任意属主任务（管理接口）。
+func cancelTaskByID(ctx context.Context, taskID string, ownerID string) (interface{}, error) {
 	taskLifecycleMutex.Lock()
 	defer taskLifecycleMutex.Unlock()
 	db, err := bb_storage.GormDB(ctx)
@@ -757,7 +762,11 @@ func TaskCancel(ctx context.Context, input interface{}) (interface{}, error) {
 		return nil, err
 	}
 	var task bb_ability_task_model.AsyncTask
-	if err = db.Where("task_id = ? AND user_id = ?", taskID, user.UserID).Take(&task).Error; err != nil {
+	query := db.Where("task_id = ?", taskID)
+	if ownerID != "" {
+		query = query.Where("user_id = ?", ownerID)
+	}
+	if err = query.Take(&task).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, bb_api_error_code.ErrInvalidArguments
 		}

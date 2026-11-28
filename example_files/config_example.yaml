@@ -66,6 +66,7 @@ policy_cfg: # Policy scheduling configurations
 auth_cfg: # Auth configurations
   enabled: true # 统一准入门禁开关；缺省 true；false=门禁放行不提供身份，依赖身份的方法不可用
   auth_type: "jwt" # 鉴权类型；缺省与当前唯一支持值均为 jwt
+  admin_users: [] # 管理员明单（用户名或邮箱）。非空时这些账号在注册/登录/启动时确保为 admin；为空且库中尚无 admin 时，第一个成功注册的用户成为 admin
   email:
     enabled: false # 仅控制邮件；真实验证码始终写服务 INFO 日志
     provider: "resend" # 供应商值，不是能力配置键

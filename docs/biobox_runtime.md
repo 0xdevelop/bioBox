@@ -209,7 +209,7 @@ show_yeah 不是这个 frontend。
 缺省开。显式 false 不监听，embed 仍在二进制里。
 内嵌页面按当前页面主机名和实例配置的 MCP 端口发送 `tools/call`。在页面登录后，后续调用通过 Bearer 携带会话凭证。
 
-两个表单各自接受输入文件。JSON 输入优先作为 `input_data` 经 MCP 直接提交；无法解析为 JSON 时才走兼容的 `/cli-input` 落盘路径。每个表单都有自己的任务状态和输出区。
+两个表单各自接受输入文件。JSON 输入优先作为 `input_data` 经 MCP 直接提交；无法解析为 JSON 时才走兼容的 `/cli-input` 落盘路径。每个表单都有自己的任务状态和输出区。登录后业务页为 `/` 或 `/business`（含本账号任务列表、取消与产物），管理页为 `/manage`（仅 admin 可见入口，可管理用户、全站任务、会话和资源准备）。`resource.status` / `resource.prepare` 仅 admin 可调用。
 
 受理返回 `task_id` 之后，
 该条每 2 秒调用 `task.get`，

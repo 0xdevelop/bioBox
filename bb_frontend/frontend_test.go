@@ -62,6 +62,11 @@ func TestFrontendHTTPAndShutdown(t *testing.T) {
 		empty                           bool
 	}{
 		{method: "GET", path: "/", contentType: "text/html", body: "submit-protenix"},
+		{method: "GET", path: "/business", contentType: "text/html", body: "我的任务"},
+		{method: "GET", path: "/business/", contentType: "text/html", body: "nav-business"},
+		{method: "GET", path: "/manage", contentType: "text/html", body: "page-manage"},
+		{method: "GET", path: "/manage/", contentType: "text/html", body: "管理"},
+		{method: "HEAD", path: "/manage", contentType: "text/html", empty: true},
 		{method: "GET", path: "/index.js", contentType: "javascript", body: "input_data"},
 		{method: "GET", path: "/index.css", contentType: "text/css", body: "font-family"},
 		{method: "HEAD", path: "/", contentType: "text/html", empty: true},
@@ -69,7 +74,9 @@ func TestFrontendHTTPAndShutdown(t *testing.T) {
 		{method: "GET", path: "/package.json", empty: true},
 		{method: "GET", path: "/scripts/", empty: true},
 		{method: "GET", path: "/missing.js", empty: true},
+		{method: "GET", path: "/admin", empty: true},
 		{method: "POST", path: "/", empty: true},
+		{method: "POST", path: "/manage", empty: true},
 	} {
 		t.Run(testCase.method+testCase.path, func(t *testing.T) {
 			request, err := http.NewRequest(testCase.method, "http://"+server.Addr+testCase.path, nil)

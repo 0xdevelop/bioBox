@@ -85,7 +85,7 @@ func frontendHandler(webFS fs.FS) (http.Handler, error) {
 	index = bytes.Replace(index, []byte("{{BIOBOX_MCP_PORT}}"), []byte(mcpPort), 1)
 	static := frontendStaticHandler(webFS)
 	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		if request.URL.Path == "/" && (request.Method == http.MethodGet || request.Method == http.MethodHead) {
+		if isFrontendPagePath(request.URL.Path) && (request.Method == http.MethodGet || request.Method == http.MethodHead) {
 			writer.Header().Set("Cache-Control", "no-cache")
 			http.ServeContent(writer, request, "index.html", time.Time{}, bytes.NewReader(index))
 			return
@@ -96,6 +96,17 @@ func frontendHandler(webFS fs.FS) (http.Handler, error) {
 		}
 		static.ServeHTTP(writer, request)
 	}), nil
+}
+
+// isFrontendPagePath 识别业务/管理分页面路径，供刷新时回退到同一份 index.html。
+// 只放行明确约定的页面，未知路径仍返回中性空响应。
+func isFrontendPagePath(rawPath string) bool {
+	switch path.Clean(rawPath) {
+	case "/", "/business", "/manage":
+		return true
+	default:
+		return false
+	}
 }
 
 func frontendStaticHandler(webFS fs.FS) http.Handler {

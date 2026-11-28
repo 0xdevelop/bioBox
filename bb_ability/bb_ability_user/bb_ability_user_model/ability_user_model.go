@@ -17,4 +17,5 @@ type User struct {
 	PasswordHash    string     `gorm:"size:255;not null" json:"-"`
 	EmailVerifiedAt *time.Time `json:"email_verified_at"`
 	PhoneVerifiedAt *time.Time `json:"phone_verified_at"`
+	Role            string     `gorm:"size:16;not null;default:user;index:idx_users_role" json:"role"`
 }

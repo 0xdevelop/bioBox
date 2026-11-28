@@ -13,7 +13,7 @@
 
 bioBox 在这层上面挂 Protenix（v1 / v2）和 pxdesign。两条各自先做同一套前置检查，参数和阈值不同，符合才调用。
 
-test_ui 是多协议 API 调试台。`bb_frontend` 是带登录的业务 Web，通过 MCP 提交两种计算并查询任务状态。内嵌页面使用当前主机和服务配置的 MCP 端口。
+test_ui 是多协议 API 调试台。`bb_frontend` 是带登录的业务 Web，通过 MCP 提交两种计算并查询任务状态。登录后业务页为 `/` 或 `/business`，管理页为 `/manage`（仅 admin 可见入口，无权限时入口隐藏）。内嵌页面使用当前主机和服务配置的 MCP 端口。
 
 图：[docs/biobox_runtime.html](docs/biobox_runtime.html)。同关系说明：[docs/biobox_runtime.md](docs/biobox_runtime.md)。
 

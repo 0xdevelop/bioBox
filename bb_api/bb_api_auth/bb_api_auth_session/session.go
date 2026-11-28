@@ -112,12 +112,18 @@ func AuthLoginEmail(ctx context.Context, input interface{}) (interface{}, error)
 		bb_api_auth_common.LogInternalFailure("authenticate user by email")
 		return nil, err
 	}
+	user, err = bb_ability_user.EnsureAllowlistedAdmin(ctx, user)
+	if err != nil {
+		bb_api_auth_common.LogInternalFailure("promote allowlisted admin")
+		return nil, err
+	}
 	tokens, err := createSession(ctx, user)
 	if err != nil {
 		bb_api_auth_common.LogInternalFailure("create auth session")
 		return nil, err
 	}
 	tokens["user"] = user
+	tokens["role"] = bb_ability_user.PublicUser(user)["role"]
 	return tokens, nil
 }
 
@@ -156,12 +162,18 @@ func AuthLoginPhone(ctx context.Context, input interface{}) (interface{}, error)
 		bb_api_auth_common.LogInternalFailure("authenticate user by phone")
 		return nil, err
 	}
+	user, err = bb_ability_user.EnsureAllowlistedAdmin(ctx, user)
+	if err != nil {
+		bb_api_auth_common.LogInternalFailure("promote allowlisted admin")
+		return nil, err
+	}
 	tokens, err := createSession(ctx, user)
 	if err != nil {
 		bb_api_auth_common.LogInternalFailure("create auth session")
 		return nil, err
 	}
 	tokens["user"] = user
+	tokens["role"] = bb_ability_user.PublicUser(user)["role"]
 	return tokens, nil
 }
 
@@ -213,8 +225,24 @@ func AuthJWTTokenCheck(ctx context.Context, input interface{}) (interface{}, err
 		return nil, err
 	}
 	caller := callerFromIdentity(identity)
+	db, err := bb_storage.GormDB(ctx)
+	if err != nil {
+		return nil, err
+	}
+	user, err := bb_ability_user.FindByUserID(db, identity.user.UserID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, bb_api_error_code.ErrPermissionDenied
+		}
+		return nil, err
+	}
+	user, err = bb_ability_user.EnsureAllowlistedAdmin(ctx, user)
+	if err != nil {
+		return nil, err
+	}
 	result := map[string]interface{}{
-		"user":        identity.user,
+		"user":        user,
+		"role":        bb_ability_user.PublicUser(user)["role"],
 		"auth_source": caller.AuthSource,
 	}
 	switch caller.AuthSource {
@@ -716,4 +744,28 @@ func AuthenticatedUser(ctx context.Context) (*bb_ability_user_model.User, *authM
 		return nil, nil, err
 	}
 	return identity.user, identity.session, nil
+}
+
+// RequireAdmin 重新查询数据库中的当前 role，仅当为 admin 时通过。
+// 不信任客户端或 JWT 中的角色自称。API key 与 session 一样，按所属用户的库内 role 判断。
+func RequireAdmin(ctx context.Context) (*bb_ability_user_model.User, error) {
+	caller, _, err := AuthenticatedUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	db, err := bb_storage.GormDB(ctx)
+	if err != nil {
+		return nil, err
+	}
+	user, err := bb_ability_user.FindByUserID(db, caller.UserID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, bb_api_error_code.ErrPermissionDenied
+		}
+		return nil, err
+	}
+	if !bb_ability_user.IsAdmin(user) {
+		return nil, bb_api_error_code.ErrPermissionDenied
+	}
+	return user, nil
 }

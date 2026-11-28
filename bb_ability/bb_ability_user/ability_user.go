@@ -49,6 +49,7 @@ func Create(tx *gorm.DB, userName string, email string, password string, emailVe
 		BindEmail:       &email,
 		PasswordHash:    passwordHash,
 		EmailVerifiedAt: &emailVerifiedAt,
+		Role:            RoleUser,
 	}
 	if err = tx.Create(record).Error; err != nil {
 		return nil, err

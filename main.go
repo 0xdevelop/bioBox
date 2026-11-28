@@ -9,6 +9,7 @@ import (
 	"runtime"
 	"time"
 
+	"github.com/0xdevelop/bioBox/bb_ability/bb_ability_user"
 	"github.com/0xdevelop/bioBox/bb_api"
 	"github.com/0xdevelop/bioBox/bb_common"
 	"github.com/0xdevelop/bioBox/bb_common/bb_app_path"
@@ -133,6 +134,10 @@ func main() {
 	}()
 	if err := bb_storage.GormAutoMigrate(); err != nil {
 		gtbox_log.LogErrorf("gorm AutoMigrate failed: %v", err)
+		return
+	}
+	if err := bb_ability_user.InitializeRoles(context.Background()); err != nil {
+		gtbox_log.LogErrorf("initialize user roles failed: %v", err)
 		return
 	}
 	gtbox_log.LogInfof("storage migrated")

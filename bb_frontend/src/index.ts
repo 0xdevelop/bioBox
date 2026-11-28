@@ -1,8 +1,18 @@
 import "./styles.css";
 import { callTool, clearSession, hasSession, landCLIInput, restoreSession, saveSession } from "./api.ts";
+import { canManage, clearVerifiedRole, rememberVerifiedRole } from "./access.ts";
 import { pxdesignDefaultFile, protenixDefaultFile } from "./generated_test_data.ts";
 import { mountFlywheel, type FlywheelLane } from "./flywheel.ts";
+import { pathForPage, routeFromPath, type AppPage } from "./routes.ts";
 import { planSubmit } from "./submit_args.ts";
+import {
+  artifactFileFromPayload,
+  artifactsFromPayload,
+  canCancelTask,
+  canListArtifacts,
+  decodeBase64Content,
+  tasksFromListPayload,
+} from "./tasks.ts";
 import { asRecord, isTaskDone, taskFromPayload } from "./task_view.ts";
 
 type DefaultFile = { name: string; text: string };
@@ -21,7 +31,14 @@ const jobs: Record<JobName, JobView> = {
 };
 
 const loginScreen = document.querySelector<HTMLElement>("#login-screen");
-const business = document.querySelector<HTMLElement>("#business");
+const appShell = document.querySelector<HTMLElement>("#app-shell");
+const pageBusiness = document.querySelector<HTMLElement>("#page-business");
+const pageManage = document.querySelector<HTMLElement>("#page-manage");
+const navBusiness = document.querySelector<HTMLAnchorElement>("#nav-business");
+const navManage = document.querySelector<HTMLAnchorElement>("#nav-manage");
+const manageAccess = document.querySelector<HTMLElement>("#manage-access");
+const manageInstanceDl = document.querySelector<HTMLElement>("#manage-instance-dl");
+const manageBack = document.querySelector<HTMLAnchorElement>("#manage-back");
 const loginForm = document.querySelector<HTMLFormElement>("#login-form");
 const loginState = document.querySelector<HTMLElement>("#login-state");
 const logoutButton = document.querySelector<HTMLButtonElement>("#logout-submit");
@@ -32,10 +49,32 @@ const pxdesignFileName = document.querySelector<HTMLElement>("#pxdesign-file-nam
 const protenixOutput = document.querySelector<HTMLElement>("#protenix-output");
 const pxdesignOutput = document.querySelector<HTMLElement>("#pxdesign-output");
 const canvas = document.querySelector<HTMLCanvasElement>("#flywheel");
+const taskList = document.querySelector<HTMLElement>("#task-list");
+const taskDetail = document.querySelector<HTMLElement>("#task-detail");
+const refreshTasks = document.querySelector<HTMLButtonElement>("#refresh-tasks");
+const manageTools = document.querySelector<HTMLElement>("#manage-tools");
+const userList = document.querySelector<HTMLElement>("#user-list");
+const refreshUsers = document.querySelector<HTMLButtonElement>("#refresh-users");
+const adminTaskList = document.querySelector<HTMLElement>("#admin-task-list");
+const adminTaskDetail = document.querySelector<HTMLElement>("#admin-task-detail");
+const refreshAdminTasks = document.querySelector<HTMLButtonElement>("#refresh-admin-tasks");
+const resourceSet = document.querySelector<HTMLSelectElement>("#resource-set");
+const resourceStatus = document.querySelector<HTMLButtonElement>("#resource-status");
+const resourcePrepare = document.querySelector<HTMLButtonElement>("#resource-prepare");
+const resourceDetail = document.querySelector<HTMLElement>("#resource-detail");
+const sessionList = document.querySelector<HTMLElement>("#session-list");
+const refreshSessions = document.querySelector<HTMLButtonElement>("#refresh-sessions");
 
 if (
   loginScreen === null ||
-  business === null ||
+  appShell === null ||
+  pageBusiness === null ||
+  pageManage === null ||
+  navBusiness === null ||
+  navManage === null ||
+  manageAccess === null ||
+  manageInstanceDl === null ||
+  manageBack === null ||
   loginForm === null ||
   loginState === null ||
   logoutButton === null ||
@@ -45,7 +84,22 @@ if (
   pxdesignFileName === null ||
   protenixOutput === null ||
   pxdesignOutput === null ||
-  canvas === null
+  canvas === null ||
+  taskList === null ||
+  taskDetail === null ||
+  refreshTasks === null ||
+  manageTools === null ||
+  userList === null ||
+  refreshUsers === null ||
+  adminTaskList === null ||
+  adminTaskDetail === null ||
+  refreshAdminTasks === null ||
+  resourceSet === null ||
+  resourceStatus === null ||
+  resourcePrepare === null ||
+  resourceDetail === null ||
+  sessionList === null ||
+  refreshSessions === null
 ) {
   throw new Error("frontend controls are missing");
 }
@@ -57,21 +111,99 @@ mountFlywheel(canvas, (): FlywheelLane[] => [
   { name: "PXDESIGN", lines: jobs.pxdesign.lines },
 ]);
 
-restoreSession();
-if (hasSession()) {
-  showBusiness();
-} else {
-  showLogin();
+void hydrateSession();
+window.addEventListener("popstate", () => {
+  applyRoute();
+});
+
+function currentPage(): AppPage {
+  return routeFromPath(window.location.pathname).page;
 }
 
-function showLogin(): void {
-  loginScreen.hidden = false;
-  business.hidden = true;
+function goTo(page: AppPage): void {
+  const next = page === "business" && (window.location.pathname === "/" || window.location.pathname === "")
+    ? "/"
+    : pathForPage(page);
+  if (window.location.pathname !== next) {
+    history.pushState({ page }, "", next);
+  }
+  applyRoute();
 }
 
-function showBusiness(): void {
+function applyRoute(): void {
+  const page = currentPage();
+  if (!hasSession()) {
+    loginScreen.hidden = false;
+    appShell.hidden = true;
+    document.title = "bioBox · 登录";
+    return;
+  }
   loginScreen.hidden = true;
-  business.hidden = false;
+  appShell.hidden = false;
+  const allowed = canManage();
+  navManage.hidden = !allowed;
+  pageBusiness.hidden = page !== "business";
+  pageManage.hidden = page !== "manage";
+  navBusiness.setAttribute("aria-current", page === "business" ? "page" : "false");
+  navManage.setAttribute("aria-current", page === "manage" ? "page" : "false");
+  document.title = page === "manage" ? "bioBox · 管理" : "bioBox · 业务";
+  if (page === "manage") {
+    renderManagePage(allowed);
+  } else {
+    void loadTaskList();
+  }
+}
+
+async function hydrateSession(): Promise<void> {
+  restoreSession();
+  if (!hasSession()) {
+    clearVerifiedRole();
+    applyRoute();
+    return;
+  }
+  try {
+    const outcome = await callTool("auth.jwt_token.check", {});
+    if (outcome.isError) {
+      clearSession();
+      clearVerifiedRole();
+      applyRoute();
+      return;
+    }
+    rememberVerifiedRole(outcome.value);
+  } catch (error: unknown) {
+    if (handleAuthFailure(error)) {
+      return;
+    }
+    clearVerifiedRole();
+  }
+  applyRoute();
+}
+
+function renderManagePage(allowed: boolean): void {
+  if (allowed) {
+    manageAccess.textContent = "当前账号具有管理权限。角色以服务端数据库为准。";
+    manageTools.hidden = false;
+    void loadAdminUsers();
+    void loadAdminTasks();
+    void loadResourceSets();
+    void loadAdminSessions();
+  } else {
+    manageAccess.textContent =
+      "当前账号没有管理权限。管理入口仅对服务端确认的 admin 可见；直接访问本页不会开放操作。";
+    manageTools.hidden = true;
+  }
+  manageInstanceDl.replaceChildren();
+  addDefinition(manageInstanceDl, "页面地址", window.location.origin);
+  const port = document.querySelector<HTMLMetaElement>('meta[name="biobox-mcp-port"]')?.content.trim() ?? "";
+  addDefinition(manageInstanceDl, "MCP 端口", port === "" ? "未注入" : port);
+}
+
+function addDefinition(list: HTMLElement, title: string, value: string): void {
+  const dt = document.createElement("dt");
+  dt.textContent = title;
+  const dd = document.createElement("dd");
+  dd.textContent = value;
+  list.append(dt, dd);
 }
 
 function bindDefaultFile(form: HTMLFormElement, label: HTMLElement, fallback: DefaultFile): void {
@@ -156,6 +288,17 @@ function permissionDenied(error: unknown): boolean {
   return error instanceof Error && error.message === "未登录";
 }
 
+function handleAuthFailure(error: unknown): boolean {
+  if (!permissionDenied(error)) {
+    return false;
+  }
+  clearSession();
+  clearVerifiedRole();
+  applyRoute();
+  loginState.textContent = "请重新登录";
+  return true;
+}
+
 async function watchTask(job: JobView, output: HTMLElement, taskId: string, ticket: number): Promise<void> {
   const controller = new AbortController();
   job.abort = controller;
@@ -169,6 +312,7 @@ async function watchTask(job: JobView, output: HTMLElement, taskId: string, tick
     output.textContent = text;
     job.lines = text.split("\n").slice(0, 8);
     if (outcome.isError || isTaskDone(outcome.value)) {
+      void loadTaskList();
       return;
     }
     await new Promise((resolve) => {
@@ -222,6 +366,7 @@ async function submitJob(job: JobView, output: HTMLElement, file: File | null): 
     const taskId = typeof accepted?.task_id === "string" ? accepted.task_id : "";
     output.textContent = formatTask(outcome.value);
     job.lines = [String(accepted?.run_status ?? "accepted"), taskId];
+    void loadTaskList();
     if (taskId !== "") {
       await watchTask(job, output, taskId, ticket);
     }
@@ -229,15 +374,192 @@ async function submitJob(job: JobView, output: HTMLElement, file: File | null): 
     if (job.ticket !== ticket) {
       return;
     }
-    if (permissionDenied(error)) {
-      clearSession();
-      showLogin();
-      loginState.textContent = "请重新登录";
+    if (handleAuthFailure(error)) {
       return;
     }
     const message = error instanceof Error ? error.message : String(error);
     output.textContent = message;
     job.lines = [message];
+  }
+}
+
+async function loadTaskList(): Promise<void> {
+  if (!hasSession() || currentPage() !== "business") {
+    return;
+  }
+  try {
+    const outcome = await callTool("task.list", {});
+    if (outcome.isError) {
+      taskList.textContent = typeof outcome.value === "string" ? outcome.value : "无法加载任务列表";
+      return;
+    }
+    renderTaskList(tasksFromListPayload(outcome.value));
+  } catch (error: unknown) {
+    if (handleAuthFailure(error)) {
+      return;
+    }
+    taskList.textContent = error instanceof Error ? error.message : "无法加载任务列表";
+  }
+}
+
+function renderTaskList(tasks: Record<string, unknown>[]): void {
+  taskList.replaceChildren();
+  if (tasks.length === 0) {
+    const empty = document.createElement("p");
+    empty.className = "hint";
+    empty.textContent = "暂无任务";
+    taskList.append(empty);
+    return;
+  }
+  for (const task of tasks) {
+    taskList.append(renderTaskRow(task));
+  }
+}
+
+function renderTaskRow(task: Record<string, unknown>): HTMLElement {
+  const row = document.createElement("article");
+  row.className = "task-row";
+  const taskId = typeof task.task_id === "string" ? task.task_id : "";
+  const meta = document.createElement("p");
+  meta.className = "task-meta";
+  meta.textContent = [
+    String(task.method ?? ""),
+    String(task.run_status ?? ""),
+    String(task.process_status ?? ""),
+    typeof task.created_at === "string" ? task.created_at : "",
+    taskId,
+  ].filter((part) => part !== "").join("  ·  ");
+  const actions = document.createElement("div");
+  actions.className = "task-actions";
+  const view = document.createElement("button");
+  view.type = "button";
+  view.textContent = "查看";
+  view.addEventListener("click", () => {
+    void inspectTask(taskId);
+  });
+  actions.append(view);
+  if (canCancelTask(task) && taskId !== "") {
+    const cancel = document.createElement("button");
+    cancel.type = "button";
+    cancel.textContent = "取消";
+    cancel.addEventListener("click", () => {
+      void cancelTask(taskId);
+    });
+    actions.append(cancel);
+  }
+  if (canListArtifacts(task) && taskId !== "") {
+    const artifacts = document.createElement("button");
+    artifacts.type = "button";
+    artifacts.textContent = "产物";
+    artifacts.addEventListener("click", () => {
+      void loadArtifacts(taskId, row);
+    });
+    actions.append(artifacts);
+  }
+  row.append(meta, actions);
+  return row;
+}
+
+async function inspectTask(taskId: string): Promise<void> {
+  if (taskId === "") {
+    return;
+  }
+  try {
+    const outcome = await callTool("task.get", { task_id: taskId });
+    taskDetail.textContent = outcome.isError
+      ? JSON.stringify(redact(outcome.value), null, 2)
+      : formatTask(outcome.value);
+  } catch (error: unknown) {
+    if (handleAuthFailure(error)) {
+      return;
+    }
+    taskDetail.textContent = error instanceof Error ? error.message : "无法读取任务";
+  }
+}
+
+async function cancelTask(taskId: string): Promise<void> {
+  if (!window.confirm("取消该任务？")) {
+    return;
+  }
+  try {
+    const outcome = await callTool("task.cancel", { task_id: taskId });
+    taskDetail.textContent = outcome.isError
+      ? JSON.stringify(redact(outcome.value), null, 2)
+      : JSON.stringify(redact(outcome.value), null, 2);
+    await loadTaskList();
+  } catch (error: unknown) {
+    if (handleAuthFailure(error)) {
+      return;
+    }
+    taskDetail.textContent = error instanceof Error ? error.message : "无法取消任务";
+  }
+}
+
+async function loadArtifacts(taskId: string, row: HTMLElement): Promise<void> {
+  try {
+    const outcome = await callTool("task.artifacts", { task_id: taskId });
+    if (outcome.isError) {
+      taskDetail.textContent = JSON.stringify(redact(outcome.value), null, 2);
+      return;
+    }
+    const artifacts = artifactsFromPayload(outcome.value);
+    let list = row.querySelector<HTMLElement>(".artifact-list");
+    if (list === null) {
+      list = document.createElement("ul");
+      list.className = "artifact-list";
+      row.append(list);
+    }
+    list.replaceChildren();
+    if (artifacts.length === 0) {
+      const empty = document.createElement("li");
+      empty.className = "hint";
+      empty.textContent = "没有可下载产物";
+      list.append(empty);
+      return;
+    }
+    for (const artifact of artifacts) {
+      const item = document.createElement("li");
+      const button = document.createElement("button");
+      button.type = "button";
+      button.textContent = `下载 ${artifact.path}`;
+      button.addEventListener("click", () => {
+        void downloadArtifact(taskId, artifact.path);
+      });
+      item.append(button);
+      list.append(item);
+    }
+  } catch (error: unknown) {
+    if (handleAuthFailure(error)) {
+      return;
+    }
+    taskDetail.textContent = error instanceof Error ? error.message : "无法列出产物";
+  }
+}
+
+async function downloadArtifact(taskId: string, path: string): Promise<void> {
+  try {
+    const outcome = await callTool("task.artifact", { task_id: taskId, path });
+    if (outcome.isError) {
+      taskDetail.textContent = JSON.stringify(redact(outcome.value), null, 2);
+      return;
+    }
+    const file = artifactFileFromPayload(outcome.value);
+    if (file === null) {
+      taskDetail.textContent = "产物内容无法解码";
+      return;
+    }
+    const blob = new Blob([decodeBase64Content(file.content)], { type: file.content_type });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = file.name;
+    link.click();
+    URL.revokeObjectURL(url);
+  } catch (error: unknown) {
+    if (handleAuthFailure(error)) {
+      return;
+    }
+    taskDetail.textContent = error instanceof Error ? error.message : "无法下载产物";
   }
 }
 
@@ -270,8 +592,9 @@ loginForm.addEventListener("submit", (event) => {
         return;
       }
       saveSession(token);
+      rememberVerifiedRole(outcome.value);
       loginState.textContent = "";
-      showBusiness();
+      applyRoute();
     } catch (error: unknown) {
       loginState.textContent = error instanceof Error ? error.message : "登录失败";
     }
@@ -288,8 +611,25 @@ logoutButton.addEventListener("click", () => {
       // 本地会话照常清掉。
     }
     clearSession();
-    showLogin();
+    clearVerifiedRole();
+    applyRoute();
   })();
+});
+
+navBusiness.addEventListener("click", (event) => {
+  event.preventDefault();
+  goTo("business");
+});
+navManage.addEventListener("click", (event) => {
+  event.preventDefault();
+  goTo("manage");
+});
+manageBack.addEventListener("click", (event) => {
+  event.preventDefault();
+  goTo("business");
+});
+refreshTasks.addEventListener("click", () => {
+  void loadTaskList();
 });
 
 protenixForm.addEventListener("submit", (event) => {
@@ -300,4 +640,437 @@ protenixForm.addEventListener("submit", (event) => {
 pxdesignForm.addEventListener("submit", (event) => {
   event.preventDefault();
   void submitJob(jobs.pxdesign, pxdesignOutput, chosenFile(pxdesignForm, pxdesignDefaultFile));
+});
+
+
+function showAdminError(target: HTMLElement, value: unknown, fallback: string): void {
+  if (typeof value === "string" && value !== "") {
+    target.textContent = value;
+    return;
+  }
+  const body = asRecord(value);
+  const message = body?.error_msg ?? body?.error_message ?? fallback;
+  target.textContent = String(message);
+}
+
+async function loadAdminUsers(): Promise<void> {
+  if (!canManage()) {
+    return;
+  }
+  try {
+    const outcome = await callTool("admin.user.list", {});
+    if (outcome.isError) {
+      showAdminError(userList, outcome.value, "无法加载用户列表");
+      return;
+    }
+    const body = asRecord(outcome.value);
+    const rows = Array.isArray(body?.users) ? body.users : [];
+    userList.replaceChildren();
+    if (rows.length === 0) {
+      const empty = document.createElement("p");
+      empty.className = "hint";
+      empty.textContent = "暂无用户";
+      userList.append(empty);
+      return;
+    }
+    for (const raw of rows) {
+      const user = asRecord(raw);
+      if (user === null) {
+        continue;
+      }
+      const row = document.createElement("article");
+      row.className = "task-row";
+      const meta = document.createElement("p");
+      meta.className = "task-meta";
+      meta.textContent = [
+        String(user.user_name ?? ""),
+        String(user.role ?? ""),
+        typeof user.bind_email === "string" ? user.bind_email : "",
+        String(user.user_id ?? ""),
+      ].filter((part) => part !== "").join("  ·  ");
+      const actions = document.createElement("div");
+      actions.className = "task-actions";
+      const userId = typeof user.user_id === "string" ? user.user_id : "";
+      const currentRole = user.role === "admin" ? "admin" : "user";
+      const nextRole = currentRole === "admin" ? "user" : "admin";
+      const button = document.createElement("button");
+      button.type = "button";
+      button.textContent = nextRole === "admin" ? "提升为 admin" : "降为 user";
+      button.addEventListener("click", () => {
+        void setUserRole(userId, nextRole);
+      });
+      actions.append(button);
+      row.append(meta, actions);
+      userList.append(row);
+    }
+  } catch (error: unknown) {
+    if (handleAuthFailure(error)) {
+      return;
+    }
+    userList.textContent = error instanceof Error ? error.message : "无法加载用户列表";
+  }
+}
+
+async function setUserRole(userId: string, role: string): Promise<void> {
+  if (userId === "") {
+    return;
+  }
+  try {
+    const outcome = await callTool("admin.user.set_role", { user_id: userId, role });
+    if (outcome.isError) {
+      showAdminError(userList, outcome.value, "无法更改角色");
+      return;
+    }
+    await loadAdminUsers();
+  } catch (error: unknown) {
+    if (handleAuthFailure(error)) {
+      return;
+    }
+    userList.textContent = error instanceof Error ? error.message : "无法更改角色";
+  }
+}
+
+async function loadAdminTasks(): Promise<void> {
+  if (!canManage()) {
+    return;
+  }
+  try {
+    const outcome = await callTool("admin.task.list", {});
+    if (outcome.isError) {
+      showAdminError(adminTaskList, outcome.value, "无法加载全站任务");
+      return;
+    }
+    const body = asRecord(outcome.value);
+    const rows = Array.isArray(body?.tasks) ? body.tasks : [];
+    adminTaskList.replaceChildren();
+    if (rows.length === 0) {
+      const empty = document.createElement("p");
+      empty.className = "hint";
+      empty.textContent = "暂无任务";
+      adminTaskList.append(empty);
+      return;
+    }
+    for (const raw of rows) {
+      const task = asRecord(raw);
+      if (task === null) {
+        continue;
+      }
+      const row = document.createElement("article");
+      row.className = "task-row";
+      const taskId = typeof task.task_id === "string" ? task.task_id : "";
+      const meta = document.createElement("p");
+      meta.className = "task-meta";
+      meta.textContent = [
+        String(task.method ?? ""),
+        String(task.run_status ?? ""),
+        String(task.process_status ?? ""),
+        String(task.user_id ?? ""),
+        taskId,
+      ].filter((part) => part !== "").join("  ·  ");
+      const actions = document.createElement("div");
+      actions.className = "task-actions";
+      const view = document.createElement("button");
+      view.type = "button";
+      view.textContent = "查看";
+      view.addEventListener("click", () => {
+        void inspectAdminTask(taskId);
+      });
+      actions.append(view);
+      if (canCancelTask(task) && taskId !== "") {
+        const cancel = document.createElement("button");
+        cancel.type = "button";
+        cancel.textContent = "取消";
+        cancel.addEventListener("click", () => {
+          void cancelAdminTask(taskId);
+        });
+        actions.append(cancel);
+      }
+      if (canListArtifacts(task) && taskId !== "") {
+        const artifacts = document.createElement("button");
+        artifacts.type = "button";
+        artifacts.textContent = "产物";
+        artifacts.addEventListener("click", () => {
+          void loadAdminArtifacts(taskId, row);
+        });
+        actions.append(artifacts);
+      }
+      row.append(meta, actions);
+      adminTaskList.append(row);
+    }
+  } catch (error: unknown) {
+    if (handleAuthFailure(error)) {
+      return;
+    }
+    adminTaskList.textContent = error instanceof Error ? error.message : "无法加载全站任务";
+  }
+}
+
+async function inspectAdminTask(taskId: string): Promise<void> {
+  if (taskId === "") {
+    return;
+  }
+  try {
+    const outcome = await callTool("admin.task.get", { task_id: taskId });
+    adminTaskDetail.textContent = outcome.isError
+      ? JSON.stringify(redact(outcome.value), null, 2)
+      : formatTask(outcome.value);
+  } catch (error: unknown) {
+    if (handleAuthFailure(error)) {
+      return;
+    }
+    adminTaskDetail.textContent = error instanceof Error ? error.message : "无法读取任务";
+  }
+}
+
+async function cancelAdminTask(taskId: string): Promise<void> {
+  if (!window.confirm("取消该任务？")) {
+    return;
+  }
+  try {
+    const outcome = await callTool("admin.task.cancel", { task_id: taskId });
+    adminTaskDetail.textContent = JSON.stringify(redact(outcome.value), null, 2);
+    await loadAdminTasks();
+  } catch (error: unknown) {
+    if (handleAuthFailure(error)) {
+      return;
+    }
+    adminTaskDetail.textContent = error instanceof Error ? error.message : "无法取消任务";
+  }
+}
+
+async function loadAdminArtifacts(taskId: string, row: HTMLElement): Promise<void> {
+  try {
+    const outcome = await callTool("admin.task.artifacts", { task_id: taskId });
+    if (outcome.isError) {
+      adminTaskDetail.textContent = JSON.stringify(redact(outcome.value), null, 2);
+      return;
+    }
+    const artifacts = artifactsFromPayload(outcome.value);
+    let list = row.querySelector<HTMLElement>(".artifact-list");
+    if (list === null) {
+      list = document.createElement("ul");
+      list.className = "artifact-list";
+      row.append(list);
+    }
+    list.replaceChildren();
+    if (artifacts.length === 0) {
+      const empty = document.createElement("li");
+      empty.className = "hint";
+      empty.textContent = "没有可下载产物";
+      list.append(empty);
+      return;
+    }
+    for (const artifact of artifacts) {
+      const item = document.createElement("li");
+      const button = document.createElement("button");
+      button.type = "button";
+      button.textContent = `下载 ${artifact.path}`;
+      button.addEventListener("click", () => {
+        void downloadAdminArtifact(taskId, artifact.path);
+      });
+      item.append(button);
+      list.append(item);
+    }
+  } catch (error: unknown) {
+    if (handleAuthFailure(error)) {
+      return;
+    }
+    adminTaskDetail.textContent = error instanceof Error ? error.message : "无法列出产物";
+  }
+}
+
+async function downloadAdminArtifact(taskId: string, path: string): Promise<void> {
+  try {
+    const outcome = await callTool("admin.task.artifact", { task_id: taskId, path });
+    if (outcome.isError) {
+      adminTaskDetail.textContent = JSON.stringify(redact(outcome.value), null, 2);
+      return;
+    }
+    const file = artifactFileFromPayload(outcome.value);
+    if (file === null) {
+      adminTaskDetail.textContent = "产物内容无法解码";
+      return;
+    }
+    const blob = new Blob([decodeBase64Content(file.content)], { type: file.content_type });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = file.name;
+    link.click();
+    URL.revokeObjectURL(url);
+  } catch (error: unknown) {
+    if (handleAuthFailure(error)) {
+      return;
+    }
+    adminTaskDetail.textContent = error instanceof Error ? error.message : "无法下载产物";
+  }
+}
+
+async function loadResourceSets(): Promise<void> {
+  if (!canManage()) {
+    return;
+  }
+  try {
+    const outcome = await callTool("resource.sets", {});
+    if (outcome.isError) {
+      showAdminError(resourceDetail, outcome.value, "无法列出资源集合");
+      return;
+    }
+    const body = asRecord(outcome.value);
+    const sets = Array.isArray(body?.sets) ? body.sets.filter((item): item is string => typeof item === "string") : [];
+    resourceSet.replaceChildren();
+    if (sets.length === 0) {
+      const option = document.createElement("option");
+      option.value = "";
+      option.textContent = "当前没有已启用的资源集合";
+      resourceSet.append(option);
+      return;
+    }
+    for (const id of sets) {
+      const option = document.createElement("option");
+      option.value = id;
+      option.textContent = id;
+      resourceSet.append(option);
+    }
+  } catch (error: unknown) {
+    if (handleAuthFailure(error)) {
+      return;
+    }
+    resourceDetail.textContent = error instanceof Error ? error.message : "无法列出资源集合";
+  }
+}
+
+async function queryResourceStatus(): Promise<void> {
+  const set = resourceSet.value.trim();
+  if (set === "") {
+    resourceDetail.textContent = "请选择资源集合";
+    return;
+  }
+  try {
+    const outcome = await callTool("resource.status", { set });
+    resourceDetail.textContent = JSON.stringify(redact(outcome.value), null, 2);
+  } catch (error: unknown) {
+    if (handleAuthFailure(error)) {
+      return;
+    }
+    resourceDetail.textContent = error instanceof Error ? error.message : "无法查询资源状态";
+  }
+}
+
+async function prepareResource(): Promise<void> {
+  const set = resourceSet.value.trim();
+  if (set === "") {
+    resourceDetail.textContent = "请选择资源集合";
+    return;
+  }
+  try {
+    const status = await callTool("resource.status", { set });
+    if (status.isError) {
+      resourceDetail.textContent = JSON.stringify(redact(status.value), null, 2);
+      return;
+    }
+    const token = asRecord(status.value)?.confirmation_token;
+    if (typeof token !== "string" || token === "") {
+      resourceDetail.textContent = "当前状态没有 confirmation_token，无需或无法准备。\n" + JSON.stringify(redact(status.value), null, 2);
+      return;
+    }
+    const outcome = await callTool("resource.prepare", { set, confirmation_token: token });
+    resourceDetail.textContent = JSON.stringify(redact(outcome.value), null, 2);
+  } catch (error: unknown) {
+    if (handleAuthFailure(error)) {
+      return;
+    }
+    resourceDetail.textContent = error instanceof Error ? error.message : "无法准备资源";
+  }
+}
+
+async function loadAdminSessions(): Promise<void> {
+  if (!canManage()) {
+    return;
+  }
+  try {
+    const outcome = await callTool("admin.session.list", {});
+    if (outcome.isError) {
+      showAdminError(sessionList, outcome.value, "无法加载会话");
+      return;
+    }
+    const body = asRecord(outcome.value);
+    const rows = Array.isArray(body?.sessions) ? body.sessions : [];
+    sessionList.replaceChildren();
+    if (rows.length === 0) {
+      const empty = document.createElement("p");
+      empty.className = "hint";
+      empty.textContent = "暂无会话";
+      sessionList.append(empty);
+      return;
+    }
+    for (const raw of rows) {
+      const session = asRecord(raw);
+      if (session === null) {
+        continue;
+      }
+      const row = document.createElement("article");
+      row.className = "task-row";
+      const sessionId = typeof session.session_id === "string" ? session.session_id : "";
+      const meta = document.createElement("p");
+      meta.className = "task-meta";
+      const revoked = session.revoked_at ? `已吊销 ${String(session.revoked_at)}` : "有效";
+      meta.textContent = [String(session.user_id ?? ""), revoked, String(session.expires_at ?? ""), sessionId]
+        .filter((part) => part !== "")
+        .join("  ·  ");
+      const actions = document.createElement("div");
+      actions.className = "task-actions";
+      if (!session.revoked_at && sessionId !== "") {
+        const revoke = document.createElement("button");
+        revoke.type = "button";
+        revoke.textContent = "吊销";
+        revoke.addEventListener("click", () => {
+          void revokeSession(sessionId);
+        });
+        actions.append(revoke);
+      }
+      row.append(meta, actions);
+      sessionList.append(row);
+    }
+  } catch (error: unknown) {
+    if (handleAuthFailure(error)) {
+      return;
+    }
+    sessionList.textContent = error instanceof Error ? error.message : "无法加载会话";
+  }
+}
+
+async function revokeSession(sessionId: string): Promise<void> {
+  if (!window.confirm("吊销该会话？")) {
+    return;
+  }
+  try {
+    const outcome = await callTool("admin.session.revoke", { session_id: sessionId });
+    if (outcome.isError) {
+      showAdminError(sessionList, outcome.value, "无法吊销会话");
+      return;
+    }
+    await loadAdminSessions();
+  } catch (error: unknown) {
+    if (handleAuthFailure(error)) {
+      return;
+    }
+    sessionList.textContent = error instanceof Error ? error.message : "无法吊销会话";
+  }
+}
+
+refreshUsers.addEventListener("click", () => {
+  void loadAdminUsers();
+});
+refreshAdminTasks.addEventListener("click", () => {
+  void loadAdminTasks();
+});
+refreshSessions.addEventListener("click", () => {
+  void loadAdminSessions();
+});
+resourceStatus.addEventListener("click", () => {
+  void queryResourceStatus();
+});
+resourcePrepare.addEventListener("click", () => {
+  void prepareResource();
 });

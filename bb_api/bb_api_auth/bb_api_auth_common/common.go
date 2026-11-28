@@ -52,6 +52,52 @@ func HasOnlyKeys(input map[string]interface{}, allowed ...string) bool {
 	return true
 }
 
+func HasNoUnknownKeys(input map[string]interface{}, allowed ...string) bool {
+	allowedKeys := make(map[string]struct{}, len(allowed))
+	for _, key := range allowed {
+		allowedKeys[key] = struct{}{}
+	}
+	for key := range input {
+		if _, ok := allowedKeys[key]; !ok {
+			return false
+		}
+	}
+	return true
+}
+
+func OptionalInt(input map[string]interface{}, key string, fallback int, min int, max int) (int, bool) {
+	raw, exists := input[key]
+	if !exists || raw == nil {
+		return fallback, true
+	}
+	var value int
+	switch typed := raw.(type) {
+	case int:
+		value = typed
+	case int64:
+		value = int(typed)
+	case float64:
+		if typed != float64(int(typed)) {
+			return 0, false
+		}
+		value = int(typed)
+	default:
+		return 0, false
+	}
+	if value < min || value > max {
+		return 0, false
+	}
+	return value, true
+}
+
+func IntegerSchema(minimum int, maximum int) map[string]interface{} {
+	return map[string]interface{}{
+		"type":    "integer",
+		"minimum": minimum,
+		"maximum": maximum,
+	}
+}
+
 func NormalizeEmail(value string) (string, error) {
 	value = strings.TrimSpace(value)
 	if value == "" || len(value) > 320 {

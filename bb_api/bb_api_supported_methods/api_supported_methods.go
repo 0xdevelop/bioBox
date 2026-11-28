@@ -14,8 +14,11 @@ type SupportedMethod struct {
 	// 凭证来自 HTTP Authorization: Bearer 头，或显式 arguments.jwt_token（后者优先），
 	// 验证后即从 arguments 移除，业务 Execute 只见业务参数；
 	// jwt_token 入参 schema 由注册表按非 Public 自动注入为可选项，业务注册禁止声明。
-	Public  bool
-	Execute func(context.Context, interface{}) (interface{}, error)
+	Public bool
+	// RequireAdmin 为 true 时，门禁通过后还须当前库内 role 为 admin；
+	// 在 Async 受理之前检查，避免非管理员把任务写入排队区。
+	RequireAdmin bool
+	Execute      func(context.Context, interface{}) (interface{}, error)
 }
 
 var currentSupportedMethods []*SupportedMethod

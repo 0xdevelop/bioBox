@@ -5,6 +5,7 @@ import (
 	"context"
 	"github.com/0xdevelop/bioBox/bb_ability/bb_ability_adapter_protenix"
 	"github.com/0xdevelop/bioBox/bb_ability/bb_ability_adapter_pxdesign"
+	"github.com/0xdevelop/bioBox/bb_ability/bb_ability_admin"
 	"github.com/0xdevelop/bioBox/bb_ability/bb_ability_resource"
 
 	"github.com/0xdevelop/bioBox/bb_ability/bb_ability_protenix"
@@ -39,6 +40,7 @@ func LoadAbilityAPIMethods() {
 	//（user → profile → user），故作为契约明记的唯一例外由顶层装配。
 	bb_ability_user_profile.LoadAPIMethods()
 	bb_ability_task.LoadAPIMethods()
+	bb_ability_admin.LoadAPIMethods()
 	bb_ability_resource.LoadAPIMethods()
 	bb_ability_adapter_protenix.Load()
 	bb_ability_adapter_pxdesign.Load()

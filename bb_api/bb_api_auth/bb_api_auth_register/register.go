@@ -124,6 +124,8 @@ func registerWithEmailCode(ctx context.Context, userName string, email string, p
 				return createErr
 			}
 			outcomeErr = bb_api_error_code.ErrInvalidArguments
+		} else if roleErr := bb_ability_user.ApplyRoleInRegistration(tx, user); roleErr != nil {
+			return roleErr
 		}
 		if updateErr := tx.Model(verificationCode).Updates(map[string]interface{}{
 			"code_hash": "",

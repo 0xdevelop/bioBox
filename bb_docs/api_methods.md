@@ -1,4 +1,4 @@
-> 本文件由 `gen_api_docs.sh` 从方法注册表生成（v0.0.5，共 25 个方法），禁止手改；新增方法后重新执行生成。
+> 本文件由 `gen_api_docs.sh` 从方法注册表生成（v0.0.5，共 35 个方法），禁止手改；新增方法后重新执行生成。
 
 # 1. 统一调用方式
 
@@ -824,11 +824,419 @@ MCP 凭证使用 HTTP 头，`tools/list` 只暴露业务入参，不含 `jwt_tok
 }
 ```
 
-# 7. Resource
+# 7. Admin
 
-## 7.1. resource.status
+## 7.1. admin.user.list
 
-查询配置资源集合及最后下载字节快照（不是推理进度）；不下载。任务生命周期仍以 task.get 为准。
+列出全部用户（不含密码哈希等秘密）。仅 admin。默认 100 条，最大 200 条，响应含 total。
+
+`arguments` 传参举例（仅含必填字段）：
+
+```json
+{}
+```
+
+可选字段：`jwt_token`、`limit`、`offset`。
+
+`arguments` JSON Schema（约束说明，非请求体；`required` 数组 = 必填字段清单）：
+
+```json
+{
+  "additionalProperties": false,
+  "properties": {
+    "jwt_token": {
+      "description": "一次只带一种凭证：自签 JWT，或 ptxk_ 前缀 API key（校验不同）。已带 Authorization: Bearer 时省略；显式传入优先于头。",
+      "maxLength": 8192,
+      "minLength": 1,
+      "type": "string"
+    },
+    "limit": {
+      "maximum": 200,
+      "minimum": 1,
+      "type": "integer"
+    },
+    "offset": {
+      "maximum": 1000000000,
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "type": "object"
+}
+```
+
+## 7.2. admin.user.set_role
+
+设置指定用户的 role（user 或 admin）。禁止撤销最后一个 admin。仅 admin。
+
+`arguments` 传参举例（仅含必填字段）：
+
+```json
+{
+  "role": "user",
+  "user_id": "<user_id>"
+}
+```
+
+可选字段：`jwt_token`。
+
+`arguments` JSON Schema（约束说明，非请求体；`required` 数组 = 必填字段清单）：
+
+```json
+{
+  "additionalProperties": false,
+  "properties": {
+    "jwt_token": {
+      "description": "一次只带一种凭证：自签 JWT，或 ptxk_ 前缀 API key（校验不同）。已带 Authorization: Bearer 时省略；显式传入优先于头。",
+      "maxLength": 8192,
+      "minLength": 1,
+      "type": "string"
+    },
+    "role": {
+      "enum": [
+        "user",
+        "admin"
+      ],
+      "type": "string"
+    },
+    "user_id": {
+      "maxLength": 36,
+      "minLength": 36,
+      "type": "string"
+    }
+  },
+  "required": [
+    "user_id",
+    "role"
+  ],
+  "type": "object"
+}
+```
+
+## 7.3. admin.task.list
+
+列出全部用户的异步任务（新→旧）。仅 admin。默认 100 条，最大 200 条，响应含 total；可按 user_id 过滤。不要与 task.list 的 50 条上限混淆。
+
+`arguments` 传参举例（仅含必填字段）：
+
+```json
+{}
+```
+
+可选字段：`jwt_token`、`limit`、`offset`、`user_id`。
+
+`arguments` JSON Schema（约束说明，非请求体；`required` 数组 = 必填字段清单）：
+
+```json
+{
+  "additionalProperties": false,
+  "properties": {
+    "jwt_token": {
+      "description": "一次只带一种凭证：自签 JWT，或 ptxk_ 前缀 API key（校验不同）。已带 Authorization: Bearer 时省略；显式传入优先于头。",
+      "maxLength": 8192,
+      "minLength": 1,
+      "type": "string"
+    },
+    "limit": {
+      "maximum": 200,
+      "minimum": 1,
+      "type": "integer"
+    },
+    "offset": {
+      "maximum": 1000000000,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "user_id": {
+      "maxLength": 36,
+      "minLength": 36,
+      "type": "string"
+    }
+  },
+  "type": "object"
+}
+```
+
+## 7.4. admin.task.get
+
+查看任意用户的异步任务状态、步进与结果。仅 admin。
+
+`arguments` 传参举例（仅含必填字段）：
+
+```json
+{
+  "task_id": "<task_id>"
+}
+```
+
+可选字段：`jwt_token`。
+
+`arguments` JSON Schema（约束说明，非请求体；`required` 数组 = 必填字段清单）：
+
+```json
+{
+  "additionalProperties": false,
+  "properties": {
+    "jwt_token": {
+      "description": "一次只带一种凭证：自签 JWT，或 ptxk_ 前缀 API key（校验不同）。已带 Authorization: Bearer 时省略；显式传入优先于头。",
+      "maxLength": 8192,
+      "minLength": 1,
+      "type": "string"
+    },
+    "task_id": {
+      "maxLength": 36,
+      "minLength": 36,
+      "type": "string"
+    }
+  },
+  "required": [
+    "task_id"
+  ],
+  "type": "object"
+}
+```
+
+## 7.5. admin.task.cancel
+
+取消任意用户的排队或执行中任务。仅 admin。
+
+`arguments` 传参举例（仅含必填字段）：
+
+```json
+{
+  "task_id": "<task_id>"
+}
+```
+
+可选字段：`jwt_token`。
+
+`arguments` JSON Schema（约束说明，非请求体；`required` 数组 = 必填字段清单）：
+
+```json
+{
+  "additionalProperties": false,
+  "properties": {
+    "jwt_token": {
+      "description": "一次只带一种凭证：自签 JWT，或 ptxk_ 前缀 API key（校验不同）。已带 Authorization: Bearer 时省略；显式传入优先于头。",
+      "maxLength": 8192,
+      "minLength": 1,
+      "type": "string"
+    },
+    "task_id": {
+      "maxLength": 36,
+      "minLength": 36,
+      "type": "string"
+    }
+  },
+  "required": [
+    "task_id"
+  ],
+  "type": "object"
+}
+```
+
+## 7.6. admin.task.artifacts
+
+列出任意用户已完成任务的产物（相对路径）。仅 admin。
+
+`arguments` 传参举例（仅含必填字段）：
+
+```json
+{
+  "task_id": "<task_id>"
+}
+```
+
+可选字段：`jwt_token`。
+
+`arguments` JSON Schema（约束说明，非请求体；`required` 数组 = 必填字段清单）：
+
+```json
+{
+  "additionalProperties": false,
+  "properties": {
+    "jwt_token": {
+      "description": "一次只带一种凭证：自签 JWT，或 ptxk_ 前缀 API key（校验不同）。已带 Authorization: Bearer 时省略；显式传入优先于头。",
+      "maxLength": 8192,
+      "minLength": 1,
+      "type": "string"
+    },
+    "task_id": {
+      "maxLength": 36,
+      "minLength": 36,
+      "type": "string"
+    }
+  },
+  "required": [
+    "task_id"
+  ],
+  "type": "object"
+}
+```
+
+## 7.7. admin.task.artifact
+
+读取任意用户已完成任务的单个产物内容（base64）。仅 admin。
+
+`arguments` 传参举例（仅含必填字段）：
+
+```json
+{
+  "path": "<path>",
+  "task_id": "<task_id>"
+}
+```
+
+可选字段：`jwt_token`。
+
+`arguments` JSON Schema（约束说明，非请求体；`required` 数组 = 必填字段清单）：
+
+```json
+{
+  "additionalProperties": false,
+  "properties": {
+    "jwt_token": {
+      "description": "一次只带一种凭证：自签 JWT，或 ptxk_ 前缀 API key（校验不同）。已带 Authorization: Bearer 时省略；显式传入优先于头。",
+      "maxLength": 8192,
+      "minLength": 1,
+      "type": "string"
+    },
+    "path": {
+      "maxLength": 1024,
+      "minLength": 1,
+      "type": "string"
+    },
+    "task_id": {
+      "maxLength": 36,
+      "minLength": 36,
+      "type": "string"
+    }
+  },
+  "required": [
+    "task_id",
+    "path"
+  ],
+  "type": "object"
+}
+```
+
+## 7.8. admin.session.list
+
+列出登录会话（不含 refresh token 哈希）。仅 admin。默认 100 条，最大 200 条，响应含 total；可按 user_id 过滤。
+
+`arguments` 传参举例（仅含必填字段）：
+
+```json
+{}
+```
+
+可选字段：`jwt_token`、`limit`、`offset`、`user_id`。
+
+`arguments` JSON Schema（约束说明，非请求体；`required` 数组 = 必填字段清单）：
+
+```json
+{
+  "additionalProperties": false,
+  "properties": {
+    "jwt_token": {
+      "description": "一次只带一种凭证：自签 JWT，或 ptxk_ 前缀 API key（校验不同）。已带 Authorization: Bearer 时省略；显式传入优先于头。",
+      "maxLength": 8192,
+      "minLength": 1,
+      "type": "string"
+    },
+    "limit": {
+      "maximum": 200,
+      "minimum": 1,
+      "type": "integer"
+    },
+    "offset": {
+      "maximum": 1000000000,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "user_id": {
+      "maxLength": 36,
+      "minLength": 36,
+      "type": "string"
+    }
+  },
+  "type": "object"
+}
+```
+
+## 7.9. admin.session.revoke
+
+吊销指定登录会话。仅 admin。
+
+`arguments` 传参举例（仅含必填字段）：
+
+```json
+{
+  "session_id": "<session_id>"
+}
+```
+
+可选字段：`jwt_token`。
+
+`arguments` JSON Schema（约束说明，非请求体；`required` 数组 = 必填字段清单）：
+
+```json
+{
+  "additionalProperties": false,
+  "properties": {
+    "jwt_token": {
+      "description": "一次只带一种凭证：自签 JWT，或 ptxk_ 前缀 API key（校验不同）。已带 Authorization: Bearer 时省略；显式传入优先于头。",
+      "maxLength": 8192,
+      "minLength": 1,
+      "type": "string"
+    },
+    "session_id": {
+      "maxLength": 36,
+      "minLength": 36,
+      "type": "string"
+    }
+  },
+  "required": [
+    "session_id"
+  ],
+  "type": "object"
+}
+```
+
+# 8. Resource
+
+## 8.1. resource.sets
+
+列出当前实例已启用的资源配置集合 ID。仅 admin。
+
+`arguments` 传参举例（仅含必填字段）：
+
+```json
+{}
+```
+
+可选字段：`jwt_token`。
+
+`arguments` JSON Schema（约束说明，非请求体；`required` 数组 = 必填字段清单）：
+
+```json
+{
+  "additionalProperties": false,
+  "properties": {
+    "jwt_token": {
+      "description": "一次只带一种凭证：自签 JWT，或 ptxk_ 前缀 API key（校验不同）。已带 Authorization: Bearer 时省略；显式传入优先于头。",
+      "maxLength": 8192,
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "type": "object"
+}
+```
+
+## 8.2. resource.status
+
+查询配置资源集合及最后下载字节快照（不是推理进度）；不下载。任务生命周期仍以 task.get 为准。仅 admin。
 
 `arguments` 传参举例（仅含必填字段）：
 
@@ -865,9 +1273,9 @@ MCP 凭证使用 HTTP 头，`tools/list` 只暴露业务入参，不含 `jwt_tok
 }
 ```
 
-## 7.2. resource.prepare
+## 8.3. resource.prepare
 
-明确确认 status 返回的指纹，仅准备所指配置集合；沿用持久异步任务，不启动推理。
+明确确认 status 返回的指纹，仅准备所指配置集合；沿用持久异步任务，不启动推理。仅 admin。
 
 异步方法：受理后返回 `task_id`，进度与结果经任务查询方法读取。
 
@@ -913,7 +1321,7 @@ MCP 凭证使用 HTTP 头，`tools/list` 只暴露业务入参，不含 `jwt_tok
 }
 ```
 
-# 8. protenix
+# 9. protenix
 
 提交 Protenix 结构预测任务（对应 CLI：protenix-run pred）。官方受管 runtime 目前仅核准 v1 默认模型、显式 use_msa=false，且须可信完整资源清单已 ready；其余自动下载分支拒绝启动，不静默回退。版本/模型走 arguments。异步队列使用配置的主关系库（支持 SQLite）。version 缺省 v1，用于选择独立 runtime：v1 未单独配置时使用 cli_cfg.protenix.binary，v2 必须配置 cli_cfg.protenix.version_runtimes.v2.binary，不会回退到 v1。对应版本未配置时 Execute 拒绝启动进程。
 
@@ -922,13 +1330,10 @@ MCP 凭证使用 HTTP 头，`tools/list` 只暴露业务入参，不含 `jwt_tok
 `arguments` 传参举例（仅含必填字段）：
 
 ```json
-{
-  "input": "<input>",
-  "out_dir": "<out_dir>"
-}
+{}
 ```
 
-可选字段：`cycle`、`dtype`、`jwt_token`、`model_name`、`sample`、`seeds`、`step`、`use_default_params`、`use_msa`、`version`。
+可选字段：`cycle`、`dtype`、`input_data`、`input`、`jwt_token`、`model_name`、`out_dir`、`sample`、`seeds`、`step`、`use_default_params`、`use_msa`、`version`。
 
 `arguments` JSON Schema（约束说明，非请求体；`required` 数组 = 必填字段清单）：
 
@@ -949,10 +1354,17 @@ MCP 凭证使用 HTTP 头，`tools/list` 只暴露业务入参，不含 `jwt_tok
       "type": "string"
     },
     "input": {
-      "description": "输入 JSON 文件或目录。对应 CLI -i/--input。",
+      "description": "兼容旧调用：输入 JSON 文件或目录路径。对应 CLI -i/--input。与 input_data 二选一，不可同时传入。",
       "maxLength": 4096,
       "minLength": 1,
       "type": "string"
+    },
+    "input_data": {
+      "description": "标准 JSON 预测定义（对象或数组）。bioBox 会写入作业目录 input/input.json 再传给 protenix-run。与 input 二选一，不可同时传入。",
+      "type": [
+        "object",
+        "array"
+      ]
     },
     "jwt_token": {
       "description": "一次只带一种凭证：自签 JWT，或 ptxk_ 前缀 API key（校验不同）。已带 Authorization: Bearer 时省略；显式传入优先于头。",
@@ -967,7 +1379,7 @@ MCP 凭证使用 HTTP 头，`tools/list` 只暴露业务入参，不含 `jwt_tok
       "type": "string"
     },
     "out_dir": {
-      "description": "调用方给出的结果目录名；实际写入隔离作业目录下的 output/，不直接改原输入。对应 CLI -o/--out_dir。",
+      "description": "调用方给出的结果目录名；可选。调用方给出的结果目录名；缺省 output。实际写入隔离作业目录下的 output/，不直接改原输入。对应 CLI -o/--out_dir。",
       "maxLength": 4096,
       "minLength": 1,
       "type": "string"
@@ -1003,15 +1415,11 @@ MCP 凭证使用 HTTP 头，`tools/list` 只暴露业务入参，不含 `jwt_tok
       "type": "string"
     }
   },
-  "required": [
-    "input",
-    "out_dir"
-  ],
   "type": "object"
 }
 ```
 
-# 9. pxdesign
+# 10. pxdesign
 
 官方受管 runtime 当前仅核准 preview + 显式 use_msa=false，须可信完整资源集合已 ready；extended/custom 自动下载分支拒绝启动。提交 PXDesign 设计流水线任务（对应 CLI：pxdesign-run pipeline）。preset 走 arguments。异步队列使用配置的主关系库（支持 SQLite）。未配置 cli_cfg.pxdesign.binary 时 Execute 拒绝启动进程。
 
@@ -1020,13 +1428,10 @@ MCP 凭证使用 HTTP 头，`tools/list` 只暴露业务入参，不含 `jwt_tok
 `arguments` 传参举例（仅含必填字段）：
 
 ```json
-{
-  "dump_dir": "<dump_dir>",
-  "input": "<input>"
-}
+{}
 ```
 
-可选字段：`N_max_runs`、`N_sample`、`N_step`、`dtype`、`eta_max`、`eta_min`、`eta_type`、`jwt_token`、`preset`、`use_msa`。
+可选字段：`N_max_runs`、`N_sample`、`N_step`、`attachments`、`dtype`、`dump_dir`、`eta_max`、`eta_min`、`eta_type`、`input_data`、`input`、`jwt_token`、`preset`、`use_msa`。
 
 `arguments` JSON Schema（约束说明，非请求体；`required` 数组 = 必填字段清单）：
 
@@ -1046,6 +1451,53 @@ MCP 凭证使用 HTTP 头，`tools/list` 只暴露业务入参，不含 `jwt_tok
       "description": "扩散步数。对应 CLI --N_step。",
       "type": "integer"
     },
+    "attachments": {
+      "description": "可选附件，落到作业目录 input/ 下，供任务定义中的相对路径引用。可为对象（相对路径 -\u003e {content, encoding}）或数组（{path, content, encoding}）。encoding 为 utf8 或 base64。禁止绝对路径与 .. 穿越。",
+      "oneOf": [
+        {
+          "additionalProperties": {
+            "properties": {
+              "content": {
+                "type": "string"
+              },
+              "encoding": {
+                "enum": [
+                  "utf8",
+                  "base64"
+                ],
+                "type": "string"
+              },
+              "path": {
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "type": "object"
+        },
+        {
+          "items": {
+            "properties": {
+              "content": {
+                "type": "string"
+              },
+              "encoding": {
+                "enum": [
+                  "utf8",
+                  "base64"
+                ],
+                "type": "string"
+              },
+              "path": {
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "type": "array"
+        }
+      ]
+    },
     "dtype": {
       "description": "推理 dtype。对应 CLI --dtype。",
       "enum": [
@@ -1055,7 +1507,7 @@ MCP 凭证使用 HTTP 头，`tools/list` 只暴露业务入参，不含 `jwt_tok
       "type": "string"
     },
     "dump_dir": {
-      "description": "调用方给出的结果目录名；实际写入隔离作业目录下的 output/。对应 CLI -o/--dump_dir。",
+      "description": "可选。调用方给出的结果目录名；缺省 output。实际写入隔离作业目录下的 output/。对应 CLI -o/--dump_dir。",
       "maxLength": 4096,
       "minLength": 1,
       "type": "string"
@@ -1075,10 +1527,14 @@ MCP 凭证使用 HTTP 头，`tools/list` 只暴露业务入参，不含 `jwt_tok
       "type": "string"
     },
     "input": {
-      "description": "输入 YAML/JSON 文件。对应 CLI -i/--input。",
+      "description": "兼容旧调用：输入 YAML/JSON 文件路径。对应 CLI -i/--input。与 input_data 二选一，不可同时传入。",
       "maxLength": 4096,
       "minLength": 1,
       "type": "string"
+    },
+    "input_data": {
+      "description": "标准 JSON 任务定义。bioBox 会写入作业目录 input/input.json 再传给 pxdesign-run。与 input 二选一，不可同时传入。",
+      "type": "object"
     },
     "jwt_token": {
       "description": "一次只带一种凭证：自签 JWT，或 ptxk_ 前缀 API key（校验不同）。已带 Authorization: Bearer 时省略；显式传入优先于头。",
@@ -1100,10 +1556,6 @@ MCP 凭证使用 HTTP 头，`tools/list` 只暴露业务入参，不含 `jwt_tok
       "type": "boolean"
     }
   },
-  "required": [
-    "input",
-    "dump_dir"
-  ],
   "type": "object"
 }
 ```

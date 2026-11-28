@@ -9,7 +9,7 @@
 
 # 1. 前端定位与边界
 
-`bb_frontend` 是带登录的业务界面，embed 在程序里。未登录时只有登录页，登录成功后才进入业务页。登录沿用 `auth.login.email`。内嵌页面用浏览器访问 bioBox 的主机名和本实例启用的 MCP 端口发送 `POST /` 的 `tools/call`。独立构建时可在 `bb_frontend/package.json` 的 `mcp` 明确指定服务地址。业务页提交输入文件。Protenix 随前端提供 `example_files/test_data_protenix.json` 示例。PXDesign 可在页面选择输入文件，也可在本机构建前通过 `example_files/test_data_pxdesign.json` 指定默认输入。文件先经 `POST /cli-input` 写到本机路径，再把该路径作为已注册方法的 `input` 交给 `protenix` 或 `pxdesign`。服务在调用方未给旗标时补上受管 runtime 要求的 `--use_msa false`，pxdesign 再补 `--preset preview`。本机 `cli_cfg` 的 host 为空时，由已配置的二进制在本机执行。
+`bb_frontend` 是带登录的业务界面，embed 在程序里。未登录时只有登录页，登录成功后才进入业务页。业务页为 `/` 或 `/business`，可提交并跟踪本账号的 Protenix / PXDesign 任务、查看历史、取消未完成任务、取回产物；管理页为 `/manage`，仅服务端确认的 admin 可见入口，可管理用户角色、全站任务、会话与资源准备。非 admin 入口隐藏，直接访问会提示权限不足。17170 测试台不是本界面的一部分。登录沿用 `auth.login.email`。内嵌页面用浏览器访问 bioBox 的主机名和本实例启用的 MCP 端口发送 `POST /` 的 `tools/call`。独立构建时可在 `bb_frontend/package.json` 的 `mcp` 明确指定服务地址。业务页提交输入文件。Protenix 随前端提供 `example_files/test_data_protenix.json` 示例。PXDesign 可在页面选择输入文件，也可在本机构建前通过 `example_files/test_data_pxdesign.json` 指定默认输入。文件先经 `POST /cli-input` 写到本机路径，再把该路径作为已注册方法的 `input` 交给 `protenix` 或 `pxdesign`。服务在调用方未给旗标时补上受管 runtime 要求的 `--use_msa false`，pxdesign 再补 `--preset preview`。本机 `cli_cfg` 的 host 为空时，由已配置的二进制在本机执行。
 
 # 2. 配置与启动
 
